@@ -1,4 +1,4 @@
-![First Question](pictures\image.png)
+![First Question](pictures/image.png)
 
 ## ListManager App
 
@@ -20,7 +20,7 @@ At the end of the process, ListManager automatically **generates PDF files** for
 
 --- 
 
-![alt text](pictures\image-1.png)
+![alt text](pictures/image-1.png)
 
 ## Domain Model 
 
@@ -79,7 +79,7 @@ Stores voice inputs that couldn't be matched to catalog products.
 
 ---
 
-![alt text](pictures\image-2.png)
+![alt text](pictures/image-2.png)
 
 ## ⚙️ CRUD Operations
 
@@ -116,7 +116,7 @@ Stores voice inputs that couldn't be matched to catalog products.
 - Delete **products** (removes them from catalog, sessions, and search).  
 - Delete **distributors** (removes all related products and session items).  
 
-![alt text](pictures\image-3.png)
+![alt text](pictures/image-3.png)
 
 ## 🗄️ Data Persistence
 
@@ -191,7 +191,7 @@ Shared Server Database
 
 ---
 
-![alt text](pictures\image-4.png)
+![alt text](pictures/image-4.png)
 
 ## 🌐 Offline Functionality
 
@@ -275,7 +275,7 @@ When reconnected, changes are synced automatically with the server.
 
 ---
 
-![alt text](pictures\image-5.png)
+![alt text](pictures/image-5.png)
 
 <table>
   <tr>
@@ -287,12 +287,12 @@ When reconnected, changes are synced automatically with the server.
     <th>Current Session</th>
   </tr>
   <tr>
-    <td align="center"><img src="pictures\6.jpg" alt="Voice Recognition" width="230"></td>
-    <td align="center"><img src="pictures\5.jpg" alt="Similarity Search" width="230"></td>
-    <td align="center"><img src="pictures\2.jpg" alt="Product Catalog" width="230"></td>
-    <td align="center"><img src="pictures\1.jpg" alt="PDF Generator" width="230"></td>
-    <td align="center"><img src="pictures\4.jpg" alt="Unknown Products" width="230"></td>
-    <td align="center"><img src="pictures\3.jpg" alt="Current Session" width="230"></td>
+    <td align="center"><img src="pictures/6.jpg" alt="Voice Recognition" width="230"></td>
+    <td align="center"><img src="pictures/5.jpg" alt="Similarity Search" width="230"></td>
+    <td align="center"><img src="pictures/2.jpg" alt="Product Catalog" width="230"></td>
+    <td align="center"><img src="pictures/1.jpg" alt="PDF Generator" width="230"></td>
+    <td align="center"><img src="pictures/4.jpg" alt="Unknown Products" width="230"></td>
+    <td align="center"><img src="pictures/3.jpg" alt="Current Session" width="230"></td>
   </tr>
 
 
