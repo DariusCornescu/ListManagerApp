@@ -19,9 +19,10 @@ import kotlinx.coroutines.launch
         ProductFts::class,
         SessionEntity::class,
         SessionItemEntity::class,
-        UnknownProductEntity::class
+        UnknownProductEntity::class,
+        UserEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
     abstract fun sessionItemDao(): SessionItemDao
     abstract fun unknownDao(): UnknownDao
+    abstract fun userDao(): UserDao
 
     companion object {
         @Volatile
