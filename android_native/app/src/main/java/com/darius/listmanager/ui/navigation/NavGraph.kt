@@ -30,6 +30,18 @@ fun NavGraph(
                 onNavigateToSettings = { navController.navigate("settings") }
             )
         }
+        composable("auth") {
+            AuthScreen(
+                onBack = { navController.popBackStack() },
+                onAuthSuccess = { navController.popBackStack() }
+            )
+        }
+
+        composable("profile"){
+            ProfileScreen(
+                onBack = { navController.popBackStack()}
+            )
+        }
         composable("session") {
             SessionScreen(onBack = { navController.popBackStack() })
         }
@@ -59,11 +71,7 @@ fun NavGraph(
                 onBack = { navController.popBackStack() }
             )
         }
-        composable("settings") {
-            SettingsScreen(onBack = { navController.popBackStack() })
-        }
-        composable("about") {
-            AboutScreen(onBack = { navController.popBackStack() })
-        }
+        composable("settings") { SettingsScreen(onBack = { navController.popBackStack() })  }
+        composable("about") {  AboutScreen(onBack = { navController.popBackStack() })  }
     }
 }

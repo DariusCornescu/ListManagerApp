@@ -1,3 +1,4 @@
 {
-    "cmake.sourceDirectory": "C:/Users/dariu/Documents/GithubRepos/ListManagerApp/flutter_ui/windows/flutter"
+    "cmake.sourceDirectory": "C:/Users/dariu/Documents/GithubRepos/ListManagerApp/flutter_ui/windows/flutter",
+    "java.configuration.updateBuildConfiguration": "interactive"
 }
