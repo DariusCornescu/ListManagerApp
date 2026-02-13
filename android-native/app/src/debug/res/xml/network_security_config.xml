@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!--
+      DEBUG ONLY:
+      Allow cleartext traffic to any host (useful for local HTTP dev servers on changing IPs).
+      This avoids committing specific LAN IP addresses to git.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

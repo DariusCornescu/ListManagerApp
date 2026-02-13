@@ -1,0 +1,60 @@
+# Root .gitignore for ListManager Project
+
+# ===== Environment Variables =====
+.env
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# ===== IDE & Editor Files =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Build Artifacts =====
+build/
+dist/
+*.apk
+*.aab
+*.ipa
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Database Files =====
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ===== OS Files =====
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ===== Temporary Files =====
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# ===== Personal/Private Files =====
+# Add any personal notes or private files here
+personal_notes.md
+private/
+secrets/
+
+# ===== Debug Files =====
+debug_login.py
+*.debug
