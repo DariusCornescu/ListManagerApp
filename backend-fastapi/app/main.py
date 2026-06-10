@@ -1,4 +1,5 @@
 # app/main.py
+import os
 from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -18,7 +19,16 @@ from .auth import (
 from .config import settings
 from .database import engine, get_db
 from . import models, schemas
+from . import authz
+from .routers import teams
 import logging
+
+# Optional Phase 2 clean-cutover migration, gated behind an env flag so normal
+# startup is unaffected. Must run BEFORE create_all so the recreated session
+# tables have the new owner_user_id / team_id columns.
+if os.getenv("PHASE2_CUTOVER") == "run":
+    from .migrations.phase2_cutover import run_phase2_cutover
+    run_phase2_cutover(engine)
 
 models.Base.metadata.create_all(bind=engine)
 app = FastAPI(
@@ -33,6 +43,9 @@ limiter = Limiter(key_func=get_remote_address)
 limiter.enabled = settings.RATE_LIMIT_ENABLED
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Mount the teams router (Phase 2)
+app.include_router(teams.router)
 
 logger = logging.getLogger(__name__)
 
@@ -475,11 +488,34 @@ async def delete_product(
 # ==================== SESSIONS (Management) ====================
 
 @app.get("/api/session/active", response_model=schemas.GlobalSessionDTO)
-def get_active_session(db: Session = Depends(get_db)):
-    """Get currently active session"""
-    session = db.query(models.GlobalSession).filter(
+def get_active_session(
+    team_id: int = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get the caller's most-recent active session.
+
+    Returns the most recently created active session the caller owns (personal)
+    or that belongs to a team they are a member of. An optional team_id query
+    param disambiguates to a specific team's active session. 404 if none.
+    """
+    query = db.query(models.GlobalSession).filter(
         models.GlobalSession.is_active == True
-    ).first()
+    )
+
+    if team_id is not None:
+        # Caller must be a member of the requested team (404 otherwise).
+        authz.require_team_member(team_id, current_user, db)
+        query = query.filter(models.GlobalSession.team_id == team_id)
+    else:
+        team_ids = authz.get_user_team_ids(current_user, db)
+        ownership = [models.GlobalSession.owner_user_id == current_user.id]
+        if team_ids:
+            ownership.append(models.GlobalSession.team_id.in_(team_ids))
+        from sqlalchemy import or_
+        query = query.filter(or_(*ownership))
+
+    session = query.order_by(models.GlobalSession.created_at.desc()).first()
 
     if not session:
         raise HTTPException(status_code=404, detail="No active session")
@@ -493,15 +529,41 @@ async def create_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Create new session with real-time notification"""
-    # Deactivate all existing sessions
-    db.query(models.GlobalSession).update({"is_active": False})
+    """Create new session with real-time notification.
 
-    # Create new session
-    new_session = models.GlobalSession(
-        name=session_data.name,
-        is_active=True
-    )
+    Defaults to a personal session owned by the caller. If team_id is provided,
+    the caller must be a member of that team and the session is owned by the
+    team (owner_user_id=None). Deactivation is scoped to the same owner
+    dimension (only the caller's other personal sessions, or only that team's
+    other sessions).
+    """
+    team_id = getattr(session_data, "team_id", None)
+
+    if team_id is not None:
+        # Caller must be a member of the team (404 otherwise).
+        authz.require_team_member(team_id, current_user, db)
+        # Deactivate only this team's other active sessions.
+        db.query(models.GlobalSession).filter(
+            models.GlobalSession.team_id == team_id
+        ).update({"is_active": False})
+        new_session = models.GlobalSession(
+            name=session_data.name,
+            is_active=True,
+            owner_user_id=None,
+            team_id=team_id,
+        )
+    else:
+        # Deactivate only the caller's other personal active sessions.
+        db.query(models.GlobalSession).filter(
+            models.GlobalSession.owner_user_id == current_user.id
+        ).update({"is_active": False})
+        new_session = models.GlobalSession(
+            name=session_data.name,
+            is_active=True,
+            owner_user_id=current_user.id,
+            team_id=None,
+        )
+
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
@@ -530,13 +592,8 @@ async def complete_session(
     Complete session and return items grouped by distributor
     This data is used for PDF generation (one PDF per distributor)
     """
-    # Get session
-    session = db.query(models.GlobalSession).filter(
-        models.GlobalSession.id == session_id
-    ).first()
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Enforce access (404 if missing or caller has no relationship).
+    session = authz.require_session_access(session_id, current_user, db, write=True)
 
     # Get all items with products and distributors (JOIN)
     items = db.query(models.GlobalSessionItem).filter(
@@ -605,6 +662,9 @@ async def clear_session(
     current_user: models.User = Depends(get_current_user)
 ):
     """Clear all items from a session with real-time notification"""
+    # Enforce access (404 if missing or caller has no relationship).
+    authz.require_session_access(session_id, current_user, db, write=True)
+
     deleted_count = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
     ).delete()
@@ -631,8 +691,15 @@ async def clear_session(
 # ==================== SESSION ITEMS (Operations) ====================
 
 @app.get("/api/session/{session_id}/items", response_model=List[schemas.GlobalSessionItemDTO])
-def get_session_items(session_id: int, db: Session = Depends(get_db)):
+def get_session_items(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """Get all items in a session"""
+    # Enforce access (404 if missing or caller has no relationship).
+    authz.require_session_access(session_id, current_user, db)
+
     items = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
     ).all()
@@ -663,13 +730,8 @@ async def add_session_item(
     current_user: models.User = Depends(get_current_user)
 ):
     """Add item to session (or increment if exists) with real-time notification"""
-    # Validate session exists before creating an item
-    session = db.query(models.GlobalSession).filter(
-        models.GlobalSession.id == session_id
-    ).first()
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Validate session exists and the caller has access (404 otherwise).
+    authz.require_session_access(session_id, current_user, db, write=True)
 
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
@@ -743,6 +805,9 @@ async def update_session_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
+    # Enforce access to the item's session (404 if no access; do not leak).
+    authz.require_session_access(item.session_id, current_user, db, write=True)
+
     # Check version for optimistic locking
     if item.version != update_data.version:
         raise HTTPException(
@@ -799,6 +864,9 @@ async def delete_session_item(
 
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
+
+    # Enforce access to the item's session (404 if no access; do not leak).
+    authz.require_session_access(item.session_id, current_user, db, write=True)
 
     # Get product name before deleting
     product = db.query(models.Product).filter(

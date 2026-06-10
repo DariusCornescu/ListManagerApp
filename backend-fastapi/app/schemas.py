@@ -35,7 +35,8 @@ class GlobalSessionBase(BaseModel):
     name: str
 
 class GlobalSessionCreate(GlobalSessionBase):
-    pass
+    # Optional: when set, creates a team-owned session (caller must be a member).
+    team_id: Optional[int] = None
 
 class GlobalSessionDTO(GlobalSessionBase):
     id: int
@@ -43,7 +44,9 @@ class GlobalSessionDTO(GlobalSessionBase):
     created_at: datetime
     completed_at: Optional[datetime] = None
     version: int
-    
+    owner_user_id: Optional[int] = None
+    team_id: Optional[int] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # ===== Session Item Schemas =====

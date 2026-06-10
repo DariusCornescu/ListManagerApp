@@ -5,6 +5,46 @@ Newest entries on top.
 
 ---
 
+## 2026-06-10 — Phase 2: Teams & session ownership (complete, suite green)
+
+Built on branch `security-hardening` via a waved multi-agent workflow (Wave 0 foundation →
+Wave 1 four parallel agents → Wave 2 integration). Migration decision: **WIPE / clean
+cutover** (chosen by Darius).
+
+**Added**
+- **Models:** `Team`, `TeamMember(role: admin|member)`, `TeamInvite` (single-use, 7-day TTL);
+  `GlobalSession` gained nullable `owner_user_id` + `team_id` with a DB
+  `CheckConstraint("(owner_user_id IS NULL) != (team_id IS NULL)")` (exactly one set).
+- **`app/authz.py`:** `require_session_access` (→404 hides inaccessible sessions),
+  `require_team_member`, `require_team_admin` (→403 for members lacking the role),
+  `get_user_team_ids`. Team role is kept separate from system `User.role`.
+- **`app/routers/teams.py`** (first APIRouter): create/list/get/rename/delete team,
+  invites (create/accept), member list/promote/demote/remove, with last-admin protection.
+- **`app/migrations/phase2_cutover.py`:** idempotent wipe, gated behind `PHASE2_CUTOVER=run`.
+- **Tests:** `test_authz_matrix.py` (42 cross-user checks) + `test_teams.py` (21).
+
+**Changed (mobile-compat notes)**
+- `POST /api/session/create`: defaults to a personal session (owner = caller); optional
+  `team_id` (requires membership); "deactivate others" is now scoped, not global.
+- `GET /api/session/active`: now **auth-required** and owner/team-scoped (was public).
+  Android's RetrofitClient attaches the JWT, so logged-in clients are unaffected. Response
+  gained nullable `owner_user_id`/`team_id` (Gson-safe).
+- Every session/item endpoint now goes through `require_session_access`.
+
+**Test suite:** `140 passed` (was 77). Verified independently by coordinator (2 runs).
+
+**Still open / deferred**
+- `/api/stats` still surfaces a global active session **unauthenticated** — minor info leak,
+  left for a follow-up (scope or auth-gate it).
+- **F7** WebSocket broadcast is still global (cross-team leak) — Phase 3.
+- To apply the cutover on the real dev DB: run once with `PHASE2_CUTOVER=run` (or delete
+  `listmanager.db`).
+
+**Next:** Phase 3 (multi-writer sync hardening) — start in plan mode; or address the
+deferred items first.
+
+---
+
 ## 2026-06-10 — Phase 1: Security Hardening (complete, suite green)
 
 Done on branch `security-hardening` via two parallel agents (backend app+tests; seeder).
