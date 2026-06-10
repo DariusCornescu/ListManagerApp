@@ -1730,6 +1730,20 @@ out of scope for this feature):
    `/api/session/{-1}/items` → 404 → retries forever. Follow-up: re-target
    queued session-item ops to the resolved server session id during resolve, or
    drop ops whose session no longer exists.
+3. Item stranding (Task 6 review): items added to a negative-id fallback
+   session (e.g. voice-adds from Home before the workspace's server session was
+   resolved) are orphaned when `activateServerSession` deactivates the fallback
+   without migrating its items. Needs item migration + upload once the
+   device→server item sync path exists.
+4. Resolve-blocking UX (Task 6 review): `resolver.resolve()` runs before items
+   display; on a black-hole network the user can watch a spinner for up to the
+   30s OkHttp timeouts. Consider `withTimeout(5s)` around resolve or
+   cached-items-first + background refresh.
+5. DISCOVERED GAP, decided out-of-band: the app has NO device→server upload
+   path for session items at all (nothing calls `api.addSessionItem` outside
+   the SyncService replay of ops that nothing enqueues; the WebSocket only
+   sends pings). Team sessions are one-way (server→device) until a
+   write-through/queue path is added for item add/update/delete/clear.
 
 ```powershell
 git add android-native/app/src/main/java/com/darius/listmanager docs/PROGRESS.md
