@@ -3,6 +3,7 @@ package com.darius.listmanager.data.usecase
 import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.DistributorRepository
 import com.darius.listmanager.data.repository.ProductRepository
+import com.darius.listmanager.data.repository.RepoResult
 import com.darius.listmanager.data.repository.UnknownRepository
 
 class SaveProductToCatalogUseCase(
@@ -19,7 +20,13 @@ class SaveProductToCatalogUseCase(
 
         // Step 2: Create product
         val product = ProductEntity( name = productName.trim(), distributorId = distributorId, aliases = aliases.trim() )
-        val productId = productRepository.insert(product)
+        val insertResult = productRepository.insert(product)
+        val productId = when (insertResult) {
+            is RepoResult.Success -> insertResult.resourceId ?: throw IllegalStateException("Missing product id")
+            is RepoResult.QueuedOffline -> insertResult.resourceId ?: throw IllegalStateException("Missing product id")
+            is RepoResult.Forbidden -> throw SecurityException("Doar administratorii pot modifica catalogul")
+            is RepoResult.Error -> throw IllegalStateException(insertResult.message)
+        }
 
         // Step 3: Remove from unknown list if ID provided
         unknownProductId?.let { id -> unknownRepository.deleteById(id) }

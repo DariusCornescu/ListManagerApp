@@ -42,7 +42,24 @@ class MainActivity : ComponentActivity() {
         syncService.getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
         }
-        
+
+        // Restore observable login state from persisted token
+        if (syncService.isLoggedIn()) {
+            com.darius.listmanager.data.repository.AuthState.setLoggedIn(
+                true,
+                getSharedPreferences("auth", 0).getString("saved_username", null)
+            )
+        }
+
+        // Handle token expiry (HTTP 401 on an authenticated request): clear session,
+        // disconnect the WebSocket and signal the app to route to login.
+        RetrofitClient.onUnauthorized = {
+            Log.w(TAG, "Received 401 - session expired, clearing auth")
+            syncService.clearAuthToken()
+            webSocketService.disconnect()
+            com.darius.listmanager.data.repository.AuthState.notifySessionExpired()
+        }
+
         SyncWorkManager.initialize(applicationContext)
         Log.d(TAG, "SyncWorkManager initialized")
         

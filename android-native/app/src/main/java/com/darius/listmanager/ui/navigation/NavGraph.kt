@@ -38,9 +38,9 @@ fun NavGraph(
         composable("login") {
             LoginScreen(
                 onLoginSuccess = {
-                    onLoginStateChanged()  // Notify state change
+                    onLoginStateChanged()  // Notify state change (observable AuthState already updated)
                     navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onBack = if (navController.previousBackStackEntry != null) {
@@ -70,9 +70,9 @@ fun NavGraph(
             AccountScreen(
                 onBack = { navController.popBackStack() },
                 onLogout = {
-                    onLoginStateChanged()  // Notify state change
-                    // Navigate to home after logout
-                    navController.navigate("home") {
+                    onLoginStateChanged()  // Notify state change (observable AuthState already cleared)
+                    // After logout, route to login and clear the entire back stack.
+                    navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }
                 },

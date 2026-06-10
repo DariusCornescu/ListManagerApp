@@ -103,6 +103,33 @@
 
 ---
 
+## Workstream 4 — Premium aesthetic + team UX (Editorial Minimal, light + dark)
+Decision: Editorial Minimal (light-first, matching dark); personal-first with a team switcher.
+
+### WS4a — Theme + redesigned login (independent; build right after WS1)
+- **Theme** (`ui/theme/Color.kt`, `Theme.kt`, `Type.kt`): replace the default purple template.
+  Light: bg `#F7F6F3`, surface `#FFFFFF`, primary `#4F46E5`, onPrimary `#FFFFFF`, text `#18181B`,
+  muted `#6B7280`, outline/hairline `#E7E5E0`, success `#16A34A`, error `#DC2626`.
+  Dark: bg `#18181B`, surface `#1F1F23`, primary `#6366F1`, text `#F4F4F5`, muted `#9CA3AF`,
+  outline `#2E2E33`. **Disable `dynamicColor`** (keep brand colors). Bundle **Inter** in
+  `res/font` + a full type scale (SemiBold/Bold headings w/ tight tracking, Regular body).
+- **Components** (`ui/components/`): `PrimaryButton` (full-width 52dp indigo, 14dp radius),
+  `AppTextField` (labeled, outlined, indigo focus), `AppCard` (white, 1dp hairline + soft shadow).
+- **Login/Register** (`ui/screens/LoginScreen.kt`): wordmark + tagline, labeled email/password
+  with visibility toggle, full-width indigo Sign in, Create-account toggle (register gets an
+  email field), de-emphasized "Continue offline" text link, **remove demo creds** (`:370`).
+  Keep `AuthViewModel` hooks + the WS1 auth gate intact.
+- Verify `assembleDebug`; batch boundary `installDebug`.
+
+### WS4b — Team switcher + create/join (after WS2 session sync)
+- Android team API + DTOs (`POST`/`GET /api/teams`, `POST /api/teams/{id}/invites`,
+  `POST /api/teams/invites/{code}/accept`, `GET /api/teams/{id}/members`), `TeamRepository`/VM.
+- Top-bar **context switcher** (Personal / Teams / Create team / Join with code); selecting a
+  team sets the session context (ties to WS2: `createSession`/`getActiveSession` scoped by team).
+- Create-team + Join-by-code screens.
+
+**Revised order:** WS1 (done) → **WS4a** → WS2 → WS4b → WS3 (much absorbed by the theme).
+
 ## Self-review notes
 - **Spec coverage:** WS1 §1.1→Tasks 1-3; §1.2→Task 4; §1.3→Task 5; §1.4→Task 6. WS2→Tasks 7-11. WS3→Tasks 12-14. All spec items mapped.
 - **Verification caveat:** compile-checked here; behavior verified on-device per batch (no automated UI tests added — out of scope this pass).
