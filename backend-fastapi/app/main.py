@@ -1,6 +1,9 @@
 # app/main.py
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from .websocket_manager import manager
 from .auth import decode_access_token
 from sqlalchemy.orm import Session
@@ -12,6 +15,7 @@ from .auth import (
     get_current_user,
     get_current_admin_user
 )
+from .config import settings
 from .database import engine, get_db
 from . import models, schemas
 import logging
@@ -22,6 +26,14 @@ app = FastAPI(
     description="Voice-enabled list management backend with WebSocket support",
     version="1.0.0"
 )
+
+# ===== RATE LIMITING =====
+limiter = Limiter(key_func=get_remote_address)
+# Disable in tests (or any env) via RATE_LIMIT_ENABLED=false
+limiter.enabled = settings.RATE_LIMIT_ENABLED
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 logger = logging.getLogger(__name__)
 
 # ===== AUTO-SEED ON STARTUP =====
@@ -57,7 +69,8 @@ def health_check():
 # ==================== AUTHENTICATION ====================
 
 @app.post("/api/auth/register", response_model=schemas.UserDTO)
-def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     """
     Register new user
     Public endpoint - anyone can register
@@ -111,7 +124,8 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=schemas.Token)
-def login(login_data: schemas.UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends(get_db)):
     """
     Login and get JWT token
     Public endpoint
@@ -166,6 +180,45 @@ def get_current_user_info(current_user: models.User = Depends(get_current_user))
     return current_user
 
 
+@app.put("/api/auth/me", response_model=schemas.UserDTO)
+def update_current_user_info(
+    update_data: schemas.UserUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's email and/or password
+    Protected endpoint - requires authentication
+    """
+    # Update email if provided (uniqueness check; format validated by EmailStr)
+    if update_data.email is not None and update_data.email != current_user.email:
+        existing_email = db.query(models.User).filter(
+            models.User.email == update_data.email,
+            models.User.id != current_user.id
+        ).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+        current_user.email = update_data.email
+
+    # Update password if provided (enforce bcrypt 72-byte limit, re-hash)
+    if update_data.password is not None:
+        password_bytes = update_data.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail="Password is too long (maximum 72 bytes allowed). Please use a shorter password."
+            )
+        current_user.hashed_password = get_password_hash(update_data.password)
+
+    db.commit()
+    db.refresh(current_user)
+
+    return current_user
+
+
 # ==================== DISTRIBUTORS (CRUD) ====================
 
 @app.get("/api/catalog/distributors", response_model=List[schemas.DistributorDTO])
@@ -191,9 +244,10 @@ def get_distributor(distributor_id: int, db: Session = Depends(get_db)):
 @app.post("/api/catalog/distributors", response_model=schemas.DistributorDTO)
 async def create_distributor(
     distributor: schemas.DistributorCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Create new distributor with real-time notification (no auth required for demo)"""
+    """Create new distributor with real-time notification (admin only)"""
     # Check for duplicates
     existing = db.query(models.Distributor).filter(
         models.Distributor.distributor_name == distributor.distributor_name
@@ -229,9 +283,10 @@ async def create_distributor(
 async def update_distributor(
     distributor_id: int,
     distributor_update: schemas.DistributorCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Update distributor with real-time notification (no auth required for demo)"""
+    """Update distributor with real-time notification (admin only)"""
     distributor = db.query(models.Distributor).filter(
         models.Distributor.id == distributor_id
     ).first()
@@ -261,9 +316,10 @@ async def update_distributor(
 @app.delete("/api/catalog/distributors/{distributor_id}")
 async def delete_distributor(
     distributor_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Delete distributor with real-time notification (no auth required for demo)"""
+    """Delete distributor with real-time notification (admin only)"""
     distributor = db.query(models.Distributor).filter(
         models.Distributor.id == distributor_id
     ).first()
@@ -320,9 +376,10 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 @app.post("/api/catalog/products", response_model=schemas.ProductDTO)
 async def create_product(
     product: schemas.ProductCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Create new product with real-time notification (no auth required for demo)"""
+    """Create new product with real-time notification (admin only)"""
     # Create product
     db_product = models.Product(**product.model_dump())
     db.add(db_product)
@@ -349,9 +406,10 @@ async def create_product(
 async def update_product(
     product_id: int,
     product_update: schemas.ProductCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Update product with real-time notification (no auth required for demo)"""
+    """Update product with real-time notification (admin only)"""
     product = db.query(models.Product).filter(
         models.Product.id == product_id
     ).first()
@@ -386,9 +444,10 @@ async def update_product(
 @app.delete("/api/catalog/products/{product_id}")
 async def delete_product(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Delete product with real-time notification (no auth required for demo)"""
+    """Delete product with real-time notification (admin only)"""
     product = db.query(models.Product).filter(
         models.Product.id == product_id
     ).first()
@@ -604,6 +663,14 @@ async def add_session_item(
     current_user: models.User = Depends(get_current_user)
 ):
     """Add item to session (or increment if exists) with real-time notification"""
+    # Validate session exists before creating an item
+    session = db.query(models.GlobalSession).filter(
+        models.GlobalSession.id == session_id
+    ).first()
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
         models.GlobalSessionItem.product_id == item_data.product_id

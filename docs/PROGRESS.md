@@ -5,6 +5,43 @@ Newest entries on top.
 
 ---
 
+## 2026-06-10 — Phase 1: Security Hardening (complete, suite green)
+
+Done on branch `security-hardening` via two parallel agents (backend app+tests; seeder).
+
+**Fixed**
+- **F1** — catalog/distributor/product create/update/delete now require **admin** auth.
+  The 6 previously-failing `*_no_auth` tests pass; success tests updated to use admin creds.
+- **F2** — removed the insecure `SECRET_KEY` fallback. New `app/config.py`
+  (pydantic-settings); missing `SECRET_KEY` now **fails fast** (ValidationError). Added
+  `backend-fastapi/.env.example`. Tests inject a test key via `conftest.py`.
+- **F3** — `seed_admin.py`: no default-credential admin (skips with a warning if
+  `ADMIN_PASSWORD` unset), **never re-resets** an existing user's password, dev test-user
+  gated behind `SEED_DEV_USERS`+`TEST_USER_PASSWORD`, no plaintext password logging.
+- **F5** — `slowapi` rate limiting (`5/minute`) on `/api/auth/login` and `/register`,
+  disableable via `RATE_LIMIT_ENABLED` (off in tests).
+- **F6** — implemented `PUT /api/auth/me` (the route Android already calls); added tests.
+- **F8** — `add_session_item` now 404s on a missing session.
+- **F10** — deleted the stale `tests/TEST_SUMMARY.md`.
+
+**Test suite:** `77 passed` (was 6 failed / 66 passed). Verified by coordinator.
+
+**Deferred (with reason) — backlog for later phases:**
+- **F4** refresh/revocation — keep 24h access token for now; revisit when clients need
+  longer sessions or forced logout.
+- **F7** scope WebSocket broadcasts — belongs to Phase 2/3 (needs the ownership model).
+- **F11** CORS config — add when a browser/Flutter-web client appears.
+- **F12** `pip-audit` — venv pip is broken (see note); run after repairing it.
+
+**Heads-up:** the venv's own `pip` is corrupted (`pip._internal.operations.build` missing);
+slowapi was installed via the base interpreter targeting the venv. Repair before relying on
+`venv\Scripts\python -m pip` directly.
+
+**Next:** human review of the diff / merge `security-hardening`. Then Phase 2 (Teams) —
+start in plan mode; the global-session migration is a STOP-and-ask point.
+
+---
+
 ## 2026-06-10 — Phase 0: Recon & Audit (read-only, complete)
 
 **Changed**

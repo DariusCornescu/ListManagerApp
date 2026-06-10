@@ -1,9 +1,9 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import os
+from .config import settings
 
-DATABASE_URL = os.getenv( "DATABASE_URL", "sqlite:///./listmanager.db")
+DATABASE_URL = settings.DATABASE_URL
 
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)

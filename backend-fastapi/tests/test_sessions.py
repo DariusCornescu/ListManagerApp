@@ -221,6 +221,21 @@ class TestSessionItems:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_add_item_to_nonexistent_session(self, client, auth_headers, sample_product):
+        """Test adding item to a nonexistent session returns 404"""
+        item_data = {
+            "product_id": sample_product.id,
+            "quantity": 3
+        }
+        response = client.post(
+            "/api/session/99999/items",
+            json=item_data,
+            headers=auth_headers
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Session not found" in response.json()["detail"]
+
     def test_add_existing_item_increments_quantity(self, client, auth_headers, sample_session_item, sample_session, sample_product):
         """Test adding existing item increments quantity"""
         item_data = {

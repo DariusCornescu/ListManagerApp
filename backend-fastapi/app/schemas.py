@@ -81,6 +81,10 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

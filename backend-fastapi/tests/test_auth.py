@@ -136,6 +136,39 @@ class TestAuthenticatedEndpoints:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
+    def test_update_current_user_success(self, client, auth_headers, sample_user):
+        """Test updating current user's email and password with valid token"""
+        update_data = {
+            "email": "updated@example.com",
+            "password": "newsecurepass456"
+        }
+        response = client.put("/api/auth/me", json=update_data, headers=auth_headers)
+
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["email"] == "updated@example.com"
+        assert data["username"] == "testuser"
+
+        # New password works for login; old one no longer does
+        login_new = client.post(
+            "/api/auth/login",
+            json={"username": "testuser", "password": "newsecurepass456"}
+        )
+        assert login_new.status_code == status.HTTP_200_OK
+
+        login_old = client.post(
+            "/api/auth/login",
+            json={"username": "testuser", "password": "password123"}
+        )
+        assert login_old.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_update_current_user_no_token(self, client):
+        """Test updating current user fails without token"""
+        update_data = {"email": "updated@example.com"}
+        response = client.put("/api/auth/me", json=update_data)
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
     def test_protected_endpoint(self, client, auth_headers, sample_user):
         """Test protected endpoint with valid token"""
         response = client.get("/api/protected/test", headers=auth_headers)

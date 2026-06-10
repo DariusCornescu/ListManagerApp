@@ -1,4 +1,10 @@
 # tests/conftest.py
+import os
+# Must be set BEFORE importing app.* (config.Settings requires SECRET_KEY,
+# and we disable rate limiting so the suite's many logins aren't throttled).
+os.environ.setdefault("SECRET_KEY", "test-secret-key-not-for-prod")
+os.environ.setdefault("RATE_LIMIT_ENABLED", "false")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
