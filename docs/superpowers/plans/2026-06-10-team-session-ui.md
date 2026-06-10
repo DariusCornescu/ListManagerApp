@@ -1647,6 +1647,19 @@ and change the `DrawerContent(...)` call to:
 
 (Switching navigates to the session screen so the user immediately sees the workspace's session; `SessionViewModel.observeWorkspace()` does the reload.)
 
+- [ ] **Step 2b: Reset workspace on logout (review finding from Task 3)**
+
+The persisted workspace must not survive a user switch on a shared device. In
+`AccountScreen`'s logout path (where `AuthState.clear()` / token clearing is
+triggered — follow the existing logout flow from `AccountScreen.kt` /
+`AuthViewModel.logout()`), add:
+
+```kotlin
+WorkspaceManager.getInstance(context).fallbackToPersonal()
+```
+
+so the next login always starts in the Personal workspace.
+
 - [ ] **Step 3: Full build + all tests**
 
 Run: `cd android-native; .\gradlew assembleDebug testDebug`
