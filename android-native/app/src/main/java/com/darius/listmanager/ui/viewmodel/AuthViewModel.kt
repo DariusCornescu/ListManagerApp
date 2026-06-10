@@ -119,27 +119,25 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     
-    fun register(username: String, password: String) {
-        if (username.isBlank() || password.isBlank()) {
+    fun register(username: String, password: String, email: String) {
+        if (username.isBlank() || password.isBlank() || email.isBlank()) {
             _uiState.value = _uiState.value.copy(
                 error = "Completați toate câmpurile"
             )
             return
         }
-        
+
         if (password.length < 6) {
             _uiState.value = _uiState.value.copy(
                 error = "Parola trebuie să aibă cel puțin 6 caractere"
             )
             return
         }
-        
+
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoading = true, error = null, registrationSuccess = false)
-            
+
             try {
-                // Generate email from username
-                val email = "${username.lowercase()}@listmanager.local"
                 val response = RetrofitClient.api.register(
                     com.darius.listmanager.network.RegisterRequest(username, email, password)
                 )
