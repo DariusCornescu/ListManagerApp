@@ -241,3 +241,45 @@ class TestLastAdminProtection:
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+class TestLeaveTeam:
+    """Self-removal (leave team) — any member may remove themselves."""
+
+    def test_member_can_leave_team(self, client, team_member_headers, team):
+        """A non-admin member can remove themselves from the team."""
+        me = client.get("/api/auth/me", headers=team_member_headers).json()
+
+        response = client.delete(
+            f"/api/teams/{team.id}/members/{me['id']}",
+            headers=team_member_headers,
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        # They no longer see the team.
+        listing = client.get("/api/teams", headers=team_member_headers)
+        assert team.id not in [t["id"] for t in listing.json()]
+
+    def test_last_admin_cannot_leave(self, client, auth_headers, team):
+        """The last admin cannot remove themselves (team would be orphaned)."""
+        me = client.get("/api/auth/me", headers=auth_headers).json()
+
+        response = client.delete(
+            f"/api/teams/{team.id}/members/{me['id']}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_member_still_cannot_remove_others(
+        self, client, team_member_headers, auth_headers, team
+    ):
+        """A non-admin member removing someone ELSE is still forbidden (403)."""
+        admin = client.get("/api/auth/me", headers=auth_headers).json()
+
+        response = client.delete(
+            f"/api/teams/{team.id}/members/{admin['id']}",
+            headers=team_member_headers,
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN

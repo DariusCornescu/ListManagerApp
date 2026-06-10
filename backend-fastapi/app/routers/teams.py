@@ -254,7 +254,13 @@ def remove_member(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    require_team_admin(team_id, current_user, db)
+    # Self-removal ("leave team") only requires membership; removing anyone
+    # else still requires team-admin. The last-admin guard below applies to
+    # both paths so a team is never left without an admin.
+    if user_id == current_user.id:
+        require_team_member(team_id, current_user, db)
+    else:
+        require_team_admin(team_id, current_user, db)
 
     member = (
         db.query(models.TeamMember)
