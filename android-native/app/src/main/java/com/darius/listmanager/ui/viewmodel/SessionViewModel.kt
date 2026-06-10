@@ -10,9 +10,13 @@ import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.dao.SessionItemWithProduct
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.usecase.GeneratePdfsUseCase
+import com.darius.listmanager.data.workspace.Workspace
+import com.darius.listmanager.data.workspace.WorkspaceManager
+import com.darius.listmanager.data.workspace.WorkspaceSessionResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -23,7 +27,8 @@ data class SessionUiState(
     val error: String? = null,
     val isGeneratingPdfs: Boolean = false,
     val pdfGenerationProgress: String? = null,
-    val generatedPdfs: Map<String, File>? = null
+    val generatedPdfs: Map<String, File>? = null,
+    val workspaceName: String = "Personal",
 )
 
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
@@ -32,6 +37,8 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
     private val pdfRepository = PdfRepository(application)
     private val generatePdfsUseCase = GeneratePdfsUseCase(sessionRepository, pdfRepository)
+    private val workspaceManager = WorkspaceManager.getInstance(application)
+    private val resolver = WorkspaceSessionResolver(database)
 
     private val _uiState = MutableStateFlow(SessionUiState())
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
@@ -39,22 +46,36 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private var currentSessionId: Long? = null
 
     init {
-        loadSession()
+        observeWorkspace()
     }
 
-    private fun loadSession() {
+    private fun observeWorkspace() {
         viewModelScope.launch {
-            try {
-                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
-                val session = sessionRepository.getOrCreateActiveSession(
-                    workspaceManager.currentWorkspace.value.teamIdOrNull
+            workspaceManager.currentWorkspace.collectLatest { workspace ->
+                _uiState.value = _uiState.value.copy(
+                    isLoading = true,
+                    workspaceName = workspace.displayName,
                 )
-                currentSessionId = session.id
-                sessionRepository.getSessionItemsFlow(session.id).collect { items ->
-                    _uiState.value = _uiState.value.copy( items = items, isLoading = false )
+                try {
+                    // Best effort: align with the server session for this
+                    // workspace. Offline falls back to the local cache.
+                    when (resolver.resolve(workspace)) {
+                        is WorkspaceSessionResolver.ResolveResult.AccessLost -> {
+                            workspaceManager.fallbackToPersonal()
+                            return@collectLatest // flow re-emits with Personal
+                        }
+                        else -> { /* Resolved or Offline — continue below */ }
+                    }
+                    val session = sessionRepository.getOrCreateActiveSession(workspace.teamIdOrNull)
+                    currentSessionId = session.id
+                    sessionRepository.getSessionItemsFlow(session.id).collect { items ->
+                        _uiState.value = _uiState.value.copy(items = items, isLoading = false)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
                 }
-            } catch (e: Exception) {
-                _uiState.value = SessionUiState( isLoading = false, error = e.message )
             }
         }
     }
