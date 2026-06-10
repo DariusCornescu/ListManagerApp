@@ -2,6 +2,7 @@ package com.darius.listmanager.data.workspace
 
 import android.database.sqlite.SQLiteConstraintException
 import android.util.Log
+import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.network.CreateSessionRequest
@@ -43,7 +44,10 @@ class WorkspaceSessionResolver(
 
             when {
                 response.isSuccessful -> {
-                    val dto = response.body()!!
+                    val dto = response.body() ?: run {
+                        Log.e(TAG, "resolve: 2xx but null body")
+                        return ResolveResult.Offline
+                    }
                     database.sessionDao().activateServerSession(
                         serverId = dto.id, name = dto.name, teamId = teamId
                     )
@@ -56,7 +60,12 @@ class WorkspaceSessionResolver(
                     ResolveResult.Offline // treat as transient; keep cached state
                 }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: IOException) {
+            ResolveResult.Offline
+        } catch (e: Exception) {
+            Log.e(TAG, "resolve failed: ${e.javaClass.simpleName}")
             ResolveResult.Offline
         }
     }
@@ -67,25 +76,33 @@ class WorkspaceSessionResolver(
             val response = api.getSessionItems(sessionId)
             if (response.isSuccessful) {
                 val dao = database.sessionItemDao()
-                dao.deleteAllInSession(sessionId)
-                response.body().orEmpty().forEach { item ->
-                    try {
-                        dao.insert(
-                            SessionItemEntity(
-                                id = item.id,
-                                sessionId = sessionId,
-                                productId = item.product_id,
-                                quantity = item.quantity,
+                database.withTransaction {
+                    dao.deleteAllInSession(sessionId)
+                    response.body().orEmpty().forEach { item ->
+                        try {
+                            dao.insert(
+                                SessionItemEntity(
+                                    id = item.id,
+                                    sessionId = sessionId,
+                                    productId = item.product_id,
+                                    quantity = item.quantity,
+                                )
                             )
-                        )
-                    } catch (e: SQLiteConstraintException) {
-                        // Product not yet in local catalog — skip and keep going.
-                        Log.w(TAG, "Skipping item ${item.id}: product ${item.product_id} not in local catalog")
+                        } catch (e: SQLiteConstraintException) {
+                            // Product not yet in local catalog — skip and keep going.
+                            Log.w(TAG, "skipping item ${item.id}: product ${item.product_id} not in local catalog")
+                        }
                     }
                 }
+            } else {
+                Log.w(TAG, "getSessionItems returned HTTP ${response.code()}; keeping cached items")
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: IOException) {
             Log.w(TAG, "item pull failed; keeping cached items")
+        } catch (e: Exception) {
+            Log.e(TAG, "pullItems failed: ${e.javaClass.simpleName}")
         }
     }
 

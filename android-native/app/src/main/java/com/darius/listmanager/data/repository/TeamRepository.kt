@@ -1,5 +1,6 @@
 package com.darius.listmanager.data.repository
 
+import android.util.Log
 import com.darius.listmanager.network.*
 import retrofit2.Response
 import java.io.IOException
@@ -57,8 +58,14 @@ class TeamRepository(private val api: ListManagerApi = RetrofitClient.api) {
                 else ->
                     TeamResult.Failure("Server error (${response.code()})")
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: IOException) {
             TeamResult.Offline
+        } catch (e: Exception) {
+            TeamResult.Failure("Unexpected error: ${e.javaClass.simpleName}")
         }
     }
+
+    private companion object { const val TAG = "TeamRepository" }
 }
