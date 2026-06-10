@@ -21,7 +21,7 @@ interface SessionDao {
     @Insert
     suspend fun insert(session: SessionEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsert(session: SessionEntity): Long
 
     @Update
@@ -33,15 +33,18 @@ interface SessionDao {
     @Query("UPDATE sessions SET isActive = 0 WHERE teamId IS :teamId")
     suspend fun deactivateAll(teamId: Long?)
 
+    @Query("SELECT MIN(id) FROM sessions")
+    suspend fun getMinSessionId(): Long?
+
     @Transaction
     suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
         val active = getActiveSession(teamId)
-        return if (active != null) {
-            active
-        } else {
-            val newId = insert(SessionEntity(name = "Current Session", isActive = true, teamId = teamId))
-            getById(newId)!!
-        }
+        if (active != null) return active
+        // Local fallback sessions get negative ids; server-mirrored sessions
+        // (activateServerSession) own the positive id space.
+        val newId = minOf(getMinSessionId() ?: 0L, 0L) - 1L
+        insert(SessionEntity(id = newId, name = "Current Session", isActive = true, teamId = teamId))
+        return getById(newId)!!
     }
 
     /**
