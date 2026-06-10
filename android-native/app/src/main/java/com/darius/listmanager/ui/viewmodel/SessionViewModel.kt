@@ -10,7 +10,6 @@ import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.dao.SessionItemWithProduct
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.usecase.GeneratePdfsUseCase
-import com.darius.listmanager.data.workspace.Workspace
 import com.darius.listmanager.data.workspace.WorkspaceManager
 import com.darius.listmanager.data.workspace.WorkspaceSessionResolver
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -52,9 +51,12 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private fun observeWorkspace() {
         viewModelScope.launch {
             workspaceManager.currentWorkspace.collectLatest { workspace ->
+                currentSessionId = null
                 _uiState.value = _uiState.value.copy(
                     isLoading = true,
                     workspaceName = workspace.displayName,
+                    items = emptyList(),
+                    error = null,
                 )
                 try {
                     // Best effort: align with the server session for this
@@ -69,7 +71,7 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
                     val session = sessionRepository.getOrCreateActiveSession(workspace.teamIdOrNull)
                     currentSessionId = session.id
                     sessionRepository.getSessionItemsFlow(session.id).collect { items ->
-                        _uiState.value = _uiState.value.copy(items = items, isLoading = false)
+                        _uiState.value = _uiState.value.copy(items = items, isLoading = false, error = null)
                     }
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     throw e
