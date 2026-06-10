@@ -5,6 +5,39 @@ Newest entries on top.
 
 ---
 
+## 2026-06-10 — Phase 4: Voice ingestion — server transcription (backend done)
+
+Decision (Darius): **split transcription from ranking** (see `docs/SPEECH_DESIGN.md` §0).
+Transcription goes server-side (Groq `whisper-large-v3-turbo`) when online, with the
+on-device `SpeechRecognizer` as offline fallback; **ranking stays on-device always** — so no
+Python ranker port, no drift, and matching still works offline. Android-first; Flutter/web
+voice out of scope.
+
+**Added (backend, pytest-verifiable now)**
+- `app/transcription.py`: `Transcriber` interface + `GroqTranscriber` (httpx → Groq
+  OpenAI-compatible audio endpoint) + `get_transcriber()` dependency (mockable). Errors never
+  leak the API key.
+- `app/schemas_speech.py`: `TranscriptionResponse`.
+- `POST /api/speech/transcribe` (in `main.py`): auth-required, `@limiter.limit("20/minute")`,
+  `audio/*` only (415), size-capped at `MAX_AUDIO_BYTES` (413), provider failure → 502.
+- `app/config.py`: `GROQ_API_KEY`, `TRANSCRIPTION_MODEL`, `MAX_AUDIO_BYTES`; documented in
+  `.env.example`.
+- `tests/test_transcribe.py`: 7 tests via a fake transcriber (no real network).
+
+**Test suite:** `158 passed` (was 151). Verified independently by coordinator.
+
+**To use real transcription:** set `GROQ_API_KEY` in `.env` (not required to run the suite).
+
+**Deferred (Android, needs device/emulator — see SPEECH_DESIGN.md §0):**
+- Record audio; online → POST to `/api/speech/transcribe`, feed transcript into the existing
+  `ResolveSpokenProductUseCase`; offline → on-device `SpeechRecognizer`. Switch on connectivity
+  via `NetworkHelper`.
+
+**Still open from earlier:** `/api/stats` unauth global active-session leak (minor); Android
+sync follow-on (Phase 3).
+
+---
+
 ## 2026-06-10 — Phase 3: Multi-writer sync hardening (backend op-log, complete)
 
 Scope chosen: **Option C** (backend op-log, backend-first; Android rework deferred). Design in

@@ -5,6 +5,8 @@ SECRET_KEY is REQUIRED and has no default: instantiating Settings without it
 raises a ValidationError, which fails the app fast at startup instead of
 silently falling back to an insecure key.
 """
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +20,16 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./listmanager.db"
 
     RATE_LIMIT_ENABLED: bool = True
+
+    # ===== Speech transcription (server-side, audio -> text only) =====
+    # Groq API key for the OpenAI-compatible transcription endpoint. Optional:
+    # absent at startup is fine; the GroqTranscriber raises a clear error only
+    # when an actual transcription is attempted without it.
+    GROQ_API_KEY: Optional[str] = None
+    # Model used for transcription (Groq whisper-large-v3-turbo by default).
+    TRANSCRIPTION_MODEL: str = "whisper-large-v3-turbo"
+    # Maximum accepted audio upload size in bytes (default: 25 MB).
+    MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
 
     model_config = SettingsConfigDict(
         env_file=".env",
