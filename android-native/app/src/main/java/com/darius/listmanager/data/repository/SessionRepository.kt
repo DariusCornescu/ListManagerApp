@@ -7,12 +7,16 @@ import com.darius.listmanager.data.local.entity.SessionEntity
 import kotlinx.coroutines.flow.Flow
 
 class SessionRepository( private val sessionDao: SessionDao, private val sessionItemDao: SessionItemDao) {
-    fun getActiveSessionFlow(): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow()
+    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow(teamId)
 
-    suspend fun getActiveSession(): SessionEntity? = sessionDao.getActiveSession()
+    suspend fun getActiveSession(teamId: Long?): SessionEntity? = sessionDao.getActiveSession(teamId)
 
-    suspend fun getOrCreateActiveSession(): SessionEntity {
-        return sessionDao.getOrCreateActiveSession()
+    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
+        return sessionDao.getOrCreateActiveSession(teamId)
+    }
+
+    suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
+        sessionDao.activateServerSession(serverId, name, teamId)
     }
 
     suspend fun getSessionById(id: Long): SessionEntity? = sessionDao.getById(id)

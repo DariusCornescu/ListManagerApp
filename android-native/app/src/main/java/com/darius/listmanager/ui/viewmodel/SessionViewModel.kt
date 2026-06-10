@@ -45,7 +45,10 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     private fun loadSession() {
         viewModelScope.launch {
             try {
-                val session = sessionRepository.getOrCreateActiveSession()
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
                 currentSessionId = session.id
                 sessionRepository.getSessionItemsFlow(session.id).collect { items ->
                     _uiState.value = _uiState.value.copy( items = items, isLoading = false )

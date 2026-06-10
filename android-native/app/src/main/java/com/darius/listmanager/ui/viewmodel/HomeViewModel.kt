@@ -78,7 +78,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
 
                         // High confidence - auto-add to session
-                        val session = sessionRepository.getOrCreateActiveSession()
+                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                        val session = sessionRepository.getOrCreateActiveSession(
+                            workspaceManager.currentWorkspace.value.teamIdOrNull
+                        )
                         addProductUseCase.execute(session.id, result.product.id, 1)
 
                         _uiState.value = _uiState.value.copy(
@@ -134,7 +137,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun addSuggestedProduct(productId: Long, productName: String) {
         viewModelScope.launch {
             try {
-                val session = sessionRepository.getOrCreateActiveSession()
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
                 addProductUseCase.execute(session.id, productId, 1)
 
                 _uiState.value = _uiState.value.copy( message = "Added: $productName", suggestions = emptyList() )
