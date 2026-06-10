@@ -5,6 +5,39 @@ Newest entries on top.
 
 ---
 
+## 2026-06-10 — Phase 3: Multi-writer sync hardening (backend op-log, complete)
+
+Scope chosen: **Option C** (backend op-log, backend-first; Android rework deferred). Design in
+`docs/SYNC_DESIGN.md`. Built via a waved multi-agent workflow.
+
+**Added**
+- **Models:** `AppliedOp` (idempotency ledger) and `SessionOp` (append-only op-log with
+  per-session monotonic `seq`); nullable `item_uuid` on `GlobalSessionItem`. All additive.
+- **`app/sync_ops.py`:** `next_seq`, `record_op`, `check_idempotent`, `store_idempotent`,
+  `get_ops_since`. **`app/schemas_sync.py`:** `OpDTO`.
+- **Idempotency:** optional `idempotency_key` on item create/update — same key replays as a
+  no-op returning the stored result (kills the FM3 double-count); different keys still sum.
+- **Op pull endpoint:** `GET /api/session/{id}/ops?since=<seq>` (auth + access-scoped; 404 for
+  non-members, 403 no token).
+- **F7 fixed:** `broadcast_to_session` now scopes WebSocket events to the session's owner/team
+  members; the 6 session/item broadcasts use it (catalog stays global).
+- **Tests:** convergence, idempotency, ops-pull, WS-scoping (11 new).
+
+**Test suite:** `151 passed` (was 140). Verified independently by coordinator.
+
+**Mobile-compat:** all new request fields optional, response fields nullable, existing
+endpoints unchanged in shape — shipped Android client unaffected.
+
+**Deferred (separate follow-on, needs device/emulator — see SYNC_DESIGN.md §6):**
+- Android queue rework: `idempotencyKey` column + send on replay, consume the `?since=` pull
+  endpoint, replace drop-on-409 with a reconcile loop.
+- Still open from earlier: `/api/stats` unauthenticated global active-session leak (minor).
+
+**Next:** Android sync follow-on (on a device), or address the `/api/stats` leak, or Phase 4
+(voice ingestion location — still an undecided decision per the upgrade plan).
+
+---
+
 ## 2026-06-10 — Phase 2: Teams & session ownership (complete, suite green)
 
 Built on branch `security-hardening` via a waved multi-agent workflow (Wave 0 foundation →

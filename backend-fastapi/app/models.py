@@ -1,7 +1,7 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, func, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.orm import relationship
-from .database import Base  
+from .database import Base
 
 class User(Base):
     __tablename__ = "users"
@@ -113,6 +113,41 @@ class GlobalSessionItem(Base):
     created_at = Column(DateTime, default=func.now())
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
     version = Column(Integer, default=0)
-    
+    # Wave 0 (additive, nullable): server-populated client-stable UUID (set in Wave 2).
+    item_uuid = Column(String(36), nullable=True)
+
     session = relationship("GlobalSession", back_populates="items")
     product = relationship("Product")
+
+
+class AppliedOp(Base):
+    """Idempotency ledger: a repeat idempotency key returns the stored result
+    instead of re-applying the operation (fixes FM3)."""
+    __tablename__ = "applied_ops"
+
+    key = Column(String(64), primary_key=True)  # the idempotency key
+    session_id = Column(Integer, ForeignKey("global_sessions.id"))
+    item_id = Column(Integer, nullable=True)
+    result_json = Column(Text, nullable=True)  # JSON string of the produced response
+    created_at = Column(DateTime, default=func.now())
+
+
+class SessionOp(Base):
+    """Append-only op-log with a per-session monotonic seq (assigned by app code).
+    Deletes are recorded as RemoveItem ops (tombstones)."""
+    __tablename__ = "session_ops"
+
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("global_sessions.id"), nullable=False, index=True)
+    seq = Column(Integer, nullable=False)  # per-session monotonic, assigned by app code
+    op_type = Column(String(20), nullable=False)  # AddItem | ChangeQty | RemoveItem | ClearSession
+    item_uuid = Column(String(36), nullable=True)
+    product_id = Column(Integer, nullable=True)
+    qty_delta = Column(Integer, nullable=True)
+    idempotency_key = Column(String(64), unique=True, nullable=True)
+    actor_user_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        Index("ix_session_ops_session_id_seq", "session_id", "seq"),
+    )

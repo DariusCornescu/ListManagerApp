@@ -1,5 +1,6 @@
 # app/main.py
 import os
+import uuid
 from datetime import datetime, timezone
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -20,6 +21,8 @@ from .config import settings
 from .database import engine, get_db
 from . import models, schemas
 from . import authz
+from . import sync_ops
+from .schemas_sync import OpDTO
 from .routers import teams
 import logging
 
@@ -568,8 +571,8 @@ async def create_session(
     db.commit()
     db.refresh(new_session)
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_created",
         "data": {
             "session_id": new_session.id,
@@ -577,7 +580,7 @@ async def create_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, new_session.id, db)
 
     return new_session
 
@@ -633,8 +636,8 @@ async def complete_session(
     db.commit()
     db.refresh(session)
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_completed",
         "data": {
             "session_id": session_id,
@@ -644,7 +647,7 @@ async def complete_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     # Return grouped data
     return {
@@ -669,10 +672,17 @@ async def clear_session(
         models.GlobalSessionItem.session_id == session_id
     ).delete()
 
+    sync_ops.record_op(
+        db,
+        session_id,
+        "ClearSession",
+        actor_user_id=current_user.id,
+    )
+
     db.commit()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_cleared",
         "data": {
             "session_id": session_id,
@@ -680,7 +690,7 @@ async def clear_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return {
         "message": f"Cleared {deleted_count} items from session",
@@ -722,6 +732,22 @@ def get_session_items(
     return result
 
 
+@app.get("/api/session/{session_id}/ops", response_model=List[OpDTO])
+def get_session_ops(
+    session_id: int,
+    since: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Pull the per-session op-log entries newer than `since` (ordered by seq).
+
+    Scoped by require_session_access: non-members get 404 (hidden);
+    unauthenticated callers get 403 from HTTPBearer.
+    """
+    authz.require_session_access(session_id, current_user, db)
+    return sync_ops.get_ops_since(db, session_id, since)
+
+
 @app.post("/api/session/{session_id}/items", response_model=schemas.GlobalSessionItemDTO)
 async def add_session_item(
     session_id: int,
@@ -733,6 +759,13 @@ async def add_session_item(
     # Validate session exists and the caller has access (404 otherwise).
     authz.require_session_access(session_id, current_user, db, write=True)
 
+    key = item_data.idempotency_key
+    # Idempotency: a retried add with the same key returns the stored result
+    # without re-applying (no double-counting).
+    stored = sync_ops.check_idempotent(db, key)
+    if stored is not None:
+        return stored
+
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
         models.GlobalSessionItem.product_id == item_data.product_id
@@ -743,30 +776,67 @@ async def add_session_item(
         existing.quantity += item_data.quantity
         existing.version += 1
         existing.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(existing)
         result_item = existing
         action = "updated"
+        op_type = "ChangeQty"
     else:
         # New item - create it
         new_item = models.GlobalSessionItem(
             session_id=session_id,
             product_id=item_data.product_id,
-            quantity=item_data.quantity
+            quantity=item_data.quantity,
+            item_uuid=str(uuid.uuid4()),
         )
         db.add(new_item)
-        db.commit()
-        db.refresh(new_item)
         result_item = new_item
         action = "added"
+        op_type = "AddItem"
 
-    # Get product name for notification
+    db.flush()
+    db.refresh(result_item)
+
+    # Get product name for notification / response
     product = db.query(models.Product).filter(
         models.Product.id == item_data.product_id
     ).first()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Record the op in the per-session op-log.
+    sync_ops.record_op(
+        db,
+        session_id,
+        op_type,
+        actor_user_id=current_user.id,
+        item_uuid=result_item.item_uuid,
+        product_id=result_item.product_id,
+        qty_delta=item_data.quantity,
+        idempotency_key=key,
+    )
+
+    # Build the response DTO and store it for idempotent retries.
+    response_dto = schemas.GlobalSessionItemDTO(
+        id=result_item.id,
+        session_id=result_item.session_id,
+        product_id=result_item.product_id,
+        quantity=result_item.quantity,
+        version=result_item.version,
+        created_at=result_item.created_at,
+        updated_at=result_item.updated_at,
+        product_name=product.name if product else None,
+        distributor_name=(
+            product.distributor.distributor_name
+            if product and product.distributor else None
+        ),
+        item_uuid=result_item.item_uuid,
+    )
+    sync_ops.store_idempotent(
+        db, key, session_id, result_item.id, response_dto.model_dump(mode="json")
+    )
+
+    db.commit()
+    db.refresh(result_item)
+
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": f"session_item_{action}",
         "data": {
             "session_id": session_id,
@@ -777,7 +847,7 @@ async def add_session_item(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return result_item
 
@@ -808,6 +878,12 @@ async def update_session_item(
     # Enforce access to the item's session (404 if no access; do not leak).
     authz.require_session_access(item.session_id, current_user, db, write=True)
 
+    key = update_data.idempotency_key
+    # Idempotency: a retried update with the same key returns the stored result.
+    stored = sync_ops.check_idempotent(db, key)
+    if stored is not None:
+        return stored
+
     # Check version for optimistic locking
     if item.version != update_data.version:
         raise HTTPException(
@@ -825,16 +901,53 @@ async def update_session_item(
     item.quantity = update_data.quantity
     item.version += 1
     item.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
     db.refresh(item)
+
+    session_id = item.session_id
 
     # Get product name for notification
     product = db.query(models.Product).filter(
         models.Product.id == item.product_id
     ).first()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Record the op in the per-session op-log.
+    sync_ops.record_op(
+        db,
+        session_id,
+        "ChangeQty",
+        actor_user_id=current_user.id,
+        item_uuid=item.item_uuid,
+        product_id=item.product_id,
+        qty_delta=item.quantity - old_quantity,
+        idempotency_key=key,
+    )
+
+    # Build response DTO and store it for idempotent retries.
+    response_dto = schemas.GlobalSessionItemDTO(
+        id=item.id,
+        session_id=item.session_id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        version=item.version,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        product_name=product.name if product else None,
+        distributor_name=(
+            product.distributor.distributor_name
+            if product and product.distributor else None
+        ),
+        item_uuid=item.item_uuid,
+    )
+    sync_ops.store_idempotent(
+        db, key, session_id, item.id, response_dto.model_dump(mode="json")
+    )
+
+    db.commit()
+    db.refresh(item)
+
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_item_updated",
         "data": {
             "session_id": item.session_id,
@@ -846,7 +959,7 @@ async def update_session_item(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return item
 
@@ -876,13 +989,25 @@ async def delete_session_item(
     session_id = item.session_id
     product_id = item.product_id
     product_name = product.name if product else "Unknown"
+    item_uuid = item.item_uuid
 
     # Delete item
     db.delete(item)
+
+    # Record the removal as a tombstone op.
+    sync_ops.record_op(
+        db,
+        session_id,
+        "RemoveItem",
+        actor_user_id=current_user.id,
+        item_uuid=item_uuid,
+        product_id=product_id,
+    )
+
     db.commit()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_item_deleted",
         "data": {
             "session_id": session_id,
@@ -892,7 +1017,7 @@ async def delete_session_item(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return {"message": "Item deleted successfully", "id": item_id}
 

@@ -58,10 +58,12 @@ class GlobalSessionItemBase(BaseModel):
 class GlobalSessionItemCreate(BaseModel):
     product_id: int
     quantity: int = 1
+    idempotency_key: Optional[str] = None
 
 class GlobalSessionItemUpdate(BaseModel):
     quantity: int
-    version: int  
+    version: int
+    idempotency_key: Optional[str] = None
 
 class GlobalSessionItemDTO(GlobalSessionItemBase):
     id: int
@@ -71,7 +73,8 @@ class GlobalSessionItemDTO(GlobalSessionItemBase):
     
     product_name: Optional[str] = None
     distributor_name: Optional[str] = None
-    
+    item_uuid: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # ===== Auth Schemas =====
