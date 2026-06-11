@@ -39,14 +39,23 @@ from .routers import teams
 from typing import Optional
 import logging
 
-# Optional Phase 2 clean-cutover migration, gated behind an env flag so normal
-# startup is unaffected. Must run BEFORE create_all so the recreated session
-# tables have the new owner_user_id / team_id columns.
-if os.getenv("PHASE2_CUTOVER") == "run":
-    from .migrations.phase2_cutover import run_phase2_cutover
-    run_phase2_cutover(engine)
+# Schema is managed by Alembic (see backend-fastapi/alembic/). On startup we
+# bring the configured database up to the latest revision. Fresh database ->
+# applies all migrations; already-current database -> no-op. This replaces the
+# former create_all() + PHASE2_CUTOVER cutover (the baseline migration already
+# includes the owner_user_id / team_id columns, so the cutover is obsolete).
+def _run_migrations_to_head() -> None:
+    from alembic.config import Config
+    from alembic import command
+    from .database import DATABASE_URL
 
-models.Base.metadata.create_all(bind=engine)
+    backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_cfg = Config(os.path.join(backend_root, "alembic.ini"))
+    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+    command.upgrade(alembic_cfg, "head")
+
+
+_run_migrations_to_head()
 app = FastAPI(
     title="List Manager API",
     description="Voice-enabled list management backend with WebSocket support",
