@@ -71,3 +71,50 @@ def test_two_different_idempotency_keys_both_apply(
 
     qty = _qty_for(client, team_session.id, sample_product.id, auth_headers)
     assert qty == 2, f"distinct keys must both apply; expected 2, got {qty}"
+
+
+def test_idempotency_key_is_scoped_to_session(
+    client, personal_session, team_session, sample_product, auth_headers
+):
+    """A key used in session A must NOT return session A's stored DTO when the
+    SAME key is presented to session B (cross-tenant disclosure, SEC finding).
+
+    `sample_user` (auth_headers) has access to BOTH a personal session and the
+    team session, so this exercises one caller reusing a key across two
+    different sessions. The response for session B must be session B's own
+    item, and session A's item must be untouched.
+    """
+    key = "shared-key"
+
+    # Post to session A (personal) with key K.
+    ra = client.post(
+        f"/api/session/{personal_session.id}/items",
+        json={"product_id": sample_product.id, "quantity": 3, "idempotency_key": key},
+        headers=auth_headers,
+    )
+    assert ra.status_code in (200, 201), ra.text
+    a_item = ra.json()
+    assert a_item["session_id"] == personal_session.id
+
+    # Post to session B (team) reusing key K.
+    rb = client.post(
+        f"/api/session/{team_session.id}/items",
+        json={"product_id": sample_product.id, "quantity": 5, "idempotency_key": key},
+        headers=auth_headers,
+    )
+    assert rb.status_code in (200, 201), rb.text
+    b_item = rb.json()
+
+    # The response must belong to session B, NOT leak session A's DTO.
+    assert b_item["session_id"] == team_session.id, (
+        f"cross-tenant leak: session B got session A's DTO {b_item}"
+    )
+    assert b_item["id"] != a_item["id"]
+    assert b_item["quantity"] == 5
+
+    # Session A's item is unchanged (not overwritten by the B write).
+    a_qty = _qty_for(client, personal_session.id, sample_product.id, auth_headers)
+    assert a_qty == 3, f"session A must be untouched; expected 3, got {a_qty}"
+
+    b_qty = _qty_for(client, team_session.id, sample_product.id, auth_headers)
+    assert b_qty == 5, f"session B should hold its own qty; expected 5, got {b_qty}"

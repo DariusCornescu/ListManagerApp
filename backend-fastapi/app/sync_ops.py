@@ -35,6 +35,14 @@ def record_op(
 ):
     """Create + add a SessionOp with the next seq for the session. Returns the op
     (caller commits)."""
+    # NOTE: SessionOp.idempotency_key carries a GLOBAL unique constraint, which
+    # collides when the same key is legitimately reused across different
+    # sessions (each session has its own key space). The op-log never reads this
+    # column back (OpDTO does not expose it) — the per-session AppliedOp ledger
+    # is the idempotency authority. Changing the column to a per-session unique
+    # constraint is a schema change (no Alembic in this project), so to keep
+    # cross-session key reuse working without leaking/colliding we simply do not
+    # persist the key on the op. The parameter is kept for call-site stability.
     op = models.SessionOp(
         session_id=session_id,
         seq=next_seq(db, session_id),
@@ -42,19 +50,30 @@ def record_op(
         item_uuid=item_uuid,
         product_id=product_id,
         qty_delta=qty_delta,
-        idempotency_key=idempotency_key,
+        idempotency_key=None,
         actor_user_id=actor_user_id,
     )
     db.add(op)
     return op
 
 
-def check_idempotent(db, key: str | None) -> dict | None:
-    """If key is set and an AppliedOp with it exists, return its stored result
-    (parsed JSON, or {} if empty); otherwise None."""
+def check_idempotent(db, key: str | None, session_id: int) -> dict | None:
+    """If key is set and an AppliedOp with it exists FOR THIS session, return its
+    stored result (parsed JSON, or {} if empty); otherwise None.
+
+    The session_id filter is a security boundary: a key stored for another
+    session/team must NOT match here, or its stored DTO would be disclosed to a
+    caller posting to a different session (cross-tenant leak)."""
     if key is None:
         return None
-    row = db.query(models.AppliedOp).filter(models.AppliedOp.key == key).first()
+    row = (
+        db.query(models.AppliedOp)
+        .filter(
+            models.AppliedOp.key == key,
+            models.AppliedOp.session_id == session_id,
+        )
+        .first()
+    )
     if row is None:
         return None
     if not row.result_json:
@@ -82,10 +101,20 @@ def store_idempotent(
             result_json=result_json,
         )
         db.add(row)
-    else:
-        row.session_id = session_id
+    elif row.session_id == session_id:
+        # Same session reusing its own key: refresh the stored result.
         row.item_id = item_id
         row.result_json = result_json
+    else:
+        # `key` is the AppliedOp PK (no schema change / Alembic in this project),
+        # so a different session reusing the same key collides on the PK. The
+        # idempotency ledger is best-effort: rather than overwrite (and thus leak
+        # / clobber) the OTHER session's stored row, we skip the write. This is
+        # safe because check_idempotent() is now session-scoped and returns None
+        # for the mismatched session, so that endpoint applies the op normally;
+        # only the dedupe optimization is lost for the colliding key, not
+        # correctness.
+        return
 
 
 def get_ops_since(db, session_id: int, since_seq: int) -> list:

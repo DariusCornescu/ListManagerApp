@@ -780,7 +780,7 @@ async def add_session_item(
     key = item_data.idempotency_key
     # Idempotency: a retried add with the same key returns the stored result
     # without re-applying (no double-counting).
-    stored = sync_ops.check_idempotent(db, key)
+    stored = sync_ops.check_idempotent(db, key, session_id)
     if stored is not None:
         return stored
 
@@ -899,7 +899,9 @@ async def update_session_item(
 
     key = update_data.idempotency_key
     # Idempotency: a retried update with the same key returns the stored result.
-    stored = sync_ops.check_idempotent(db, key)
+    # Scope the lookup to the item's session so a key reused across sessions
+    # cannot return another session's stored DTO (cross-tenant leak).
+    stored = sync_ops.check_idempotent(db, key, item.session_id)
     if stored is not None:
         return stored
 
