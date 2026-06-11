@@ -1059,24 +1059,13 @@ def get_stats(db: Session = Depends(get_db)):
         "total_session_items": db.query(models.GlobalSessionItem).count(),
     }
 
-    # Get active session if exists
-    active_session = db.query(models.GlobalSession).filter(
-        models.GlobalSession.is_active == True
-    ).first()
-
-    if active_session:
-        active_items_count = db.query(models.GlobalSessionItem).filter(
-            models.GlobalSessionItem.session_id == active_session.id
-        ).count()
-
-        stats["active_session"] = {
-            "id": active_session.id,
-            "name": active_session.name,
-            "items_count": active_items_count,
-            "created_at": active_session.created_at.isoformat()
-        }
-    else:
-        stats["active_session"] = None
+    # SECURITY: this endpoint is anonymous (no auth). It must not disclose any
+    # tenant-identifying detail of a specific session. With multi-tenant team
+    # sessions, returning the globally-most-recent active session's
+    # user-controlled `name` (and id) leaked one tenant's data to anonymous
+    # callers. Only non-identifying aggregate counts above are exposed; the
+    # per-session object is intentionally null here.
+    stats["active_session"] = None
 
     return stats
 

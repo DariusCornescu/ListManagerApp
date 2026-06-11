@@ -443,16 +443,23 @@ class TestStatistics:
         assert stats["sessions_count"] >= 1
         assert stats["active_sessions_count"] >= 1
 
-    def test_get_stats_with_active_session(self, client, sample_session, sample_session_item):
-        """Test stats includes active session information"""
+    def test_get_stats_does_not_leak_session_name(
+        self, client, sample_session, sample_session_item
+    ):
+        """Anonymous /api/stats must not disclose a tenant's session name/id.
+
+        The aggregate counts still reflect the active session, but the
+        user-controlled free-text name must not appear anywhere in the
+        anonymous response (SEC finding: cross-tenant name leak)."""
         response = client.get("/api/stats")
 
         assert response.status_code == status.HTTP_200_OK
         stats = response.json()
-        assert stats["active_session"] is not None
-        assert stats["active_session"]["id"] == sample_session.id
-        assert stats["active_session"]["name"] == "Test Session"
-        assert "items_count" in stats["active_session"]
+        # Aggregate counts remain.
+        assert stats["active_sessions_count"] >= 1
+        # No identifying session detail is exposed to anonymous callers.
+        assert stats["active_session"] is None
+        assert "Test Session" not in response.text
 
     def test_get_stats_without_active_session(self, client):
         """Test stats when no active session exists"""
