@@ -885,6 +885,56 @@ git commit -m "feat(android): session screen reloads per workspace with workspac
 
 ---
 
+### Task 6.5: Device→server write-through for session items (scope addition, user-approved)
+
+Discovered during Task 6 review: nothing uploads item mutations (the pending-op
+replay machinery exists but is never fed; the WS only sends pings). Without
+this, team sessions are one-way. Approved addition: item add / set-quantity /
+delete / clear become write-through — local Room write first (instant UI),
+then the server API when the session is server-mirrored (positive id); on
+connectivity failure, enqueue the existing pending-op types for SyncService
+replay. Sessions with NEGATIVE ids (local fallback) skip the network entirely
+(stranding is recorded follow-up #3).
+
+**Files:**
+- Modify: `data/local/entity/SessionItemEntity.kt` — add `val version: Int = 1`
+  (server optimistic-lock version; DB version 3 → 4, destructive fallback as before)
+- Modify: `data/local/AppDatabase.kt` — version 4
+- Modify: `data/repository/SessionRepository.kt` — constructor gains
+  `api: ListManagerApi` and `pendingOps: PendingOperationRepository`; the four
+  item methods become write-through (capture pre-state BEFORE the local write;
+  rethrow CancellationException; IOException → enqueue; other non-2xx → log,
+  rely on WS/pull self-heal; on successful add/update upsert the local row from
+  the response DTO — id/quantity/version — re-keying local rows to server ids
+  via the (sessionId, productId) unique index)
+- Modify: `data/workspace/WorkspaceSessionResolver.kt` — pullItems also stores
+  `version = item.version`
+- Modify: construction sites of SessionRepository (SessionViewModel,
+  HomeViewModel, others found by grep) to pass the new dependencies
+- Test: `app/src/test/java/com/darius/listmanager/repository/SessionRepositoryWriteThroughTest.kt`
+  — JVM tests with hand-rolled fakes (ListManagerApi fake throwing
+  NotImplementedError except item methods; fake DAOs; retrofit2.Response
+  .success/.error are JVM-constructible). Cover at minimum: online add upserts
+  server row; offline add enqueues ADD_SESSION_ITEM; negative session id skips
+  network and queue; offline delete enqueues; clear calls API for positive ids.
+
+Semantics per method (sessionId > 0 means server-mirrored):
+- `addOrIncrementItem`: local addOrIncrement → POST add (server increments and
+  returns the absolute DTO) → upsert local from DTO. Offline → enqueue
+  `AddSessionItem(sessionId, productId, quantity)` (delta semantics — replay-safe).
+- `setItemQuantity`: capture `existing = getItem(sessionId, productId)` first;
+  local setQuantity. Then: qty<=0 && existing!=null → DELETE by `existing.id`
+  (404 = success); qty>0 && existing!=null → PUT update with
+  `UpdateItemRequest(qty, existing.version)`, 409 → log + self-heal; offline →
+  enqueue `UpdateSessionItem(existing.id, qty, existing.version)`;
+  existing==null && qty>0 → treat as add.
+- `deleteItem(itemId)`: local delete; itemId>0 → DELETE (404 ok); offline →
+  enqueue `DeleteSessionItem(itemId)`.
+- `clearSession(sessionId)`: local clear; sessionId>0 → DELETE items endpoint;
+  offline → enqueue `ClearSession(sessionId)`.
+
+Commit: `feat(android): write-through sync for session items (+offline queue)`
+
 ### Task 7: TeamsViewModel + TeamsScreen (list / create / join)
 
 **Files:**
