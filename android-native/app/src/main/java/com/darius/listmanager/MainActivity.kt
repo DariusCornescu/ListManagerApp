@@ -12,6 +12,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.websocket.WebSocketService
+import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.data.websocket.WebSocketMessage
 import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.network.RetrofitClient
@@ -153,8 +154,14 @@ class MainActivity : ComponentActivity() {
                         clearLocalSession(message.sessionId)
                     }
                     
-                    is WebSocketMessage.SessionCreated, is WebSocketMessage.SessionCompleted -> {
-                        Log.d(TAG, "WS: Session event received")
+                    is WebSocketMessage.SessionCompleted -> {
+                        Log.d(TAG, "WS: Session completed - ID ${message.sessionId}")
+                        completeLocalSession(message.sessionId)
+                    }
+
+                    is WebSocketMessage.SessionCreated -> {
+                        Log.d(TAG, "WS: Session created - ${message.sessionName}")
+                        SessionEvents.requestRefresh()
                     }
                     else -> { }
                 }
@@ -260,6 +267,22 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    private fun completeLocalSession(sessionId: Long) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    database.sessionDao().completeSession(sessionId)
+                    Log.d(TAG, "Local DB: Marked session $sessionId completed")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to complete local session: ${e.message}", e)
+                }
+            }
+            // Re-resolve after the local state is updated so the session
+            // screen picks up the replacement active session.
+            SessionEvents.requestRefresh()
+        }
+    }
+
     private fun clearLocalSession(sessionId: Long) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {

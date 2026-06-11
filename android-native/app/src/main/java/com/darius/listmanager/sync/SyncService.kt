@@ -258,13 +258,14 @@ class SyncService(private val context: Context) {
 
     /**
      * Maps a non-2xx HTTP status to a non-retryable [SyncResult.Error] when the server has
-     * definitively rejected the operation (401/403 authorization, 422 validation). Such
-     * operations will never succeed on retry, so the caller drops them from the queue.
+     * definitively rejected the operation (400 bad request — e.g. session no longer active,
+     * 401/403 authorization, 422 validation). Such operations will never succeed on retry,
+     * so the caller drops them from the queue.
      * Returns a retryable error for everything else (transient server/5xx issues).
      */
     private fun mapHttpErrorToSyncResult(code: Int): SyncResult {
         return when (code) {
-            401, 403, 422 -> SyncResult.Error("Rejected by server: $code", retryable = false)
+            400, 401, 403, 422 -> SyncResult.Error("Rejected by server: $code", retryable = false)
             else -> SyncResult.Error("Failed: $code", retryable = true)
         }
     }

@@ -10,6 +10,7 @@ import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.dao.SessionItemWithProduct
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.usecase.GeneratePdfsUseCase
+import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.data.workspace.WorkspaceManager
 import com.darius.listmanager.data.workspace.WorkspaceSessionResolver
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -51,6 +52,10 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     init {
         observeWorkspace()
+        // Server-side session lifecycle events (completed/replaced) request a re-resolve.
+        viewModelScope.launch {
+            SessionEvents.refreshRequests.collect { refresh() }
+        }
     }
 
     private fun observeWorkspace() {

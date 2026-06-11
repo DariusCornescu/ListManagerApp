@@ -68,8 +68,12 @@ fun AppContent() {
     val sessionExpiredEvent by AuthState.sessionExpiredEvent.collectAsState()
 
     // Refresh the team list whenever the drawer is opened while logged in.
+    // On logout, drop the cached teams so the next user cannot see (or switch
+    // into) the previous user's workspaces.
     LaunchedEffect(drawerState.isOpen, isLoggedIn) {
-        if (drawerState.isOpen && isLoggedIn) {
+        if (!isLoggedIn) {
+            drawerTeams = emptyList()
+        } else if (drawerState.isOpen) {
             val result = teamRepository.getMyTeams()
             if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
                 drawerTeams = result.data
