@@ -41,6 +41,9 @@ class SessionRepositoryWriteThroughTest {
         override suspend fun getItem(sessionId: Long, productId: Long): SessionItemEntity? =
             rows.firstOrNull { it.sessionId == sessionId && it.productId == productId }
 
+        override suspend fun getById(id: Long): SessionItemEntity? =
+            rows.firstOrNull { it.id == id }
+
         override suspend fun insert(item: SessionItemEntity): Long {
             // Mimic @Insert(REPLACE) + PK + unique (sessionId, productId) index.
             val id = if (item.id == 0L) nextId++ else item.id
@@ -70,6 +73,13 @@ class SessionRepositoryWriteThroughTest {
     }
 
     private class FakeSessionDao : SessionDao {
+        val completedIds = mutableListOf<Long>()
+
+        // Override the @Transaction default body (it calls unimplemented members).
+        override suspend fun completeSession(sessionId: Long) {
+            completedIds.add(sessionId)
+        }
+
         override fun getAllFlow(): Flow<List<SessionEntity>> = throw NotImplementedError()
         override suspend fun getActiveSession(teamId: Long?): SessionEntity? = throw NotImplementedError()
         override fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = throw NotImplementedError()
@@ -114,6 +124,22 @@ class SessionRepositoryWriteThroughTest {
         val updateCalls = mutableListOf<Pair<Long, UpdateItemRequest>>()
         val deleteCalls = mutableListOf<Long>()
         val clearCalls = mutableListOf<Long>()
+        val completeCalls = mutableListOf<Long>()
+
+        var completeResult: ((Long) -> Response<CompleteSessionResponse>)? = { sessionId ->
+            Response.success(
+                CompleteSessionResponse(
+                    session = GlobalSessionDTO(
+                        id = sessionId, name = "Current Session", is_active = false,
+                        created_at = "2026-06-10T00:00:00", completed_at = "2026-06-10T00:00:00",
+                        version = 1, owner_user_id = null, team_id = null,
+                    ),
+                    items_by_distributor = emptyMap(),
+                    distributor_count = 0,
+                    total_items = 0,
+                )
+            )
+        }
 
         var addResult: (() -> Response<GlobalSessionItemDTO>)? = null
         var updateResult: (() -> Response<GlobalSessionItemDTO>)? = null
@@ -140,6 +166,11 @@ class SessionRepositoryWriteThroughTest {
             return clearResult?.invoke() ?: throw NotImplementedError()
         }
 
+        override suspend fun completeSession(sessionId: Long): Response<CompleteSessionResponse> {
+            completeCalls.add(sessionId)
+            return completeResult?.invoke(sessionId) ?: throw NotImplementedError()
+        }
+
         // Everything else is out of scope for these tests.
         override suspend fun getProducts(search: String?): Response<List<ProductDTO>> = throw NotImplementedError()
         override suspend fun createProduct(request: ProductCreate): Response<ProductDTO> = throw NotImplementedError()
@@ -155,7 +186,6 @@ class SessionRepositoryWriteThroughTest {
         override suspend fun updateCurrentUser(request: UpdateUserRequest): Response<UserDTO> = throw NotImplementedError()
         override suspend fun getActiveSession(teamId: Long?): Response<GlobalSessionDTO> = throw NotImplementedError()
         override suspend fun createSession(request: CreateSessionRequest): Response<GlobalSessionDTO> = throw NotImplementedError()
-        override suspend fun completeSession(sessionId: Long): Response<CompleteSessionResponse> = throw NotImplementedError()
         override suspend fun getSessionItems(sessionId: Long): Response<List<GlobalSessionItemDTO>> = throw NotImplementedError()
         override suspend fun getStats(): Response<StatsDTO> = throw NotImplementedError()
         override suspend fun createTeam(request: TeamCreateRequest): Response<TeamDTO> = throw NotImplementedError()
@@ -169,10 +199,11 @@ class SessionRepositoryWriteThroughTest {
     // ---------- Harness ----------
 
     private val itemDao = FakeSessionItemDao()
+    private val sessionDao = FakeSessionDao()
     private val pendingDao = FakePendingOperationDao()
     private val api = FakeApi()
     private val repo = SessionRepository(
-        sessionDao = FakeSessionDao(),
+        sessionDao = sessionDao,
         sessionItemDao = itemDao,
         api = api,
         pendingOps = PendingOperationRepository(pendingDao),
@@ -255,7 +286,7 @@ class SessionRepositoryWriteThroughTest {
     }
 
     @Test
-    fun `offline delete enqueues DeleteSessionItem`() = runBlocking {
+    fun `offline delete on a row in a positive session enqueues DeleteSessionItem`() = runBlocking {
         itemDao.rows.add(SessionItemEntity(id = 42, sessionId = 10, productId = 7, quantity = 1, version = 2))
         api.deleteResult = { throw IOException("no network") }
 
@@ -267,6 +298,45 @@ class SessionRepositoryWriteThroughTest {
         assertEquals(OperationType.DELETE_SESSION_ITEM.name, op.operationType)
         val data = decodeOp(op) as OperationData.DeleteSessionItem
         assertEquals(42L, data.itemId)
+    }
+
+    @Test
+    fun `deleteItem on a row in a NEGATIVE session deletes locally with no api call and no queue`() = runBlocking {
+        // Item ids are always positive autogenerated values, even when the
+        // SESSION is a local offline fallback (negative id).
+        itemDao.rows.add(SessionItemEntity(id = 42, sessionId = -1, productId = 7, quantity = 1))
+
+        repo.deleteItem(42)
+
+        assertTrue(itemDao.rows.isEmpty()) // local delete still happened
+        assertTrue(api.deleteCalls.isEmpty())
+        assertTrue(pendingDao.inserted.isEmpty())
+    }
+
+    @Test
+    fun `deleteItem on an unknown row deletes locally with no api call and no queue`() = runBlocking {
+        repo.deleteItem(42)
+
+        assertTrue(api.deleteCalls.isEmpty())
+        assertTrue(pendingDao.inserted.isEmpty())
+    }
+
+    @Test
+    fun `completeSessionWriteThrough with positive id completes locally and on the server`() = runBlocking {
+        repo.completeSessionWriteThrough(10)
+
+        assertEquals(listOf(10L), sessionDao.completedIds)
+        assertEquals(listOf(10L), api.completeCalls)
+        assertTrue(pendingDao.inserted.isEmpty())
+    }
+
+    @Test
+    fun `completeSessionWriteThrough with negative id completes locally only`() = runBlocking {
+        repo.completeSessionWriteThrough(-1)
+
+        assertEquals(listOf(-1L), sessionDao.completedIds)
+        assertTrue(api.completeCalls.isEmpty())
+        assertTrue(pendingDao.inserted.isEmpty())
     }
 
     @Test

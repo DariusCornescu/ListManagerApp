@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -44,13 +45,17 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     private var currentSessionId: Long? = null
 
+    /** Bumped to force a session re-resolve (e.g. after completing a session). */
+    private val reloadTrigger = MutableStateFlow(0)
+    fun refresh() { reloadTrigger.value++ }
+
     init {
         observeWorkspace()
     }
 
     private fun observeWorkspace() {
         viewModelScope.launch {
-            workspaceManager.currentWorkspace.collectLatest { workspace ->
+            combine(workspaceManager.currentWorkspace, reloadTrigger) { w, _ -> w }.collectLatest { workspace ->
                 currentSessionId = null
                 _uiState.value = _uiState.value.copy(
                     isLoading = true,
@@ -118,7 +123,12 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     _uiState.value = _uiState.value.copy( isGeneratingPdfs = false, generatedPdfs = pdfs)
-                    sessionRepository.clearSession(sessionId)
+                    // Complete (don't clear): clearing would wipe the SHARED
+                    // team session for every member. Completing retires it;
+                    // the re-resolve below then creates a fresh session for
+                    // the whole workspace.
+                    sessionRepository.completeSessionWriteThrough(sessionId)
+                    refresh()
 
                 } catch (e: Exception) {
                     Log.e("SessionViewModel", "Error generating PDFs", e)

@@ -135,12 +135,12 @@ class MainActivity : ComponentActivity() {
 
                     is WebSocketMessage.SessionItemAdded -> {
                         Log.d(TAG, "WS: Session item added - ${message.productName} x${message.quantity}")
-                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.quantity )
+                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.quantity, message.version )
                     }
                     
                     is WebSocketMessage.SessionItemUpdated -> {
                         Log.d(TAG, "WS: Session item updated - ${message.productName}: ${message.oldQuantity} → ${message.newQuantity}")
-                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.newQuantity )
+                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.newQuantity, message.version )
                     }
                     
                     is WebSocketMessage.SessionItemDeleted -> {
@@ -225,7 +225,7 @@ class MainActivity : ComponentActivity() {
     
     // ===== SESSION ITEM UPDATE FUNCTIONS FOR WEBSOCKET =====
     
-    private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int) {
+    private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int, version: Int) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 try {
@@ -233,7 +233,10 @@ class MainActivity : ComponentActivity() {
                         id = itemId,
                         sessionId = sessionId,
                         productId = productId,
-                        quantity = quantity
+                        quantity = quantity,
+                        // Preserve the server's optimistic-lock version; REPLACE
+                        // insert would otherwise reset it to the default (1).
+                        version = version
                     )
                     database.sessionItemDao().insert(entity)
                     Log.d(TAG, "Local DB: Upserted session item $itemId (product $productId, qty $quantity)")
