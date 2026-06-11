@@ -857,6 +857,7 @@ async def add_session_item(
             "product_id": result_item.product_id,
             "product_name": product.name if product else "Unknown",
             "quantity": result_item.quantity,
+            "version": result_item.version,
             "user_id": current_user.id,
             "username": current_user.username
         }
@@ -969,6 +970,7 @@ async def update_session_item(
             "product_name": product.name if product else "Unknown",
             "old_quantity": old_quantity,
             "new_quantity": item.quantity,
+            "version": item.version,
             "user_id": current_user.id,
             "username": current_user.username
         }
