@@ -1789,7 +1789,12 @@ out of scope for this feature):
    display; on a black-hole network the user can watch a spinner for up to the
    30s OkHttp timeouts. Consider `withTimeout(5s)` around resolve or
    cached-items-first + background refresh.
-5. DISCOVERED GAP, decided out-of-band: the app has NO device→server upload
+4b. Idempotency keys unused (Task 6.5 review): the backend's add-item endpoint
+   supports `idempotency_key` (sync_ops.check_idempotent) but Android's
+   `AddItemRequest` never sends one — a timeout-after-apply followed by queued
+   replay double-increments. Follow-up: generate a UUID at enqueue time and
+   add the field to AddItemRequest.
+5. RESOLVED IN TASK 6.5 (user-approved scope addition): the app had NO device→server upload
    path for session items at all (nothing calls `api.addSessionItem` outside
    the SyncService replay of ops that nothing enqueues; the WebSocket only
    sends pings). Team sessions are one-way (server→device) until a
