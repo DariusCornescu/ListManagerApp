@@ -236,6 +236,38 @@ class TestSessionItems:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Session not found" in response.json()["detail"]
 
+    def test_add_item_to_completed_session(self, client, auth_headers, db_session, sample_session, sample_product):
+        """Test adding item to a completed (inactive) session returns 400"""
+        from app.models import GlobalSessionItem
+
+        # Session needs at least one item to be completable
+        item = GlobalSessionItem(
+            session_id=sample_session.id,
+            product_id=sample_product.id,
+            quantity=2
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        complete_response = client.post(
+            f"/api/session/{sample_session.id}/complete",
+            headers=auth_headers
+        )
+        assert complete_response.status_code == status.HTTP_200_OK
+
+        item_data = {
+            "product_id": sample_product.id,
+            "quantity": 3
+        }
+        response = client.post(
+            f"/api/session/{sample_session.id}/items",
+            json=item_data,
+            headers=auth_headers
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "no longer active" in response.json()["detail"]
+
     def test_add_existing_item_increments_quantity(self, client, auth_headers, sample_session_item, sample_session, sample_product):
         """Test adding existing item increments quantity"""
         item_data = {

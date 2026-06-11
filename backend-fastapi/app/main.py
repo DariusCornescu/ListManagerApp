@@ -770,7 +770,12 @@ async def add_session_item(
 ):
     """Add item to session (or increment if exists) with real-time notification"""
     # Validate session exists and the caller has access (404 otherwise).
-    authz.require_session_access(session_id, current_user, db, write=True)
+    session = authz.require_session_access(session_id, current_user, db, write=True)
+    if not session.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Session is no longer active.",
+        )
 
     key = item_data.idempotency_key
     # Idempotency: a retried add with the same key returns the stored result
