@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
         UnknownProductEntity::class,
         PendingOperationEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

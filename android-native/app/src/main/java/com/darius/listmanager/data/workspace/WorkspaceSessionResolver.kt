@@ -86,6 +86,7 @@ class WorkspaceSessionResolver(
                                     sessionId = sessionId,
                                     productId = item.product_id,
                                     quantity = item.quantity,
+                                    version = item.version,
                                 )
                             )
                         } catch (e: SQLiteConstraintException) {

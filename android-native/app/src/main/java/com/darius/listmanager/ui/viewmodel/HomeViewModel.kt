@@ -25,7 +25,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
+    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
     private val addProductUseCase = AddProductUseCase(sessionRepository)
