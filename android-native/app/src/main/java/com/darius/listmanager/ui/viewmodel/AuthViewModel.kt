@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.darius.listmanager.data.repository.AuthState
+import com.darius.listmanager.data.workspace.WorkspaceManager
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.UpdateUserRequest
 import com.darius.listmanager.sync.SyncService
@@ -175,6 +176,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         syncService.clearAuthToken()
         AuthState.clear()
+        // Persisted workspace must not survive a user switch on a shared device:
+        // the next login always starts in the Personal workspace.
+        WorkspaceManager.getInstance(getApplication()).fallbackToPersonal()
         _uiState.value = AuthUiState()
         Log.d(TAG, "User logged out")
     }

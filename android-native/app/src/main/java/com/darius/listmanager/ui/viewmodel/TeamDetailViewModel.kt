@@ -23,6 +23,8 @@ data class TeamDetailUiState(
     val inviteCode: String? = null,
     /** Set true after leaving so the UI can navigate back. */
     val leftTeam: Boolean = false,
+    /** True when the last load() failed — UI shows an inline retry instead of an empty list. */
+    val loadFailed: Boolean = false,
 ) {
     val myRole: String?
         get() = members.find { it.user_id == myUserId }?.role
@@ -42,7 +44,7 @@ class TeamDetailViewModel(application: Application) : AndroidViewModel(applicati
     fun load(teamId: Long) {
         this.teamId = teamId
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
+            _uiState.value = _uiState.value.copy(isLoading = true, error = null, loadFailed = false)
             // user id needed to distinguish "me" in the member list
             val me = try {
                 RetrofitClient.api.getCurrentUser().body()
@@ -52,10 +54,11 @@ class TeamDetailViewModel(application: Application) : AndroidViewModel(applicati
                     members = result.data, myUserId = me?.id, isLoading = false
                 )
                 is TeamResult.Offline -> _uiState.value = _uiState.value.copy(
-                    isLoading = false, error = "Team management requires a connection"
+                    isLoading = false, loadFailed = true,
+                    error = "Team management requires a connection"
                 )
                 is TeamResult.Failure -> _uiState.value = _uiState.value.copy(
-                    isLoading = false, error = result.message
+                    isLoading = false, loadFailed = true, error = result.message
                 )
             }
         }

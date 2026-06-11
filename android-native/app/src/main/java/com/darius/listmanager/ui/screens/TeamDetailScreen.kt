@@ -101,6 +101,8 @@ fun TeamDetailScreen(
 
             OutlinedButton(
                 onClick = { confirmLeave = true },
+                // Without our own user id "leave" can't target anyone — disable instead of no-op.
+                enabled = uiState.myUserId != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) {
@@ -116,6 +118,14 @@ fun TeamDetailScreen(
             if (uiState.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
+                }
+            } else if (uiState.loadFailed) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Couldn't load members")
+                        Spacer(Modifier.height(8.dp))
+                        Button(onClick = { viewModel.load(teamId) }) { Text("Retry") }
+                    }
                 }
             } else {
                 LazyColumn {

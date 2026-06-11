@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.darius.listmanager.network.TeamDTO
 import com.darius.listmanager.ui.viewmodel.TeamsViewModel
@@ -34,6 +35,13 @@ fun TeamsScreen(
             snackbarHostState.showSnackbar(it)
             viewModel.clearError()
         }
+    }
+
+    // Refresh when returning to this screen (e.g. after leaving a team in TeamDetail).
+    // The ViewModel guards against stacking with the init{} refresh.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
     }
 
     // After create/join: offer to switch the app into that team's workspace.
@@ -83,8 +91,9 @@ fun TeamsScreen(
             )
         },
         floatingActionButton = {
+            // ExtendedFloatingActionButton has no `enabled` param — guard the click instead.
             ExtendedFloatingActionButton(
-                onClick = { showCreateDialog = true },
+                onClick = { if (!uiState.isSubmitting) showCreateDialog = true },
                 icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
                 text = { Text("Create team") }
             )
@@ -93,6 +102,7 @@ fun TeamsScreen(
         Column(Modifier.padding(padding).fillMaxSize()) {
             OutlinedButton(
                 onClick = { showJoinDialog = true },
+                enabled = !uiState.isSubmitting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -106,6 +116,14 @@ fun TeamsScreen(
                 uiState.isLoading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
+                uiState.loadFailed && uiState.teams.isEmpty() ->
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("Couldn't load teams")
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { viewModel.refresh() }) { Text("Retry") }
+                        }
+                    }
                 uiState.teams.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text("No teams yet. Create one or join with a code.")
                 }

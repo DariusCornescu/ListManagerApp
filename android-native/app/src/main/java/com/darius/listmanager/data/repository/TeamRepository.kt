@@ -37,7 +37,9 @@ class TeamRepository(private val api: ListManagerApi = RetrofitClient.api) {
 
     /** Works for both "remove member" (admin) and "leave team" (self). */
     suspend fun removeMember(teamId: Long, userId: Long): TeamResult<Unit> =
-        call { api.removeTeamMember(teamId, userId) }
+        call(badRequestMessage = "Couldn't remove: a team must keep at least one admin") {
+            api.removeTeamMember(teamId, userId)
+        }
 
     private suspend fun <T> call(
         badRequestMessage: String? = null,
