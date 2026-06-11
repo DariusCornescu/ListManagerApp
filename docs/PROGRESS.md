@@ -56,9 +56,22 @@ Shipped the team-session UI plan (`docs/superpowers/plans/2026-06-10-team-sessio
   one — timeout-after-apply + replay can double-increment.
 - `TeamMemberDTO` has no username (members shown as "User <id>"); no role-management UI
   (promote/demote) yet.
+- AccessLost fallback is silent: losing team access drops you to Personal with only the
+  header label changing — the design spec asked for a toast/snackbar notice.
+- Cosmetic race: creating a team while an ON_RESUME refresh is in flight can skip the
+  post-create list refresh (team appears after re-entering the screen).
+
+**Post-review hardening (same branch, after this entry was first written)**
+- Backend rejects item adds to inactive sessions (400 + test; suite now 162); Android
+  SyncService treats 400 as non-retryable so stale queued ops drop instead of retrying forever.
+- Android reacts to `session_completed`/`session_created` WS events (marks the local session
+  inactive, re-resolves via the new `SessionEvents` signal) — without this, other devices
+  kept writing into a session someone had completed via PDF generation.
+- Drawer team cache cleared on logout.
 
 **Next:** manual two-device verification (create/join via invite code, WS fan-out of items,
-offline add → reconnect sync, Personal/team isolation).
+offline add → reconnect sync, Personal/team isolation, PDF-complete → fresh session on both
+devices).
 
 ---
 
