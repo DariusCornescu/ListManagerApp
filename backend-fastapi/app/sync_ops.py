@@ -35,14 +35,12 @@ def record_op(
 ):
     """Create + add a SessionOp with the next seq for the session. Returns the op
     (caller commits)."""
-    # NOTE: SessionOp.idempotency_key carries a GLOBAL unique constraint, which
-    # collides when the same key is legitimately reused across different
-    # sessions (each session has its own key space). The op-log never reads this
-    # column back (OpDTO does not expose it) — the per-session AppliedOp ledger
-    # is the idempotency authority. Changing the column to a per-session unique
-    # constraint is a schema change (no Alembic in this project), so to keep
-    # cross-session key reuse working without leaking/colliding we simply do not
-    # persist the key on the op. The parameter is kept for call-site stability.
+    # NOTE: the op-log never reads idempotency_key back (OpDTO does not expose
+    # it) — the per-session AppliedOp ledger is the idempotency authority — so
+    # we intentionally do not persist the key on the op. (The global unique
+    # constraint that previously forced this was dropped in Alembic migration
+    # 0002; leaving the column unpopulated is now a deliberate choice, pending
+    # any future per-session use.) The parameter is kept for call-site stability.
     op = models.SessionOp(
         session_id=session_id,
         seq=next_seq(db, session_id),
