@@ -47,7 +47,17 @@ fun AppContent() {
     // ===== WEBSOCKET STATE =====
     val webSocketService = remember { WebSocketService.getInstance() }
     val webSocketState by webSocketService.connectionState.collectAsState()
-    
+
+    // ===== WORKSPACE STATE =====
+    val workspaceManager = remember {
+        com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(context)
+    }
+    val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
+    val teamRepository = remember { com.darius.listmanager.data.repository.TeamRepository() }
+    var drawerTeams by remember {
+        mutableStateOf<List<com.darius.listmanager.network.TeamDTO>>(emptyList())
+    }
+
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
     val pendingCount by database.pendingOperationDao().getPendingCountFlow().collectAsState(initial = 0)
@@ -56,6 +66,16 @@ fun AppContent() {
     val isLoggedIn by AuthState.isLoggedIn.collectAsState()
     val username by AuthState.username.collectAsState()
     val sessionExpiredEvent by AuthState.sessionExpiredEvent.collectAsState()
+
+    // Refresh the team list whenever the drawer is opened while logged in.
+    LaunchedEffect(drawerState.isOpen, isLoggedIn) {
+        if (drawerState.isOpen && isLoggedIn) {
+            val result = teamRepository.getMyTeams()
+            if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
+                drawerTeams = result.data
+            }
+        }
+    }
 
     // Decide where to start once, based on the persisted token at first composition.
     val startDestination = remember { if (AuthState.isLoggedIn.value) "home" else "login" }
@@ -79,6 +99,18 @@ fun AppContent() {
         gesturesEnabled = isLoggedIn,
         drawerContent = {
             DrawerContent(
+                workspaceName = currentWorkspace.displayName,
+                teams = drawerTeams,
+                onSwitchWorkspace = { workspace ->
+                    workspaceManager.switchTo(workspace)
+                    scope.launch {
+                        drawerState.close()
+                        navController.navigate("session") {
+                            popUpTo("home") { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onNavigate = { route ->
                     scope.launch {
                         drawerState.close()
