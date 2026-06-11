@@ -1733,6 +1733,19 @@ and change the `DrawerContent(...)` call to:
 
 (Switching navigates to the session screen so the user immediately sees the workspace's session; `SessionViewModel.observeWorkspace()` does the reload.)
 
+- [ ] **Step 2a: Teams screen UX hardening (review findings from Task 7)**
+
+In `TeamsViewModel`/`TeamsScreen`:
+1. Double-submit guard: add `isSubmitting: Boolean = false` to `TeamsUiState`;
+   `createTeam`/`joinTeam` early-return when true, set it true while the call is
+   in flight (clear in every branch), and disable the create FAB + join button
+   while submitting.
+2. Distinguish load-failure from empty: when the initial `refresh()` fails,
+   render an inline "Couldn't load teams" message with a Retry button (calling
+   `viewModel.refresh()`) instead of the "No teams yet" empty-state copy. Track
+   via a `loadFailed: Boolean` in the ui state set in the Offline/Failure
+   branches of `refresh()`.
+
 - [ ] **Step 2b: Reset workspace on logout (review finding from Task 3)**
 
 The persisted workspace must not survive a user switch on a shared device. In
