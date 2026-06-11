@@ -92,7 +92,17 @@ def store_idempotent(
     if key is None:
         return
     result_json = json.dumps(result)
-    row = db.query(models.AppliedOp).filter(models.AppliedOp.key == key).first()
+    # Composite PK (key, session_id): look up the row for THIS session only.
+    # A different session reusing the same key is now a distinct row, so each
+    # session keeps its own ledger entry (no cross-session collision or leak).
+    row = (
+        db.query(models.AppliedOp)
+        .filter(
+            models.AppliedOp.key == key,
+            models.AppliedOp.session_id == session_id,
+        )
+        .first()
+    )
     if row is None:
         row = models.AppliedOp(
             key=key,
@@ -101,20 +111,10 @@ def store_idempotent(
             result_json=result_json,
         )
         db.add(row)
-    elif row.session_id == session_id:
+    else:
         # Same session reusing its own key: refresh the stored result.
         row.item_id = item_id
         row.result_json = result_json
-    else:
-        # `key` is the AppliedOp PK (no schema change / Alembic in this project),
-        # so a different session reusing the same key collides on the PK. The
-        # idempotency ledger is best-effort: rather than overwrite (and thus leak
-        # / clobber) the OTHER session's stored row, we skip the write. This is
-        # safe because check_idempotent() is now session-scoped and returns None
-        # for the mismatched session, so that endpoint applies the op normally;
-        # only the dedupe optimization is lost for the colliding key, not
-        # correctness.
-        return
 
 
 def get_ops_since(db, session_id: int, since_seq: int) -> list:

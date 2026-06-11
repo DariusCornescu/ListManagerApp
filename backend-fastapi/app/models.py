@@ -125,8 +125,13 @@ class AppliedOp(Base):
     instead of re-applying the operation (fixes FM3)."""
     __tablename__ = "applied_ops"
 
+    # Composite PK (key, session_id): an idempotency key is unique PER SESSION,
+    # not globally. Prevents a key reused across sessions from returning another
+    # session's stored result (cross-tenant disclosure).
     key = Column(String(64), primary_key=True)  # the idempotency key
-    session_id = Column(Integer, ForeignKey("global_sessions.id"))
+    session_id = Column(
+        Integer, ForeignKey("global_sessions.id"), primary_key=True, nullable=False
+    )
     item_id = Column(Integer, nullable=True)
     result_json = Column(Text, nullable=True)  # JSON string of the produced response
     created_at = Column(DateTime, default=func.now())
@@ -144,7 +149,9 @@ class SessionOp(Base):
     item_uuid = Column(String(36), nullable=True)
     product_id = Column(Integer, nullable=True)
     qty_delta = Column(Integer, nullable=True)
-    idempotency_key = Column(String(64), unique=True, nullable=True)
+    # No longer globally unique: record_op writes None today, and a future
+    # per-session use must not be blocked by a global unique constraint.
+    idempotency_key = Column(String(64), nullable=True)
     actor_user_id = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=func.now())
 
