@@ -1746,6 +1746,17 @@ In `TeamsViewModel`/`TeamsScreen`:
    via a `loadFailed: Boolean` in the ui state set in the Offline/Failure
    branches of `refresh()`.
 
+From Task 8 review, also:
+3. Last-admin leave message: in `TeamRepository.removeMember`, pass
+   `badRequestMessage = "Couldn't remove: a team must keep at least one admin"`
+   so the sole admin tapping Leave doesn't see "Request rejected (400)".
+4. TeamDetail failed-load dead end: when `load()` fails, show an inline error
+   with a Retry button instead of an empty member list; and when
+   `myUserId == null`, disable the Leave button (currently it silently no-ops).
+5. Stale teams list after leaving: TeamsScreen must refresh when returning from
+   TeamDetail — simplest: in TeamsScreen, `LifecycleResumeEffect` (or
+   `LaunchedEffect` on nav back-stack entry resume) calling `viewModel.refresh()`.
+
 - [ ] **Step 2b: Reset workspace on logout (review finding from Task 3)**
 
 The persisted workspace must not survive a user switch on a shared device. In
