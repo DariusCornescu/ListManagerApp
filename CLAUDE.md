@@ -29,10 +29,24 @@ PowerShell on Windows. Run each from its own subdirectory.
 
 ## Stack facts (do not guess — these are the truth)
 - DB: SQLite in dev (`backend-fastapi/listmanager.db`), PostgreSQL in prod via
-  `DATABASE_URL`. SQLAlchemy 2.0 ORM. **No Alembic** — tables are created with
-  `Base.metadata.create_all()` on startup (`app/main.py`), then auto-seeded
-  (`app/seed.py`, `app/seed_admin.py`). Schema changes to existing prod tables have no
-  migration path — handle manually and note it.
+  `DATABASE_URL`. SQLAlchemy 2.0 ORM. **Alembic** manages schema: migrations live
+  in `backend-fastapi/alembic/versions/`, and the app runs `alembic upgrade head`
+  at startup (`app/main.py`), then auto-seeds (`app/seed.py`, `app/seed_admin.py`).
+  To change schema: edit the models, then from `backend-fastapi/`:
+  `.\venv\Scripts\python.exe -m alembic revision --autogenerate -m "..."`, review
+  the generated migration (autogenerate does NOT detect primary-key changes —
+  hand-author those), then run the suite (the drift-guard test in
+  `tests/test_migrations.py` fails if models and migrations diverge). SQLite can't
+  ALTER constraints, so migrations use
+  `op.batch_alter_table(..., recreate="always")`; pass
+  `naming_convention=NAMING_CONVENTION` (from `app/database.py`) to a batch op
+  when it must DROP a constraint by name. A constraint naming convention on
+  `Base.metadata` keeps names deterministic.
+  Adopting on a DB created by the OLD `create_all()` (it has tables but no
+  `alembic_version`): run `alembic stamp 0001` ONCE to mark the baseline, then
+  `upgrade head` for later migrations. On a FAILED SQLite migration, drop any
+  leftover `_alembic_tmp_*` table before retrying (Postgres DDL is transactional,
+  so it's unaffected).
 - Auth: JWT (HS256, `python-jose`) via `Authorization: Bearer` header; passwords hashed
   with `bcrypt`; roles `USER` / `ADMIN`. Token expiry 24h (`ACCESS_TOKEN_EXPIRE_MINUTES`),
   **no refresh or revocation**. `SECRET_KEY` from env with an **insecure dev fallback** in
