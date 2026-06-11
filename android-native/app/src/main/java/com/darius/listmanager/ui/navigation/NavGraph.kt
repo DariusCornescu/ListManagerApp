@@ -19,6 +19,7 @@ import com.darius.listmanager.ui.screens.EditProductScreen
 import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
+import com.darius.listmanager.ui.screens.TeamDetailScreen
 import com.darius.listmanager.ui.screens.TeamsScreen
 
 @Composable
@@ -112,7 +113,24 @@ fun NavGraph(
         composable("teams") {
             TeamsScreen(
                 onBack = { navController.popBackStack() },
-                onOpenTeam = { _, _ -> }
+                onOpenTeam = { teamId, teamName ->
+                    navController.navigate(
+                        "team_detail/$teamId?name=${android.net.Uri.encode(teamName)}"
+                    )
+                }
+            )
+        }
+        composable(
+            route = "team_detail/{teamId}?name={teamName}",
+            arguments = listOf(
+                navArgument("teamId") { type = NavType.LongType },
+                navArgument("teamName") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            TeamDetailScreen(
+                teamId = backStackEntry.arguments?.getLong("teamId") ?: 0L,
+                teamName = backStackEntry.arguments?.getString("teamName") ?: "",
+                onBack = { navController.popBackStack() }
             )
         }
         composable("settings") {
