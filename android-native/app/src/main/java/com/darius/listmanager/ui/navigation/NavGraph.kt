@@ -19,6 +19,7 @@ import com.darius.listmanager.ui.screens.EditProductScreen
 import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
+import com.darius.listmanager.ui.screens.TeamsScreen
 
 @Composable
 fun NavGraph(
@@ -106,6 +107,12 @@ fun NavGraph(
             EditProductScreen(
                 productId = productId,
                 onBack = { navController.popBackStack() }
+            )
+        }
+        composable("teams") {
+            TeamsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTeam = { _, _ -> }
             )
         }
         composable("settings") {

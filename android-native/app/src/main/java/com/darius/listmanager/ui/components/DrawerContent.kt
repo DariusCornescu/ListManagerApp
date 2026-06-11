@@ -30,6 +30,7 @@ fun DrawerContent(
         DrawerItem(Icons.Rounded.ShoppingCart, "Current Session") { onNavigate("session") }
         DrawerItem(Icons.Rounded.Warning, "Unknown Products") { onNavigate("unknown") }
         DrawerItem(Icons.Rounded.Inventory, "Catalog") { onNavigate("catalog") }
+        DrawerItem(Icons.Rounded.Groups, "Teams") { onNavigate("teams") }
         DrawerItem(Icons.Rounded.Description, "Generated PDFs") { onNavigate("pdfs") }
         
         Spacer(Modifier.weight(1f))
