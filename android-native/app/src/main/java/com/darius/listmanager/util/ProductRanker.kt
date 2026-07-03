@@ -15,11 +15,17 @@ object ProductRanker {
      * Rank products by their similarity to the spoken text
      * Uses multiple similarity metrics with weights
      */
-    fun rank(spokenText: String, products: List<ProductEntity>, weights: ScoringWeights = ScoringWeights()): List<RankedProduct> {
+    fun rank(
+        spokenText: String,
+        products: List<ProductEntity>,
+        embeddingScores: Map<Long, Double> = emptyMap(),
+        weights: ScoringWeights = ScoringWeights()
+    ): List<RankedProduct> {
         val normalizedSpoken = TextNorm.normalize(spokenText)
 
         return products.map { product ->
-            val score = calculateScore(normalizedSpoken, product, weights)
+            val embeddingSim = embeddingScores[product.id] ?: 0.0
+            val score = calculateScore(normalizedSpoken, product, embeddingSim, weights)
             RankedProduct(
                 product = product,
                 score = score.total,
@@ -36,6 +42,7 @@ object ProductRanker {
     private fun calculateScore(
         normalizedSpoken: String,
         product: ProductEntity,
+        embeddingSim: Double,
         weights: ScoringWeights
     ): Score {
         val productName = TextNorm.normalize(product.name)
@@ -99,8 +106,11 @@ object ProductRanker {
                         numberSim * weights.numberSeq
                 ) / 7.0
 
-        // Take the best of name score or alias score
-        val finalScore = maxOf(nameScore, maxAliasScore)
+        // Embedding contribution (0 when no cached vector / no model → regression-safe)
+        val embeddingContribution = (embeddingSim * weights.embedding).coerceIn(0.0, 1.0)
+
+        // Take the best of fuzzy name score, alias score, or embedding similarity
+        val finalScore = maxOf(nameScore, maxAliasScore, embeddingContribution)
 
         return Score(
             total = finalScore,
@@ -113,6 +123,7 @@ object ProductRanker {
                 "contains" to containsBonus,
                 "number" to numberSim,
                 "aliasMax" to maxAliasScore,
+                "embedding" to embeddingContribution,
                 "final" to finalScore
             )
         )
@@ -131,5 +142,6 @@ data class ScoringWeights(
     val phonetic: Double = 0.8,     // Phonetic similarity
     val prefix: Double = 0.7,       // Prefix matching
     val containsBonus: Double = 2.0,// Contains/exact match bonus - highest
-    val numberSeq: Double = 1.0     // Number sequence matching
+    val numberSeq: Double = 1.0,    // Number sequence matching
+    val embedding: Double = 1.0     // Semantic embedding similarity
 )

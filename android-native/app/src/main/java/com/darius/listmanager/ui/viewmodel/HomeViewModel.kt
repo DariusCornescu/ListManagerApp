@@ -4,6 +4,8 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.darius.listmanager.data.embedding.EmbeddingBackfill
+import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.speech.AndroidSpeechProvider
@@ -13,6 +15,7 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,7 +39,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
-    private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
+    private val embeddingModel = EmbeddingModel.getInstance(application)
+    private val productEmbeddingRepository = ProductEmbeddingRepository(database.productEmbeddingDao())
+    private val resolveSpokenProductUseCase =
+        ResolveSpokenProductUseCase(productRepository, embeddingModel, productEmbeddingRepository)
+    private val embeddingBackfill =
+        EmbeddingBackfill(database.productDao(), productEmbeddingRepository, embeddingModel)
     private val addProductUseCase = AddProductUseCase(sessionRepository)
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -70,6 +78,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             needsReviewRepository.getAllFlow().collect { items ->
                 _uiState.value = _uiState.value.copy(reviewCount = items.size)
             }
+        }
+
+        // Warm the embedding cache in the background (no-op if model unavailable)
+        viewModelScope.launch(Dispatchers.IO) {
+            embeddingBackfill.run()
         }
     }
 

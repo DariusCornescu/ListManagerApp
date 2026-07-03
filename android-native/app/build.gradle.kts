@@ -99,6 +99,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.8.1")
     ksp("androidx.room:room-compiler:2.8.1")
 
+    // On-device sentence embeddings (ONNX Runtime + HF tokenizer)
+    implementation("io.gitlab.shubham0204:sentence-embeddings:0.0.6")
+
     // Coroutines (if not already added)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 

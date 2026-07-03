@@ -21,7 +21,10 @@ class ProductRepository(
 
     companion object { const val TAG = "ProductRepository" }
     fun getAllFlow(): Flow<List<ProductEntity>> { return dao.getAllFlow() }
-    
+
+    /** Local products only — never touches the network (used by embedding retrieval). */
+    suspend fun getAllLocal(): List<ProductEntity> = dao.getAll()
+
     /**
      * ONLINE: Fetch de pe server + cache local
      * OFFLINE: Returnează din cache local
