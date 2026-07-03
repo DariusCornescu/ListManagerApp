@@ -6,7 +6,7 @@
 
 **Architecture:** A pure math/search core (`VectorMath`, `EmbeddingSearch`) and a persisted `product_embeddings` cache feed an embedding-similarity signal into the existing pure `ProductRanker`. A `SentenceEmbedding`-backed `EmbeddingModel` (ONNX, bundled) produces vectors; a background backfill populates the cache. `ResolveSpokenProductUseCase` retrieves candidates from BOTH the FTS path and embedding nearest-neighbors, then ranks with the combined score. Model unavailable ⇒ silent fall back to fuzzy-only.
 
-**Tech Stack:** Kotlin, Room, Coroutines, `io.gitlab.shubham0204:sentence-embeddings:v6.1` (ONNX Runtime + HF tokenizer), model `paraphrase-multilingual-MiniLM-L12-v2` (384-dim). Pure logic tested with JUnit4 (`src/test`).
+**Tech Stack:** Kotlin, Room, Coroutines, `io.gitlab.shubham0204:sentence-embeddings:0.0.6` (ONNX Runtime + HF tokenizer), model `paraphrase-multilingual-MiniLM-L12-v2` (384-dim). Pure logic tested with JUnit4 (`src/test`).
 
 **Spec:** `docs/superpowers/specs/2026-07-03-b2-semantic-matching-design.md`
 
@@ -56,7 +56,7 @@ In `android-native/app/build.gradle.kts`, inside the `dependencies { }` block (a
 
 ```kotlin
     // On-device sentence embeddings (ONNX Runtime + HF tokenizer)
-    implementation("io.gitlab.shubham0204:sentence-embeddings:v6.1")
+    implementation("io.gitlab.shubham0204:sentence-embeddings:0.0.6")
 ```
 
 - [ ] **Step 2: Gitignore the large model asset (it exceeds GitHub's 100MB/file limit)**
@@ -107,7 +107,9 @@ fuzzy-only — the app still works, just without semantic matching.
 The model is loaded at runtime, so the build must succeed even before `model.onnx` is downloaded.
 
 Run: `cd android-native && export ANDROID_HOME="C:\Users\dariu\AppData\Local\Android\Sdk" && ./gradlew compileDebugKotlin --console=plain`
-Expected: BUILD SUCCESSFUL (the new dependency resolves from Maven Central / the library's repo).
+Expected: BUILD SUCCESSFUL. The dependency resolves from **Maven Central** (already configured; no repo change needed). Only versions `v6` and `0.0.6` exist — use `0.0.6`.
+
+**Prerequisite for a fresh worktree:** the project references `com.darius.listmanager.network.ApiConfig`, a **gitignored local file** not in the repo (see PR #2 / ApiConfig setup docs). A fresh worktree fails with `Unresolved reference 'ApiConfig'` until it is copied in from the main checkout: `android-native/app/src/main/java/com/darius/listmanager/network/ApiConfig.kt`.
 
 - [ ] **Step 5: Commit**
 
