@@ -18,7 +18,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-data class HomeUiState( val speechState: SpeechState = SpeechState.Idle, val suggestions: List<RankedProduct> = emptyList(), val message: String? = null, val isProcessing: Boolean = false, val unknownProductCount: Int = 0 )
+data class HomeUiState(
+    val speechState: SpeechState = SpeechState.Idle,
+    val suggestions: List<RankedProduct> = emptyList(),
+    val message: String? = null,
+    val isProcessing: Boolean = false,
+    val unknownProductCount: Int = 0,
+    val reviewCount: Int = 0,
+    val sessionAddedCount: Int = 0
+)
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val speechRepository: SpeechRepository = AndroidSpeechProvider(application)
@@ -27,6 +35,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
     private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
     private val unknownRepository = UnknownRepository(database.unknownDao())
+    private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
     private val addProductUseCase = AddProductUseCase(sessionRepository)
 
@@ -55,13 +64,24 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
         }
+
+        // Collect needs-review count
+        viewModelScope.launch {
+            needsReviewRepository.getAllFlow().collect { items ->
+                _uiState.value = _uiState.value.copy(reviewCount = items.size)
+            }
+        }
     }
 
     // ==================== Speech Recognition ====================
 
     fun startListening() {
         speechRepository.startListening()
-        _uiState.value = _uiState.value.copy( suggestions = emptyList(), message = null )
+        _uiState.value = _uiState.value.copy(
+            suggestions = emptyList(),
+            message = null,
+            sessionAddedCount = 0
+        )
     }
 
     fun stopListening() { speechRepository.stopListening() }
@@ -76,48 +96,40 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 when (val result = resolveSpokenProductUseCase.execute(spokenText)) {
                     is ResolveResult.AutoAdd -> {
                         Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
-
-                        // High confidence - auto-add to session
                         val session = sessionRepository.getOrCreateActiveSession()
                         addProductUseCase.execute(session.id, result.product.id, 1)
-
                         _uiState.value = _uiState.value.copy(
-                            message = "Added: ${result.product.name} (confidence: ${(result.score * 100).toInt()}%)",
+                            message = "Adăugat: ${result.product.name}",
+                            suggestions = emptyList(),
+                            isProcessing = false,
+                            sessionAddedCount = _uiState.value.sessionAddedCount + 1
+                        )
+                        // Keep listening — do NOT reset speech state.
+                    }
+                    is ResolveResult.Suggestions -> {
+                        Log.d(TAG, "Ambiguous -> needs review: '$spokenText'")
+                        val session = sessionRepository.getOrCreateActiveSession()
+                        needsReviewRepository.insert(
+                            spokenText = spokenText,
+                            sessionId = session.id,
+                            createdAt = System.currentTimeMillis()
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            message = "De verificat: '$spokenText'",
                             suggestions = emptyList(),
                             isProcessing = false
                         )
-
-                        // Reset speech state for next recording
-                        resetSpeechState()
-                    }
-                    is ResolveResult.Suggestions -> {
-                        Log.d(TAG, "Suggestions: ${result.products.size} products")
-                        result.products.forEach {
-                            Log.d(TAG, "  - ${it.product.name}: ${it.score}")
-                        }
-
-                        // Medium confidence - show suggestions
-                        _uiState.value = _uiState.value.copy(
-                            suggestions = result.products,
-                            message = "Found ${result.products.size} suggestions. Tap one to add.",
-                            isProcessing = false
-                        )
+                        // Keep listening.
                     }
                     is ResolveResult.Unknown -> {
                         Log.d(TAG, "Unknown: ${result.spokenText}")
-
-                        // Low confidence - save as unknown
-                        val unknownId = unknownRepository.insert(result.spokenText)
-                        Log.d(TAG, "Saved to unknown list with ID: $unknownId")
-
+                        unknownRepository.insert(result.spokenText)
                         _uiState.value = _uiState.value.copy(
-                            message = "Couldn't recognize '${result.spokenText}'. Saved to Unknown list.",
+                            message = "Nerecunoscut: '${result.spokenText}'. Salvat.",
                             suggestions = emptyList(),
                             isProcessing = false
                         )
-
-                        // Reset speech state for next recording
-                        resetSpeechState()
+                        // Keep listening.
                     }
                 }
             } catch (e: Exception) {

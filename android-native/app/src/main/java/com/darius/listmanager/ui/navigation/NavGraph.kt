@@ -19,6 +19,7 @@ import com.darius.listmanager.ui.screens.EditProductScreen
 import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
+import com.darius.listmanager.ui.screens.NeedsReviewScreen
 
 @Composable
 fun NavGraph(
@@ -53,6 +54,7 @@ fun NavGraph(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSession = { navController.navigate("session") },
                 onNavigateToUnknown = { navController.navigate("unknown") },
+                onNavigateToReview = { navController.navigate("review") },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToAccount = { 
                     // Navigate to account if logged in, login if not
@@ -84,6 +86,9 @@ fun NavGraph(
         }
         composable("unknown") {
             UnknownProductsScreen(onBack = { navController.popBackStack() })
+        }
+        composable("review") {
+            NeedsReviewScreen(onBack = { navController.popBackStack() })
         }
         composable("pdfs") {
             PDFsScreen(onBack = { navController.popBackStack() })
