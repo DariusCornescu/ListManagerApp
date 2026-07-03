@@ -7,9 +7,11 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.data.local.entity.ProductEntity
+import com.darius.listmanager.data.repository.PendingOperationRepository
 import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
+import com.darius.listmanager.network.RetrofitClient
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Before
@@ -38,7 +40,12 @@ class Milestone3IntegrationTest {
             .allowMainThreadQueries()
             .build()
 
-        productRepository = ProductRepository(database.productDao())
+        productRepository = ProductRepository(
+            database.productDao(),
+            PendingOperationRepository(database.pendingOperationDao()),
+            context,
+            RetrofitClient.api
+        )
         resolveUseCase = ResolveSpokenProductUseCase(productRepository)
 
         // Seed test data
