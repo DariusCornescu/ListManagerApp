@@ -54,7 +54,7 @@ interface ListManagerApi {
 
     // ===== Session - Management =====
     @GET("/api/session/active")
-    suspend fun getActiveSession(): Response<GlobalSessionDTO>
+    suspend fun getActiveSession(@Query("team_id") teamId: Long? = null): Response<GlobalSessionDTO>
     
     @POST("/api/session/create")
     suspend fun createSession(@Body request: CreateSessionRequest): Response<GlobalSessionDTO>
@@ -87,4 +87,29 @@ interface ListManagerApi {
     // ===== Stats =====
     @GET("/api/stats")
     suspend fun getStats(): Response<StatsDTO>
+
+    // ===== Teams =====
+    @POST("/api/teams")
+    suspend fun createTeam(@Body request: TeamCreateRequest): Response<TeamDTO>
+
+    @GET("/api/teams")
+    suspend fun getMyTeams(): Response<List<TeamDTO>>
+
+    @POST("/api/teams/{team_id}/invites")
+    suspend fun createInvite(
+        @Path("team_id") teamId: Long,
+        @Body request: InviteCreateRequest = InviteCreateRequest()
+    ): Response<InviteDTO>
+
+    @POST("/api/teams/invites/{code}/accept")
+    suspend fun acceptInvite(@Path("code") code: String): Response<TeamMemberDTO>
+
+    @GET("/api/teams/{team_id}/members")
+    suspend fun getTeamMembers(@Path("team_id") teamId: Long): Response<List<TeamMemberDTO>>
+
+    @DELETE("/api/teams/{team_id}/members/{user_id}")
+    suspend fun removeTeamMember(
+        @Path("team_id") teamId: Long,
+        @Path("user_id") userId: Long
+    ): Response<Unit>
 }

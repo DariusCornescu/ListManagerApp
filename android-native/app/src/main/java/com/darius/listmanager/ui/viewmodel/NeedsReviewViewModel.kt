@@ -64,7 +64,10 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
     fun addCandidate(reviewId: Long, productId: Long, productName: String) {
         viewModelScope.launch {
             try {
-                val session = sessionRepository.getOrCreateActiveSession()
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
                 addProductUseCase.execute(session.id, productId, 1)
                 needsReviewRepository.deleteById(reviewId)
                 _uiState.value = _uiState.value.copy(message = "Adăugat: $productName")

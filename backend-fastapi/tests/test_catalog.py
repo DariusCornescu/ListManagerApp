@@ -6,15 +6,15 @@ from fastapi import status
 class TestDistributorCRUD:
     """Tests for Distributor CRUD operations"""
 
-    def test_create_distributor(self, client, auth_headers):
-        """Test creating a new distributor with authentication"""
+    def test_create_distributor(self, client, admin_headers):
+        """Test creating a new distributor with admin authentication"""
         distributor_data = {
             "distributor_name": "New Distributor"
         }
         response = client.post(
             "/api/catalog/distributors",
             json=distributor_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -35,7 +35,20 @@ class TestDistributorCRUD:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_create_duplicate_distributor(self, client, auth_headers, sample_distributor):
+    def test_create_distributor_non_admin(self, client, auth_headers):
+        """Test creating distributor as a non-admin (regular) user fails"""
+        distributor_data = {
+            "distributor_name": "New Distributor"
+        }
+        response = client.post(
+            "/api/catalog/distributors",
+            json=distributor_data,
+            headers=auth_headers
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_create_duplicate_distributor(self, client, admin_headers, sample_distributor):
         """Test creating distributor with duplicate name fails"""
         distributor_data = {
             "distributor_name": "Test Distributor"
@@ -43,7 +56,7 @@ class TestDistributorCRUD:
         response = client.post(
             "/api/catalog/distributors",
             json=distributor_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_400_BAD_REQUEST
@@ -74,15 +87,15 @@ class TestDistributorCRUD:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Distributor not found" in response.json()["detail"]
 
-    def test_update_distributor(self, client, auth_headers, sample_distributor):
-        """Test updating a distributor with authentication"""
+    def test_update_distributor(self, client, admin_headers, sample_distributor):
+        """Test updating a distributor with admin authentication"""
         update_data = {
             "distributor_name": "Updated Distributor"
         }
         response = client.put(
             f"/api/catalog/distributors/{sample_distributor.id}",
             json=update_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -102,7 +115,7 @@ class TestDistributorCRUD:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_update_nonexistent_distributor(self, client, auth_headers):
+    def test_update_nonexistent_distributor(self, client, admin_headers):
         """Test updating nonexistent distributor returns 404"""
         update_data = {
             "distributor_name": "Updated Distributor"
@@ -110,17 +123,17 @@ class TestDistributorCRUD:
         response = client.put(
             "/api/catalog/distributors/99999",
             json=update_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Distributor not found" in response.json()["detail"]
 
-    def test_delete_distributor(self, client, auth_headers, sample_distributor):
-        """Test deleting a distributor with authentication"""
+    def test_delete_distributor(self, client, admin_headers, sample_distributor):
+        """Test deleting a distributor with admin authentication"""
         response = client.delete(
             f"/api/catalog/distributors/{sample_distributor.id}",
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -138,11 +151,11 @@ class TestDistributorCRUD:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_delete_nonexistent_distributor(self, client, auth_headers):
+    def test_delete_nonexistent_distributor(self, client, admin_headers):
         """Test deleting nonexistent distributor returns 404"""
         response = client.delete(
             "/api/catalog/distributors/99999",
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
@@ -152,8 +165,8 @@ class TestDistributorCRUD:
 class TestProductCRUD:
     """Tests for Product CRUD operations"""
 
-    def test_create_product(self, client, auth_headers, sample_distributor):
-        """Test creating a new product with authentication"""
+    def test_create_product(self, client, admin_headers, sample_distributor):
+        """Test creating a new product with admin authentication"""
         product_data = {
             "name": "New Product",
             "distributor_id": sample_distributor.id,
@@ -162,7 +175,7 @@ class TestProductCRUD:
         response = client.post(
             "/api/catalog/products",
             json=product_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -182,6 +195,21 @@ class TestProductCRUD:
         response = client.post(
             "/api/catalog/products",
             json=product_data
+        )
+
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_create_product_non_admin(self, client, auth_headers, sample_distributor):
+        """Test creating product as a non-admin (regular) user fails"""
+        product_data = {
+            "name": "New Product",
+            "distributor_id": sample_distributor.id,
+            "aliases": "alias1, alias2"
+        }
+        response = client.post(
+            "/api/catalog/products",
+            json=product_data,
+            headers=auth_headers
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -237,8 +265,8 @@ class TestProductCRUD:
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Product not found" in response.json()["detail"]
 
-    def test_update_product(self, client, auth_headers, sample_product, sample_distributor):
-        """Test updating a product with authentication"""
+    def test_update_product(self, client, admin_headers, sample_product, sample_distributor):
+        """Test updating a product with admin authentication"""
         update_data = {
             "name": "Updated Product",
             "distributor_id": sample_distributor.id,
@@ -247,7 +275,7 @@ class TestProductCRUD:
         response = client.put(
             f"/api/catalog/products/{sample_product.id}",
             json=update_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -269,7 +297,7 @@ class TestProductCRUD:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_update_nonexistent_product(self, client, auth_headers, sample_distributor):
+    def test_update_nonexistent_product(self, client, admin_headers, sample_distributor):
         """Test updating nonexistent product returns 404"""
         update_data = {
             "name": "Updated Product",
@@ -279,17 +307,17 @@ class TestProductCRUD:
         response = client.put(
             "/api/catalog/products/99999",
             json=update_data,
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "Product not found" in response.json()["detail"]
 
-    def test_delete_product(self, client, auth_headers, sample_product):
-        """Test deleting a product with authentication"""
+    def test_delete_product(self, client, admin_headers, sample_product):
+        """Test deleting a product with admin authentication"""
         response = client.delete(
             f"/api/catalog/products/{sample_product.id}",
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -307,11 +335,11 @@ class TestProductCRUD:
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
 
-    def test_delete_nonexistent_product(self, client, auth_headers):
+    def test_delete_nonexistent_product(self, client, admin_headers):
         """Test deleting nonexistent product returns 404"""
         response = client.delete(
             "/api/catalog/products/99999",
-            headers=auth_headers
+            headers=admin_headers
         )
 
         assert response.status_code == status.HTTP_404_NOT_FOUND

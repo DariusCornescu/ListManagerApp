@@ -79,8 +79,8 @@ fun CatalogScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            // FAB pentru adăugare manuală de produse
-            if (!uiState.isSelectionMode && !uiState.isLoading) {
+            // FAB pentru adăugare manuală de produse (doar ADMIN)
+            if (uiState.isAdmin && !uiState.isSelectionMode && !uiState.isLoading) {
                 FloatingActionButton(
                     onClick = { showAddProductDialog = true },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -172,25 +172,27 @@ fun CatalogScreen(
                             Icon(Icons.Rounded.Refresh, "Reîmprospătează")
                         }
 
-                        // Optional: Manual selection mode toggle
-                        var showMenu by remember { mutableStateOf(false) }
-                        IconButton(onClick = { showMenu = true }) {
-                            Icon(Icons.Rounded.MoreVert, "Mai multe opțiuni")
-                        }
-                        DropdownMenu(
-                            expanded = showMenu,
-                            onDismissRequest = { showMenu = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Selectează Produse") },
-                                onClick = {
-                                    viewModel.enterSelectionMode()
-                                    showMenu = false
-                                },
-                                leadingIcon = {
-                                    Icon(Icons.Rounded.Checklist, null)
-                                }
-                            )
+                        // Manual selection mode toggle (leads to delete) — doar ADMIN
+                        if (uiState.isAdmin) {
+                            var showMenu by remember { mutableStateOf(false) }
+                            IconButton(onClick = { showMenu = true }) {
+                                Icon(Icons.Rounded.MoreVert, "Mai multe opțiuni")
+                            }
+                            DropdownMenu(
+                                expanded = showMenu,
+                                onDismissRequest = { showMenu = false }
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Selectează Produse") },
+                                    onClick = {
+                                        viewModel.enterSelectionMode()
+                                        showMenu = false
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Rounded.Checklist, null)
+                                    }
+                                )
+                            }
                         }
                     }
                 )

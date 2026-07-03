@@ -22,7 +22,8 @@ data class CatalogUiState(
     val isSelectionMode: Boolean = false,
     val selectedProductIds: Set<Long> = emptySet(),
     val deleteMessage: String? = null,
-    val isOffline: Boolean = false // Track offline mode
+    val isOffline: Boolean = false, // Track offline mode
+    val isAdmin: Boolean = false // Only ADMINs may mutate the catalog
 )
 
 data class DistributorWithProducts(
@@ -39,7 +40,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(CatalogUiState())
     val uiState: StateFlow<CatalogUiState> = _uiState.asStateFlow()
 
-    init { loadCatalog() }
+    init {
+        loadCatalog()
+        observeRole()
+    }
+
+    private fun observeRole() {
+        viewModelScope.launch {
+            AuthState.role.collect { role ->
+                _uiState.value = _uiState.value.copy(isAdmin = role == "ADMIN")
+            }
+        }
+    }
 
     private fun loadCatalog() {
         viewModelScope.launch {
@@ -117,6 +129,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun onProductLongPress(productId: Long) {
+        // Non-admins cannot mutate the catalog, so selection mode (which leads to delete/edit)
+        // must not be reachable via long-press for them.
+        if (!_uiState.value.isAdmin) return
         if (!_uiState.value.isSelectionMode) {
             // Enter selection mode and select this product
             _uiState.value = _uiState.value.copy(
@@ -159,20 +174,29 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
         viewModelScope.launch {
             try {
-                val count = selectedIds.size
+                var successCount = 0
+                var forbidden = false
+                var errorMsg: String? = null
 
-                // Delete each product
+                // Delete each product, tracking the typed outcome
                 selectedIds.forEach { productId ->
                     val product = productRepository.getById(productId)
-                    product?.let {
-                        productRepository.delete(it)
+                    if (product != null) {
+                        when (val result = productRepository.delete(product)) {
+                            is RepoResult.Success -> successCount++
+                            is RepoResult.QueuedOffline -> successCount++
+                            is RepoResult.Forbidden -> forbidden = true
+                            is RepoResult.Error -> errorMsg = result.message
+                        }
                     }
                 }
 
-                // Show success message
-                _uiState.value = _uiState.value.copy(
-                    deleteMessage = "Deleted $count product${if (count != 1) "s" else ""}"
-                )
+                val message = when {
+                    forbidden -> "Doar administratorii pot modifica catalogul"
+                    errorMsg != null -> "Eroare: $errorMsg"
+                    else -> "Deleted $successCount product${if (successCount != 1) "s" else ""}"
+                }
+                _uiState.value = _uiState.value.copy(deleteMessage = message)
 
                 // Exit selection mode
                 exitSelectionMode()
@@ -183,7 +207,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 android.util.Log.e("CatalogViewModel", "Error deleting products", e)
                 _uiState.value = _uiState.value.copy(
-                    deleteMessage = "Error: ${e.message}"
+                    deleteMessage = "Eroare: ${e.message}"
                 )
             }
         }
@@ -216,12 +240,18 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
                     distributorId = distributor.id,
                     aliases = aliases.ifBlank { null }
                 )
-                
-                productRepository.insert(product)
-                android.util.Log.d("CatalogViewModel", "Product added successfully")
-                
-                // Reload catalog to show new product
-                loadCatalog()
+
+                when (val result = productRepository.insert(product)) {
+                    is RepoResult.Success,
+                    is RepoResult.QueuedOffline -> {
+                        android.util.Log.d("CatalogViewModel", "Product added successfully")
+                        loadCatalog()
+                    }
+                    is RepoResult.Forbidden ->
+                        throw SecurityException("Doar administratorii pot modifica catalogul")
+                    is RepoResult.Error ->
+                        throw IllegalStateException(result.message)
+                }
             } else {
                 throw Exception("Failed to create distributor")
             }

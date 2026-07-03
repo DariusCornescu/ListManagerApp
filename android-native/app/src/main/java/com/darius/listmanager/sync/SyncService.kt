@@ -150,9 +150,15 @@ class SyncService(private val context: Context) {
                         Log.d(TAG, "Operation ${operation.id} completed successfully")
                     }
                     is SyncResult.Error -> {
-                        pendingOperationRepo.markAsFailed(operation.id, result.message)
+                        if (result.retryable) {
+                            pendingOperationRepo.markAsFailed(operation.id, result.message)
+                            Log.e(TAG, "Operation ${operation.id} failed (retryable): ${result.message}")
+                        } else {
+                            // Non-retryable (401/403/422 etc.) — drop the op so it doesn't loop forever
+                            pendingOperationRepo.deleteById(operation.id)
+                            Log.e(TAG, "Operation ${operation.id} failed (non-retryable, dropped): ${result.message}")
+                        }
                         failCount++
-                        Log.e(TAG, "Operation ${operation.id} failed: ${result.message}")
                     }
                     is SyncResult.Conflict -> {
                         // Handle conflict based on strategy
@@ -250,6 +256,20 @@ class SyncService(private val context: Context) {
         }
     }
 
+    /**
+     * Maps a non-2xx HTTP status to a non-retryable [SyncResult.Error] when the server has
+     * definitively rejected the operation (400 bad request — e.g. session no longer active,
+     * 401/403 authorization, 422 validation). Such operations will never succeed on retry,
+     * so the caller drops them from the queue.
+     * Returns a retryable error for everything else (transient server/5xx issues).
+     */
+    private fun mapHttpErrorToSyncResult(code: Int): SyncResult {
+        return when (code) {
+            400, 401, 403, 422 -> SyncResult.Error("Rejected by server: $code", retryable = false)
+            else -> SyncResult.Error("Failed: $code", retryable = true)
+        }
+    }
+
     // ===== DISTRIBUTOR OPERATIONS =====
 
     private suspend fun createDistributor(data: OperationData.CreateDistributor): SyncResult {
@@ -261,7 +281,7 @@ class SyncService(private val context: Context) {
                 val created = response.body()!!
                 SyncResult.Success(resourceId = created.id)
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -278,7 +298,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Error("Resource not found", retryable = false)
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -294,7 +314,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Success()
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -312,7 +332,7 @@ class SyncService(private val context: Context) {
                 val created = response.body()!!
                 SyncResult.Success(resourceId = created.id)
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -329,7 +349,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Error("Resource not found", retryable = false)
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -345,7 +365,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Success()
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -362,7 +382,7 @@ class SyncService(private val context: Context) {
             if (response.isSuccessful) {
                 SyncResult.Success()
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -384,7 +404,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Error("Resource not found", retryable = false)
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -400,7 +420,7 @@ class SyncService(private val context: Context) {
             } else if (response.code() == 404) {
                 SyncResult.Success()
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
@@ -414,7 +434,7 @@ class SyncService(private val context: Context) {
             if (response.isSuccessful) {
                 SyncResult.Success()
             } else {
-                SyncResult.Error("Failed: ${response.code()}", retryable = true)
+                mapHttpErrorToSyncResult(response.code())
             }
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)

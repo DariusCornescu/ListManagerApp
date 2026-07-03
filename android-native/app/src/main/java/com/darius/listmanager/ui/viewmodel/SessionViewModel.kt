@@ -10,9 +10,14 @@ import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.dao.SessionItemWithProduct
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.usecase.GeneratePdfsUseCase
+import com.darius.listmanager.data.workspace.SessionEvents
+import com.darius.listmanager.data.workspace.WorkspaceManager
+import com.darius.listmanager.data.workspace.WorkspaceSessionResolver
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -23,35 +28,66 @@ data class SessionUiState(
     val error: String? = null,
     val isGeneratingPdfs: Boolean = false,
     val pdfGenerationProgress: String? = null,
-    val generatedPdfs: Map<String, File>? = null
+    val generatedPdfs: Map<String, File>? = null,
+    val workspaceName: String = "Personal",
 )
 
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepo = PendingOperationRepository(database.pendingOperationDao())
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
+    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepo )
     private val pdfRepository = PdfRepository(application)
     private val generatePdfsUseCase = GeneratePdfsUseCase(sessionRepository, pdfRepository)
+    private val workspaceManager = WorkspaceManager.getInstance(application)
+    private val resolver = WorkspaceSessionResolver(database)
 
     private val _uiState = MutableStateFlow(SessionUiState())
     val uiState: StateFlow<SessionUiState> = _uiState.asStateFlow()
 
     private var currentSessionId: Long? = null
 
+    /** Bumped to force a session re-resolve (e.g. after completing a session). */
+    private val reloadTrigger = MutableStateFlow(0)
+    fun refresh() { reloadTrigger.value++ }
+
     init {
-        loadSession()
+        observeWorkspace()
+        // Server-side session lifecycle events (completed/replaced) request a re-resolve.
+        viewModelScope.launch {
+            SessionEvents.refreshRequests.collect { refresh() }
+        }
     }
 
-    private fun loadSession() {
+    private fun observeWorkspace() {
         viewModelScope.launch {
-            try {
-                val session = sessionRepository.getOrCreateActiveSession()
-                currentSessionId = session.id
-                sessionRepository.getSessionItemsFlow(session.id).collect { items ->
-                    _uiState.value = _uiState.value.copy( items = items, isLoading = false )
+            combine(workspaceManager.currentWorkspace, reloadTrigger) { w, _ -> w }.collectLatest { workspace ->
+                currentSessionId = null
+                _uiState.value = _uiState.value.copy(
+                    isLoading = true,
+                    workspaceName = workspace.displayName,
+                    items = emptyList(),
+                    error = null,
+                )
+                try {
+                    // Best effort: align with the server session for this
+                    // workspace. Offline falls back to the local cache.
+                    when (resolver.resolve(workspace)) {
+                        is WorkspaceSessionResolver.ResolveResult.AccessLost -> {
+                            workspaceManager.fallbackToPersonal()
+                            return@collectLatest // flow re-emits with Personal
+                        }
+                        else -> { /* Resolved or Offline — continue below */ }
+                    }
+                    val session = sessionRepository.getOrCreateActiveSession(workspace.teamIdOrNull)
+                    currentSessionId = session.id
+                    sessionRepository.getSessionItemsFlow(session.id).collect { items ->
+                        _uiState.value = _uiState.value.copy(items = items, isLoading = false, error = null)
+                    }
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    _uiState.value = _uiState.value.copy(isLoading = false, error = e.message)
                 }
-            } catch (e: Exception) {
-                _uiState.value = SessionUiState( isLoading = false, error = e.message )
             }
         }
     }
@@ -92,7 +128,12 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
                     }
 
                     _uiState.value = _uiState.value.copy( isGeneratingPdfs = false, generatedPdfs = pdfs)
-                    sessionRepository.clearSession(sessionId)
+                    // Complete (don't clear): clearing would wipe the SHARED
+                    // team session for every member. Completing retires it;
+                    // the re-resolve below then creates a fresh session for
+                    // the whole workspace.
+                    sessionRepository.completeSessionWriteThrough(sessionId)
+                    refresh()
 
                 } catch (e: Exception) {
                     Log.e("SessionViewModel", "Error generating PDFs", e)

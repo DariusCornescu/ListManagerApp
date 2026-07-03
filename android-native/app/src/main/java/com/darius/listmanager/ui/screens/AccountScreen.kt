@@ -12,7 +12,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.darius.listmanager.data.websocket.WebSocketService
@@ -28,8 +34,26 @@ fun AccountScreen(
 ) {
     val scrollState = rememberScrollState()
     var showLogoutDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
     val webSocketService = remember { WebSocketService.getInstance() }
-    
+    val uiState by viewModel.uiState.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // Load the real account (username/email/role) from the server
+    LaunchedEffect(Unit) {
+        viewModel.loadCurrentUser()
+    }
+
+    // Surface profile update success/error
+    LaunchedEffect(uiState.profileMessage) {
+        uiState.profileMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearProfileMessage()
+        }
+    }
+
+    val displayUsername = uiState.username ?: username
+
     // Logout confirmation dialog
     if (showLogoutDialog) {
         AlertDialog(
@@ -63,7 +87,21 @@ fun AccountScreen(
         )
     }
     
+    // Edit profile dialog
+    if (showEditDialog) {
+        EditProfileDialog(
+            currentEmail = uiState.email ?: "",
+            isSaving = uiState.isSavingProfile,
+            onDismiss = { showEditDialog = false },
+            onConfirm = { email, newPassword ->
+                viewModel.updateProfile(email, newPassword)
+                showEditDialog = false
+            }
+        )
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Contul meu") },
@@ -91,25 +129,30 @@ fun AccountScreen(
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = (username?.firstOrNull() ?: 'U').uppercase().toString(),
+                        text = (displayUsername?.firstOrNull() ?: 'U').uppercase().toString(),
                         style = MaterialTheme.typography.displayMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                 }
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             // Username
             Text(
-                text = username ?: "Utilizator",
+                text = displayUsername ?: "Utilizator",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
-            
+
+            // Role (real value from server)
             Text(
-                text = "Conectat",
+                text = when (uiState.role) {
+                    "ADMIN" -> "Administrator"
+                    "USER" -> "Utilizator"
+                    else -> "—"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.primary
             )
@@ -135,55 +178,46 @@ fun AccountScreen(
                     
                     HorizontalDivider()
                     
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Rounded.Person,
-                                null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Text("Utilizator")
-                        }
-                        Text(
-                            username ?: "-",
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                Icons.Rounded.CloudDone,
-                                null,
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                            Text("Status sincronizare")
-                        }
-                        Text(
-                            "Activ",
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    AccountInfoRow(
+                        icon = Icons.Rounded.Person,
+                        label = "Utilizator",
+                        value = displayUsername ?: "-"
+                    )
+
+                    AccountInfoRow(
+                        icon = Icons.Rounded.Email,
+                        label = "Email",
+                        value = uiState.email ?: "-"
+                    )
+
+                    AccountInfoRow(
+                        icon = Icons.Rounded.Badge,
+                        label = "Rol",
+                        value = when (uiState.role) {
+                            "ADMIN" -> "Administrator"
+                            "USER" -> "Utilizator"
+                            else -> "—"
+                        },
+                        valueColor = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
-            
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Edit profile button
+            OutlinedButton(
+                onClick = { showEditDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = uiState.isLoggedIn || uiState.username != null
+            ) {
+                Icon(Icons.Rounded.Edit, null)
+                Spacer(Modifier.width(8.dp))
+                Text("Editează profilul")
+            }
+
             Spacer(modifier = Modifier.weight(1f))
-            
+
             // Logout button
             Button(
                 onClick = { showLogoutDialog = true },
@@ -203,4 +237,99 @@ fun AccountScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+}
+
+@Composable
+private fun AccountInfoRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    valueColor: Color = Color.Unspecified
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(label)
+        }
+        Text(
+            value,
+            fontWeight = FontWeight.Medium,
+            color = valueColor
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun EditProfileDialog(
+    currentEmail: String,
+    isSaving: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (email: String, newPassword: String) -> Unit
+) {
+    var email by remember { mutableStateOf(currentEmail) }
+    var newPassword by remember { mutableStateOf("") }
+    var passwordVisible by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
+        title = { Text("Editează profilul") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = email,
+                    onValueChange = { email = it },
+                    label = { Text("Email") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
+                )
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it },
+                    label = { Text("Parolă nouă (opțional)") },
+                    singleLine = true,
+                    visualTransformation = if (passwordVisible) VisualTransformation.None
+                                           else PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                if (passwordVisible) Icons.Rounded.VisibilityOff
+                                else Icons.Rounded.Visibility,
+                                contentDescription = null
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
+                )
+                Text(
+                    "Lasă câmpurile goale pentru a păstra valorile actuale.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(email, newPassword) },
+                enabled = !isSaving && (email.isNotBlank() || newPassword.isNotBlank())
+            ) {
+                Text("Salvează")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Anulează") }
+        }
+    )
 }

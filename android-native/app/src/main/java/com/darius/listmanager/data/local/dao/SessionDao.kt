@@ -9,11 +9,11 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC")
     fun getAllFlow(): Flow<List<SessionEntity>>
 
-    @Query("SELECT * FROM sessions WHERE isActive = 1 LIMIT 1")
-    suspend fun getActiveSession(): SessionEntity?
+    @Query("SELECT * FROM sessions WHERE isActive = 1 AND teamId IS :teamId LIMIT 1")
+    suspend fun getActiveSession(teamId: Long?): SessionEntity?
 
-    @Query("SELECT * FROM sessions WHERE isActive = 1 LIMIT 1")
-    fun getActiveSessionFlow(): Flow<SessionEntity?>
+    @Query("SELECT * FROM sessions WHERE isActive = 1 AND teamId IS :teamId LIMIT 1")
+    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?>
 
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun getById(id: Long): SessionEntity?
@@ -21,24 +21,41 @@ interface SessionDao {
     @Insert
     suspend fun insert(session: SessionEntity): Long
 
+    @Upsert
+    suspend fun upsert(session: SessionEntity): Long
+
     @Update
     suspend fun update(session: SessionEntity)
 
     @Delete
     suspend fun delete(session: SessionEntity)
 
-    @Query("UPDATE sessions SET isActive = 0")
-    suspend fun deactivateAll()
+    @Query("UPDATE sessions SET isActive = 0 WHERE teamId IS :teamId")
+    suspend fun deactivateAll(teamId: Long?)
+
+    @Query("SELECT MIN(id) FROM sessions")
+    suspend fun getMinSessionId(): Long?
 
     @Transaction
-    suspend fun getOrCreateActiveSession(): SessionEntity {
-        val active = getActiveSession()
-        return if (active != null) {
-            active
-        } else {
-            val newId = insert(SessionEntity(name = "Current Session", isActive = true))
-            getById(newId)!!
-        }
+    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
+        val active = getActiveSession(teamId)
+        if (active != null) return active
+        // Local fallback sessions get negative ids; server-mirrored sessions
+        // (activateServerSession) own the positive id space.
+        val newId = minOf(getMinSessionId() ?: 0L, 0L) - 1L
+        insert(SessionEntity(id = newId, name = "Current Session", isActive = true, teamId = teamId))
+        return getById(newId)!!
+    }
+
+    /**
+     * Mirror a server session into the local cache as the single active
+     * session of its workspace. Uses the SERVER id as the local id (same
+     * convention as products/distributors).
+     */
+    @Transaction
+    suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
+        deactivateAll(teamId)
+        upsert(SessionEntity(id = serverId, name = name, isActive = true, teamId = teamId))
     }
 
     @Transaction

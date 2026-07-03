@@ -10,4 +10,6 @@ data class SessionEntity(
     val name: String = "Session",
     val createdAt: Long = System.currentTimeMillis(),
     val isActive: Boolean = true,
+    /** Owning team, or null for the user's personal workspace. */
+    val teamId: Long? = null,
 )

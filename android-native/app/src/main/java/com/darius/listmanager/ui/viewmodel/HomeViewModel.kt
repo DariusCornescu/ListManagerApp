@@ -33,7 +33,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
+    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
@@ -96,7 +96,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 when (val result = resolveSpokenProductUseCase.execute(spokenText)) {
                     is ResolveResult.AutoAdd -> {
                         Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
-                        val session = sessionRepository.getOrCreateActiveSession()
+
+                        // High confidence - auto-add to the active (personal or team) session
+                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                        val session = sessionRepository.getOrCreateActiveSession(
+                            workspaceManager.currentWorkspace.value.teamIdOrNull
+                        )
                         addProductUseCase.execute(session.id, result.product.id, 1)
                         _uiState.value = _uiState.value.copy(
                             message = "Adăugat: ${result.product.name}",
@@ -108,7 +113,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     is ResolveResult.Suggestions -> {
                         Log.d(TAG, "Ambiguous -> needs review: '$spokenText'")
-                        val session = sessionRepository.getOrCreateActiveSession()
+                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                        val session = sessionRepository.getOrCreateActiveSession(
+                            workspaceManager.currentWorkspace.value.teamIdOrNull
+                        )
                         needsReviewRepository.insert(
                             spokenText = spokenText,
                             sessionId = session.id,
@@ -146,7 +154,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun addSuggestedProduct(productId: Long, productName: String) {
         viewModelScope.launch {
             try {
-                val session = sessionRepository.getOrCreateActiveSession()
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
                 addProductUseCase.execute(session.id, productId, 1)
 
                 _uiState.value = _uiState.value.copy( message = "Added: $productName", suggestions = emptyList() )
