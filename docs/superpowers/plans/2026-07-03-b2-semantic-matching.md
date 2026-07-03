@@ -786,7 +786,8 @@ class EmbeddingModel private constructor(private val appContext: Context) {
                     useTokenTypeIds = false,
                     outputTensorName = "sentence_embedding",
                     useFP16 = false,
-                    useXNNPack = true
+                    useXNNPack = true,
+                    normalizeEmbeddings = false // we L2-normalize ourselves in embed()
                 )
                 ready = true
             } catch (e: Throwable) {
