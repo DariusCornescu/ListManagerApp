@@ -1,0 +1,54 @@
+package com.darius.listmanager.network
+
+/**
+ * Local, per-developer network configuration.
+ *
+ * This file is a TEMPLATE. The real `ApiConfig.kt` is intentionally git-ignored
+ * (see android-native/.gitignore) so that each developer can point the app at
+ * their own backend without committing machine-specific URLs.
+ *
+ * SETUP:
+ *   1. Copy this file to `ApiConfig.kt` in the same directory:
+ *        cp ApiConfig.kt.example ApiConfig.kt
+ *   2. Edit the URLs below to match your environment.
+ *   3. Do NOT commit `ApiConfig.kt` — it stays local.
+ *
+ * NOTES:
+ *   - BASE_URL MUST end with a trailing slash ("/"). Retrofit requires it, and
+ *     the app builds endpoints by appending to it (e.g. "${BASE_URL}health").
+ *   - The FastAPI backend (backend-fastapi/) listens on port 8000 by default.
+ *   - From the Android emulator, the host machine is reachable at 10.0.2.2,
+ *     NOT localhost/127.0.0.1 (that would resolve to the emulator itself).
+ *   - From a physical device, use your computer's LAN IP (e.g. 192.168.x.x),
+ *     and make sure both are on the same network.
+ */
+object ApiConfig {
+
+    /**
+     * Set to true to target the production backend, false for local development.
+     * Controls both BASE_URL and the WebSocket scheme (wss vs ws).
+     */
+    const val USE_PRODUCTION: Boolean = false
+
+    // Local development backend.
+    //   - Emulator:        http://10.0.2.2:8000/
+    //   - Physical device: http://<your-computer-LAN-IP>:8000/
+    private const val DEV_BASE_URL: String = "http://10.0.2.2:8000/"
+
+    // Production backend (replace with your deployed URL). Use https:// so the
+    // WebSocket layer negotiates wss:// when USE_PRODUCTION is true.
+    private const val PROD_BASE_URL: String = "https://your-production-host.example.com/"
+
+    /**
+     * Base URL used by RetrofitClient, NetworkHelper and WebSocketService.
+     * Always ends with a trailing slash.
+     */
+    val BASE_URL: String
+        get() = if (USE_PRODUCTION) PROD_BASE_URL else DEV_BASE_URL
+
+    /**
+     * Human-readable environment label, shown on the Sync Debug screen.
+     */
+    fun getCurrentEnvironment(): String =
+        if (USE_PRODUCTION) "Production" else "Development"
+}
