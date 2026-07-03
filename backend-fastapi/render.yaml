@@ -1,0 +1,46 @@
+# Render Blueprint — provisions a free Postgres database and the FastAPI web
+# service in one shot. Deploy via Render dashboard: New -> Blueprint -> connect
+# this repo. See DEPLOYMENT.md for the full guide.
+#
+# The service is named "listmanager-api" so its URL becomes
+# https://listmanager-api.onrender.com — which is already the default
+# BuildConfig.BASE_URL on the Android side, so no app change is needed.
+
+databases:
+  - name: listmanager-db
+    plan: free
+    databaseName: listmanager
+    user: listmanager
+
+services:
+  - type: web
+    name: listmanager-api
+    runtime: python
+    plan: free
+    rootDir: backend-fastapi
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /health
+    envVars:
+      # JWT signing secret — required by the app (fails fast if missing).
+      # Render generates a strong random value on first deploy.
+      - key: SECRET_KEY
+        generateValue: true
+      # Postgres connection string, injected from the database above.
+      # database.py rewrites postgres:// -> postgresql:// automatically.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: listmanager-db
+          property: connectionString
+      # Admin account password — seeded on startup (idempotently). Set the
+      # real value in the Render dashboard (not committed to git).
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: RATE_LIMIT_ENABLED
+        value: "true"
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      # Optional: server-side speech transcription (Groq). Leave unset unless
+      # you use the /api/speech/transcribe endpoint.
+      # - key: GROQ_API_KEY
+      #   sync: false
