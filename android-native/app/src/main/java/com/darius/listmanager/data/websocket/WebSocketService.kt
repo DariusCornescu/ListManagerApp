@@ -167,7 +167,9 @@ class WebSocketService private constructor() {
                                     productName = data.getString("product_name"),
                                     quantity = data.getInt("quantity"),
                                     userId = data.getLong("user_id"),
-                                    username = data.getString("username")
+                                    username = data.getString("username"),
+                                    // Older servers omit "version"; default to 1.
+                                    version = data.optInt("version", 1)
                                 )
                             } else {
                                 WebSocketMessage.SessionItemUpdated(
@@ -178,7 +180,9 @@ class WebSocketService private constructor() {
                                     oldQuantity = data.getInt("old_quantity"),
                                     newQuantity = data.getInt("new_quantity"),
                                     userId = data.getLong("user_id"),
-                                    username = data.getString("username")
+                                    username = data.getString("username"),
+                                    // Older servers omit "version"; default to 1.
+                                    version = data.optInt("version", 1)
                                 )
                             }
                         }

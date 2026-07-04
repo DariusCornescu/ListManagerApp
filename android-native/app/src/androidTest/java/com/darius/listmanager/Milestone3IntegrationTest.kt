@@ -40,11 +40,15 @@ class Milestone3IntegrationTest {
             .allowMainThreadQueries()
             .build()
 
+        // ProductRepository now depends on a pending-operation queue, a Context and the
+        // network API. Use real in-memory instances for the DB-backed pieces and a fake
+        // API so lookups run against the seeded database, offline, without a real backend.
+        val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
         productRepository = ProductRepository(
             database.productDao(),
-            PendingOperationRepository(database.pendingOperationDao()),
+            pendingOperationRepository,
             context,
-            RetrofitClient.api
+            FakeListManagerApi()
         )
         resolveUseCase = ResolveSpokenProductUseCase(productRepository)
 

@@ -10,6 +10,7 @@ import com.darius.listmanager.util.NetworkHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import java.io.IOException
 
 class ProductRepository(
     private val dao: ProductDao,
@@ -20,7 +21,10 @@ class ProductRepository(
 
     companion object { const val TAG = "ProductRepository" }
     fun getAllFlow(): Flow<List<ProductEntity>> { return dao.getAllFlow() }
-    
+
+    /** Local products only — never touches the network (used by embedding retrieval). */
+    suspend fun getAllLocal(): List<ProductEntity> = dao.getAll()
+
     /**
      * ONLINE: Fetch de pe server + cache local
      * OFFLINE: Returnează din cache local
@@ -69,50 +73,57 @@ class ProductRepository(
     }
         
     /**
-     * ONLINE: POST pe server → Salvează în local
-     * OFFLINE: Salvează local + Creează Pending Operation
+     * ONLINE: POST pe server → Salvează în local → Success
+     * CONNECTIVITY FAILURE (IOException): Salvează local + Pending Operation → QueuedOffline
+     * 401/403: Forbidden (nu salvăm local, nu enqueue)
+     * Alt non-2xx: Error
      */
-    suspend fun insert(product: ProductEntity): Long = withContext(Dispatchers.IO) {
-        
+    suspend fun insert(product: ProductEntity): RepoResult = withContext(Dispatchers.IO) {
+
         if (NetworkHelper.isNetworkAvailable(context)) {
             try {
                 Log.d(TAG, "ONLINE: Creating product on server: ${product.name}")
-                
+
                 val request = ProductCreate(
                     name = product.name,
                     distributor_id = product.distributorId,
                     aliases = product.aliases
                 )
                 val response = api.createProduct(request)
-                
+
                 if (response.isSuccessful && response.body() != null) {
                     val serverProduct = response.body()!!.toEntity()
-                    
+
                     // Salvează în local database cu ID-ul de pe server
                     dao.insert(serverProduct)
-                    
+
                     Log.d(TAG, "Created product: ${product.name} (ID: ${serverProduct.id})")
-                    return@withContext serverProduct.id
+                    return@withContext RepoResult.Success(serverProduct.id)
+                } else if (response.code() == 401 || response.code() == 403) {
+                    Log.w(TAG, "Forbidden creating product: ${response.code()}")
+                    return@withContext RepoResult.Forbidden
                 } else {
                     val errorMsg = "Server error: ${response.code()}"
-                    Log.e(TAG, "$errorMsg")
+                    Log.e(TAG, errorMsg)
+                    return@withContext RepoResult.Error(errorMsg)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Network error: ${e.message}, falling back to offline mode", e)
+            } catch (e: IOException) {
+                Log.e(TAG, "Connectivity error: ${e.message}, falling back to offline mode", e)
+                // fall through to offline branch below
             }
         }
-        
+
         Log.d(TAG, "OFFLINE: Saving product locally and creating pending operation")
-        
+
         try {
             val localId = dao.insert(product)
-            
+
             val operationData = OperationData.CreateProduct(
                 name = product.name,
                 distributorId = product.distributorId,
                 aliases = product.aliases
             )
-            
+
             pendingOperationRepository.queueOperation(
                 operationType = OperationType.CREATE_PRODUCT,
                 resourceType = ResourceType.PRODUCT,
@@ -120,13 +131,13 @@ class ProductRepository(
                 operationData = operationData,
                 conflictStrategy = ConflictStrategy.LATEST_WINS
             )
-            
+
             Log.d(TAG, "Saved product locally (ID: $localId) + Queued for sync")
-            return@withContext localId
-            
+            return@withContext RepoResult.QueuedOffline(localId)
+
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save locally: ${e.message}", e)
-            throw e
+            return@withContext RepoResult.Error(e.message ?: "Local save failed")
         }
     }
     
@@ -220,38 +231,43 @@ class ProductRepository(
      * ONLINE: PUT pe server → Update în local
      * OFFLINE: Update local + Pending Operation
      */
-    suspend fun update(product: ProductEntity) = withContext(Dispatchers.IO) {
-        
+    suspend fun update(product: ProductEntity): RepoResult = withContext(Dispatchers.IO) {
+
         if (NetworkHelper.isNetworkAvailable(context)) {
             try {
                 Log.d(TAG, "ONLINE: Updating product ${product.id} on server")
-                
+
                 val request = ProductCreate(
                     name = product.name,
                     distributor_id = product.distributorId,
                     aliases = product.aliases
                 )
                 val response = api.updateProduct(product.id, request)
-                
+
                 if (response.isSuccessful && response.body() != null) {
                     val updatedProduct = response.body()!!.toEntity()
-                    
+
                     // Update în local cache
                     dao.update(updatedProduct)
-                    
+
                     Log.d(TAG, "Updated product ${product.id} on server")
-                    return@withContext
+                    return@withContext RepoResult.Success(updatedProduct.id)
+                } else if (response.code() == 401 || response.code() == 403) {
+                    Log.w(TAG, "Forbidden updating product ${product.id}: ${response.code()}")
+                    return@withContext RepoResult.Forbidden
                 } else {
                     val errorMsg = "Server error: ${response.code()}"
-                    Log.e(TAG, "$errorMsg")
+                    Log.e(TAG, errorMsg)
+                    return@withContext RepoResult.Error(errorMsg)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Network error: ${e.message}, falling back to offline mode", e)
+            } catch (e: IOException) {
+                Log.e(TAG, "Connectivity error: ${e.message}, falling back to offline mode", e)
+                // fall through to offline branch below
             }
         }
-        
+
         Log.d(TAG, "OFFLINE: Updating product ${product.id} locally and queuing for sync")
-        
+
         dao.update(product)
         val operationData = OperationData.UpdateProduct(
             productId = product.id,
@@ -259,7 +275,7 @@ class ProductRepository(
             distributorId = product.distributorId,
             aliases = product.aliases
         )
-        
+
         pendingOperationRepository.queueOperation(
             operationType = OperationType.UPDATE_PRODUCT,
             resourceType = ResourceType.PRODUCT,
@@ -267,42 +283,48 @@ class ProductRepository(
             operationData = operationData,
             conflictStrategy = ConflictStrategy.LATEST_WINS
         )
-        
+
         Log.d(TAG, "Updated product ${product.id} locally + Queued for sync")
+        return@withContext RepoResult.QueuedOffline(product.id)
     }
     
     /**
      * ONLINE: DELETE pe server → Delete din local
      * OFFLINE: Delete local + Pending Operation
      */
-    suspend fun delete(product: ProductEntity) = withContext(Dispatchers.IO) {
-        
+    suspend fun delete(product: ProductEntity): RepoResult = withContext(Dispatchers.IO) {
+
         if (NetworkHelper.isNetworkAvailable(context)) {
             try {
                 Log.d(TAG, "ONLINE: Deleting product ${product.id} on server")
-                
+
                 val response = api.deleteProduct(product.id)
                 if (response.isSuccessful) {
                     // Șterge din local cache
                     dao.delete(product)
-                    
+
                     Log.d(TAG, "Deleted product ${product.id} from server")
-                    return@withContext
+                    return@withContext RepoResult.Success(product.id)
+                } else if (response.code() == 401 || response.code() == 403) {
+                    Log.w(TAG, "Forbidden deleting product ${product.id}: ${response.code()}")
+                    return@withContext RepoResult.Forbidden
                 } else {
                     val errorMsg = "Server error: ${response.code()}"
-                    Log.e(TAG, "$errorMsg")
+                    Log.e(TAG, errorMsg)
+                    return@withContext RepoResult.Error(errorMsg)
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Network error: ${e.message}, falling back to offline mode", e)
+            } catch (e: IOException) {
+                Log.e(TAG, "Connectivity error: ${e.message}, falling back to offline mode", e)
+                // fall through to offline branch below
             }
         }
-        
+
         Log.d(TAG, "OFFLINE: Marking product ${product.id} for deletion and queuing for sync")
         dao.delete(product)
         val operationData = OperationData.DeleteProduct(
             productId = product.id
         )
-        
+
         pendingOperationRepository.queueOperation(
             operationType = OperationType.DELETE_PRODUCT,
             resourceType = ResourceType.PRODUCT,
@@ -310,8 +332,9 @@ class ProductRepository(
             operationData = operationData,
             conflictStrategy = ConflictStrategy.LATEST_WINS
         )
-        
+
         Log.d(TAG, "Deleted product ${product.id} locally + Queued for sync")
+        return@withContext RepoResult.QueuedOffline(product.id)
     }
 }
 

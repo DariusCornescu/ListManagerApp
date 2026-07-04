@@ -1,6 +1,21 @@
 # app/main.py
+import os
+import uuid
 from datetime import datetime, timezone
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Request,
+    UploadFile,
+    File,
+    Form,
+)
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from .websocket_manager import manager
 from .auth import decode_access_token
 from sqlalchemy.orm import Session
@@ -12,16 +27,51 @@ from .auth import (
     get_current_user,
     get_current_admin_user
 )
+from .config import settings
 from .database import engine, get_db
 from . import models, schemas
+from . import authz
+from . import sync_ops
+from .schemas_sync import OpDTO
+from .schemas_speech import TranscriptionResponse
+from .transcription import Transcriber, get_transcriber
+from .routers import teams
+from typing import Optional
 import logging
 
-models.Base.metadata.create_all(bind=engine)
+# Schema is managed by Alembic (see backend-fastapi/alembic/). On startup we
+# bring the configured database up to the latest revision. Fresh database ->
+# applies all migrations; already-current database -> no-op. This replaces the
+# former create_all() + PHASE2_CUTOVER cutover (the baseline migration already
+# includes the owner_user_id / team_id columns, so the cutover is obsolete).
+def _run_migrations_to_head() -> None:
+    from alembic.config import Config
+    from alembic import command
+    from .database import DATABASE_URL
+
+    backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    alembic_cfg = Config(os.path.join(backend_root, "alembic.ini"))
+    alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+    command.upgrade(alembic_cfg, "head")
+
+
+_run_migrations_to_head()
 app = FastAPI(
     title="List Manager API",
     description="Voice-enabled list management backend with WebSocket support",
     version="1.0.0"
 )
+
+# ===== RATE LIMITING =====
+limiter = Limiter(key_func=get_remote_address)
+# Disable in tests (or any env) via RATE_LIMIT_ENABLED=false
+limiter.enabled = settings.RATE_LIMIT_ENABLED
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Mount the teams router (Phase 2)
+app.include_router(teams.router)
+
 logger = logging.getLogger(__name__)
 
 # ===== AUTO-SEED ON STARTUP =====
@@ -57,7 +107,8 @@ def health_check():
 # ==================== AUTHENTICATION ====================
 
 @app.post("/api/auth/register", response_model=schemas.UserDTO)
-def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, user_data: schemas.UserCreate, db: Session = Depends(get_db)):
     """
     Register new user
     Public endpoint - anyone can register
@@ -111,7 +162,8 @@ def register(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=schemas.Token)
-def login(login_data: schemas.UserLogin, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends(get_db)):
     """
     Login and get JWT token
     Public endpoint
@@ -166,6 +218,45 @@ def get_current_user_info(current_user: models.User = Depends(get_current_user))
     return current_user
 
 
+@app.put("/api/auth/me", response_model=schemas.UserDTO)
+def update_current_user_info(
+    update_data: schemas.UserUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update current user's email and/or password
+    Protected endpoint - requires authentication
+    """
+    # Update email if provided (uniqueness check; format validated by EmailStr)
+    if update_data.email is not None and update_data.email != current_user.email:
+        existing_email = db.query(models.User).filter(
+            models.User.email == update_data.email,
+            models.User.id != current_user.id
+        ).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=400,
+                detail="Email already registered"
+            )
+        current_user.email = update_data.email
+
+    # Update password if provided (enforce bcrypt 72-byte limit, re-hash)
+    if update_data.password is not None:
+        password_bytes = update_data.password.encode('utf-8')
+        if len(password_bytes) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail="Password is too long (maximum 72 bytes allowed). Please use a shorter password."
+            )
+        current_user.hashed_password = get_password_hash(update_data.password)
+
+    db.commit()
+    db.refresh(current_user)
+
+    return current_user
+
+
 # ==================== DISTRIBUTORS (CRUD) ====================
 
 @app.get("/api/catalog/distributors", response_model=List[schemas.DistributorDTO])
@@ -191,9 +282,10 @@ def get_distributor(distributor_id: int, db: Session = Depends(get_db)):
 @app.post("/api/catalog/distributors", response_model=schemas.DistributorDTO)
 async def create_distributor(
     distributor: schemas.DistributorCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Create new distributor with real-time notification (no auth required for demo)"""
+    """Create new distributor with real-time notification (admin only)"""
     # Check for duplicates
     existing = db.query(models.Distributor).filter(
         models.Distributor.distributor_name == distributor.distributor_name
@@ -229,9 +321,10 @@ async def create_distributor(
 async def update_distributor(
     distributor_id: int,
     distributor_update: schemas.DistributorCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Update distributor with real-time notification (no auth required for demo)"""
+    """Update distributor with real-time notification (admin only)"""
     distributor = db.query(models.Distributor).filter(
         models.Distributor.id == distributor_id
     ).first()
@@ -261,9 +354,10 @@ async def update_distributor(
 @app.delete("/api/catalog/distributors/{distributor_id}")
 async def delete_distributor(
     distributor_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Delete distributor with real-time notification (no auth required for demo)"""
+    """Delete distributor with real-time notification (admin only)"""
     distributor = db.query(models.Distributor).filter(
         models.Distributor.id == distributor_id
     ).first()
@@ -320,9 +414,10 @@ def get_product(product_id: int, db: Session = Depends(get_db)):
 @app.post("/api/catalog/products", response_model=schemas.ProductDTO)
 async def create_product(
     product: schemas.ProductCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Create new product with real-time notification (no auth required for demo)"""
+    """Create new product with real-time notification (admin only)"""
     # Create product
     db_product = models.Product(**product.model_dump())
     db.add(db_product)
@@ -349,9 +444,10 @@ async def create_product(
 async def update_product(
     product_id: int,
     product_update: schemas.ProductCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Update product with real-time notification (no auth required for demo)"""
+    """Update product with real-time notification (admin only)"""
     product = db.query(models.Product).filter(
         models.Product.id == product_id
     ).first()
@@ -386,9 +482,10 @@ async def update_product(
 @app.delete("/api/catalog/products/{product_id}")
 async def delete_product(
     product_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Delete product with real-time notification (no auth required for demo)"""
+    """Delete product with real-time notification (admin only)"""
     product = db.query(models.Product).filter(
         models.Product.id == product_id
     ).first()
@@ -416,11 +513,34 @@ async def delete_product(
 # ==================== SESSIONS (Management) ====================
 
 @app.get("/api/session/active", response_model=schemas.GlobalSessionDTO)
-def get_active_session(db: Session = Depends(get_db)):
-    """Get currently active session"""
-    session = db.query(models.GlobalSession).filter(
+def get_active_session(
+    team_id: int = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Get the caller's most-recent active session.
+
+    Returns the most recently created active session the caller owns (personal)
+    or that belongs to a team they are a member of. An optional team_id query
+    param disambiguates to a specific team's active session. 404 if none.
+    """
+    query = db.query(models.GlobalSession).filter(
         models.GlobalSession.is_active == True
-    ).first()
+    )
+
+    if team_id is not None:
+        # Caller must be a member of the requested team (404 otherwise).
+        authz.require_team_member(team_id, current_user, db)
+        query = query.filter(models.GlobalSession.team_id == team_id)
+    else:
+        team_ids = authz.get_user_team_ids(current_user, db)
+        ownership = [models.GlobalSession.owner_user_id == current_user.id]
+        if team_ids:
+            ownership.append(models.GlobalSession.team_id.in_(team_ids))
+        from sqlalchemy import or_
+        query = query.filter(or_(*ownership))
+
+    session = query.order_by(models.GlobalSession.created_at.desc()).first()
 
     if not session:
         raise HTTPException(status_code=404, detail="No active session")
@@ -434,21 +554,47 @@ async def create_session(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
-    """Create new session with real-time notification"""
-    # Deactivate all existing sessions
-    db.query(models.GlobalSession).update({"is_active": False})
+    """Create new session with real-time notification.
 
-    # Create new session
-    new_session = models.GlobalSession(
-        name=session_data.name,
-        is_active=True
-    )
+    Defaults to a personal session owned by the caller. If team_id is provided,
+    the caller must be a member of that team and the session is owned by the
+    team (owner_user_id=None). Deactivation is scoped to the same owner
+    dimension (only the caller's other personal sessions, or only that team's
+    other sessions).
+    """
+    team_id = getattr(session_data, "team_id", None)
+
+    if team_id is not None:
+        # Caller must be a member of the team (404 otherwise).
+        authz.require_team_member(team_id, current_user, db)
+        # Deactivate only this team's other active sessions.
+        db.query(models.GlobalSession).filter(
+            models.GlobalSession.team_id == team_id
+        ).update({"is_active": False})
+        new_session = models.GlobalSession(
+            name=session_data.name,
+            is_active=True,
+            owner_user_id=None,
+            team_id=team_id,
+        )
+    else:
+        # Deactivate only the caller's other personal active sessions.
+        db.query(models.GlobalSession).filter(
+            models.GlobalSession.owner_user_id == current_user.id
+        ).update({"is_active": False})
+        new_session = models.GlobalSession(
+            name=session_data.name,
+            is_active=True,
+            owner_user_id=current_user.id,
+            team_id=None,
+        )
+
     db.add(new_session)
     db.commit()
     db.refresh(new_session)
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_created",
         "data": {
             "session_id": new_session.id,
@@ -456,7 +602,7 @@ async def create_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, new_session.id, db)
 
     return new_session
 
@@ -471,13 +617,8 @@ async def complete_session(
     Complete session and return items grouped by distributor
     This data is used for PDF generation (one PDF per distributor)
     """
-    # Get session
-    session = db.query(models.GlobalSession).filter(
-        models.GlobalSession.id == session_id
-    ).first()
-
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    # Enforce access (404 if missing or caller has no relationship).
+    session = authz.require_session_access(session_id, current_user, db, write=True)
 
     # Get all items with products and distributors (JOIN)
     items = db.query(models.GlobalSessionItem).filter(
@@ -517,8 +658,8 @@ async def complete_session(
     db.commit()
     db.refresh(session)
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_completed",
         "data": {
             "session_id": session_id,
@@ -528,7 +669,7 @@ async def complete_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     # Return grouped data
     return {
@@ -546,14 +687,24 @@ async def clear_session(
     current_user: models.User = Depends(get_current_user)
 ):
     """Clear all items from a session with real-time notification"""
+    # Enforce access (404 if missing or caller has no relationship).
+    authz.require_session_access(session_id, current_user, db, write=True)
+
     deleted_count = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
     ).delete()
 
+    sync_ops.record_op(
+        db,
+        session_id,
+        "ClearSession",
+        actor_user_id=current_user.id,
+    )
+
     db.commit()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_cleared",
         "data": {
             "session_id": session_id,
@@ -561,7 +712,7 @@ async def clear_session(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return {
         "message": f"Cleared {deleted_count} items from session",
@@ -572,8 +723,15 @@ async def clear_session(
 # ==================== SESSION ITEMS (Operations) ====================
 
 @app.get("/api/session/{session_id}/items", response_model=List[schemas.GlobalSessionItemDTO])
-def get_session_items(session_id: int, db: Session = Depends(get_db)):
+def get_session_items(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     """Get all items in a session"""
+    # Enforce access (404 if missing or caller has no relationship).
+    authz.require_session_access(session_id, current_user, db)
+
     items = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
     ).all()
@@ -596,6 +754,22 @@ def get_session_items(session_id: int, db: Session = Depends(get_db)):
     return result
 
 
+@app.get("/api/session/{session_id}/ops", response_model=List[OpDTO])
+def get_session_ops(
+    session_id: int,
+    since: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Pull the per-session op-log entries newer than `since` (ordered by seq).
+
+    Scoped by require_session_access: non-members get 404 (hidden);
+    unauthenticated callers get 403 from HTTPBearer.
+    """
+    authz.require_session_access(session_id, current_user, db)
+    return sync_ops.get_ops_since(db, session_id, since)
+
+
 @app.post("/api/session/{session_id}/items", response_model=schemas.GlobalSessionItemDTO)
 async def add_session_item(
     session_id: int,
@@ -604,6 +778,21 @@ async def add_session_item(
     current_user: models.User = Depends(get_current_user)
 ):
     """Add item to session (or increment if exists) with real-time notification"""
+    # Validate session exists and the caller has access (404 otherwise).
+    session = authz.require_session_access(session_id, current_user, db, write=True)
+    if not session.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Session is no longer active.",
+        )
+
+    key = item_data.idempotency_key
+    # Idempotency: a retried add with the same key returns the stored result
+    # without re-applying (no double-counting).
+    stored = sync_ops.check_idempotent(db, key, session_id)
+    if stored is not None:
+        return stored
+
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
         models.GlobalSessionItem.product_id == item_data.product_id
@@ -614,30 +803,67 @@ async def add_session_item(
         existing.quantity += item_data.quantity
         existing.version += 1
         existing.updated_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(existing)
         result_item = existing
         action = "updated"
+        op_type = "ChangeQty"
     else:
         # New item - create it
         new_item = models.GlobalSessionItem(
             session_id=session_id,
             product_id=item_data.product_id,
-            quantity=item_data.quantity
+            quantity=item_data.quantity,
+            item_uuid=str(uuid.uuid4()),
         )
         db.add(new_item)
-        db.commit()
-        db.refresh(new_item)
         result_item = new_item
         action = "added"
+        op_type = "AddItem"
 
-    # Get product name for notification
+    db.flush()
+    db.refresh(result_item)
+
+    # Get product name for notification / response
     product = db.query(models.Product).filter(
         models.Product.id == item_data.product_id
     ).first()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Record the op in the per-session op-log.
+    sync_ops.record_op(
+        db,
+        session_id,
+        op_type,
+        actor_user_id=current_user.id,
+        item_uuid=result_item.item_uuid,
+        product_id=result_item.product_id,
+        qty_delta=item_data.quantity,
+        idempotency_key=key,
+    )
+
+    # Build the response DTO and store it for idempotent retries.
+    response_dto = schemas.GlobalSessionItemDTO(
+        id=result_item.id,
+        session_id=result_item.session_id,
+        product_id=result_item.product_id,
+        quantity=result_item.quantity,
+        version=result_item.version,
+        created_at=result_item.created_at,
+        updated_at=result_item.updated_at,
+        product_name=product.name if product else None,
+        distributor_name=(
+            product.distributor.distributor_name
+            if product and product.distributor else None
+        ),
+        item_uuid=result_item.item_uuid,
+    )
+    sync_ops.store_idempotent(
+        db, key, session_id, result_item.id, response_dto.model_dump(mode="json")
+    )
+
+    db.commit()
+    db.refresh(result_item)
+
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": f"session_item_{action}",
         "data": {
             "session_id": session_id,
@@ -645,10 +871,11 @@ async def add_session_item(
             "product_id": result_item.product_id,
             "product_name": product.name if product else "Unknown",
             "quantity": result_item.quantity,
+            "version": result_item.version,
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return result_item
 
@@ -676,6 +903,17 @@ async def update_session_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
+    # Enforce access to the item's session (404 if no access; do not leak).
+    authz.require_session_access(item.session_id, current_user, db, write=True)
+
+    key = update_data.idempotency_key
+    # Idempotency: a retried update with the same key returns the stored result.
+    # Scope the lookup to the item's session so a key reused across sessions
+    # cannot return another session's stored DTO (cross-tenant leak).
+    stored = sync_ops.check_idempotent(db, key, item.session_id)
+    if stored is not None:
+        return stored
+
     # Check version for optimistic locking
     if item.version != update_data.version:
         raise HTTPException(
@@ -693,16 +931,53 @@ async def update_session_item(
     item.quantity = update_data.quantity
     item.version += 1
     item.updated_at = datetime.now(timezone.utc)
-    db.commit()
+    db.flush()
     db.refresh(item)
+
+    session_id = item.session_id
 
     # Get product name for notification
     product = db.query(models.Product).filter(
         models.Product.id == item.product_id
     ).first()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Record the op in the per-session op-log.
+    sync_ops.record_op(
+        db,
+        session_id,
+        "ChangeQty",
+        actor_user_id=current_user.id,
+        item_uuid=item.item_uuid,
+        product_id=item.product_id,
+        qty_delta=item.quantity - old_quantity,
+        idempotency_key=key,
+    )
+
+    # Build response DTO and store it for idempotent retries.
+    response_dto = schemas.GlobalSessionItemDTO(
+        id=item.id,
+        session_id=item.session_id,
+        product_id=item.product_id,
+        quantity=item.quantity,
+        version=item.version,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        product_name=product.name if product else None,
+        distributor_name=(
+            product.distributor.distributor_name
+            if product and product.distributor else None
+        ),
+        item_uuid=item.item_uuid,
+    )
+    sync_ops.store_idempotent(
+        db, key, session_id, item.id, response_dto.model_dump(mode="json")
+    )
+
+    db.commit()
+    db.refresh(item)
+
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_item_updated",
         "data": {
             "session_id": item.session_id,
@@ -711,10 +986,11 @@ async def update_session_item(
             "product_name": product.name if product else "Unknown",
             "old_quantity": old_quantity,
             "new_quantity": item.quantity,
+            "version": item.version,
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return item
 
@@ -733,6 +1009,9 @@ async def delete_session_item(
     if not item:
         raise HTTPException(status_code=404, detail="Item not found")
 
+    # Enforce access to the item's session (404 if no access; do not leak).
+    authz.require_session_access(item.session_id, current_user, db, write=True)
+
     # Get product name before deleting
     product = db.query(models.Product).filter(
         models.Product.id == item.product_id
@@ -741,13 +1020,25 @@ async def delete_session_item(
     session_id = item.session_id
     product_id = item.product_id
     product_name = product.name if product else "Unknown"
+    item_uuid = item.item_uuid
 
     # Delete item
     db.delete(item)
+
+    # Record the removal as a tombstone op.
+    sync_ops.record_op(
+        db,
+        session_id,
+        "RemoveItem",
+        actor_user_id=current_user.id,
+        item_uuid=item_uuid,
+        product_id=product_id,
+    )
+
     db.commit()
 
-    # Notify all connected clients
-    await manager.broadcast({
+    # Notify clients authorized for this session
+    await manager.broadcast_to_session({
         "type": "session_item_deleted",
         "data": {
             "session_id": session_id,
@@ -757,7 +1048,7 @@ async def delete_session_item(
             "user_id": current_user.id,
             "username": current_user.username
         }
-    })
+    }, session_id, db)
 
     return {"message": "Item deleted successfully", "id": item_id}
 
@@ -777,24 +1068,13 @@ def get_stats(db: Session = Depends(get_db)):
         "total_session_items": db.query(models.GlobalSessionItem).count(),
     }
 
-    # Get active session if exists
-    active_session = db.query(models.GlobalSession).filter(
-        models.GlobalSession.is_active == True
-    ).first()
-
-    if active_session:
-        active_items_count = db.query(models.GlobalSessionItem).filter(
-            models.GlobalSessionItem.session_id == active_session.id
-        ).count()
-
-        stats["active_session"] = {
-            "id": active_session.id,
-            "name": active_session.name,
-            "items_count": active_items_count,
-            "created_at": active_session.created_at.isoformat()
-        }
-    else:
-        stats["active_session"] = None
+    # SECURITY: this endpoint is anonymous (no auth). It must not disclose any
+    # tenant-identifying detail of a specific session. With multi-tenant team
+    # sessions, returning the globally-most-recent active session's
+    # user-controlled `name` (and id) leaked one tenant's data to anonymous
+    # callers. Only non-identifying aggregate counts above are exposed; the
+    # per-session object is intentionally null here.
+    stats["active_session"] = None
 
     return stats
 
@@ -854,6 +1134,67 @@ def protected_test(current_user: models.User = Depends(get_current_user)):
         "user_id": current_user.id,
         "role": current_user.role
     }
+
+
+# ==================== SPEECH TRANSCRIPTION ====================
+
+@app.post("/api/speech/transcribe", response_model=TranscriptionResponse)
+@limiter.limit("20/minute")
+async def transcribe_audio(
+    request: Request,
+    file: UploadFile = File(...),
+    language: Optional[str] = Form(None),
+    current_user: models.User = Depends(get_current_user),
+    transcriber: Transcriber = Depends(get_transcriber),
+):
+    """Transcribe an uploaded audio file to text (server-side, audio -> text only).
+
+    Auth required. The provider is injected via `get_transcriber` so it is
+    swappable and mockable. Ranking/matching of the text stays on-device.
+    """
+    # Validate content type (must be some audio/* MIME type).
+    if not (file.content_type or "").startswith("audio/"):
+        raise HTTPException(
+            status_code=415,
+            detail="Unsupported media type: an audio/* file is required.",
+        )
+
+    audio = await file.read()
+
+    # Empty payload is a client error.
+    if not audio:
+        raise HTTPException(status_code=400, detail="Empty audio file.")
+
+    # Enforce max size.
+    if len(audio) > settings.MAX_AUDIO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Audio file too large (max {settings.MAX_AUDIO_BYTES} bytes)."
+            ),
+        )
+
+    try:
+        result = await transcriber.transcribe(
+            audio, file.filename or "audio", language
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Provider/upstream failure (network, non-2xx, missing key, etc.).
+        # Never leak the API key or raw upstream internals.
+        logger.error("Transcription provider error: %s", type(exc).__name__)
+        raise HTTPException(
+            status_code=502,
+            detail="Transcription provider error.",
+        )
+
+    return TranscriptionResponse(
+        text=result.text,
+        language=result.language,
+        model=result.model,
+        provider=result.provider,
+    )
 
 
 # ==================== WEBSOCKET ENDPOINT ====================

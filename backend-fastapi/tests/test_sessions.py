@@ -6,9 +6,9 @@ from fastapi import status
 class TestSessionManagement:
     """Tests for session management endpoints"""
 
-    def test_get_active_session(self, client, sample_session):
-        """Test retrieving the active session (no auth required for GET)"""
-        response = client.get("/api/session/active")
+    def test_get_active_session(self, client, auth_headers, sample_session):
+        """Test retrieving the caller's active session (auth required)"""
+        response = client.get("/api/session/active", headers=auth_headers)
 
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -16,9 +16,9 @@ class TestSessionManagement:
         assert data["name"] == "Test Session"
         assert data["is_active"] is True
 
-    def test_get_active_session_when_none_exists(self, client):
+    def test_get_active_session_when_none_exists(self, client, auth_headers):
         """Test getting active session when none exists"""
-        response = client.get("/api/session/active")
+        response = client.get("/api/session/active", headers=auth_headers)
 
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert "No active session" in response.json()["detail"]
@@ -68,7 +68,7 @@ class TestSessionManagement:
         assert new_session["is_active"] is True
 
         # Check that the old session is now inactive
-        active_response = client.get("/api/session/active")
+        active_response = client.get("/api/session/active", headers=auth_headers)
         assert active_response.json()["id"] == new_session["id"]
 
     def test_complete_session(self, client, auth_headers, db_session, sample_session, sample_product, sample_distributor):
@@ -168,9 +168,9 @@ class TestSessionManagement:
 class TestSessionItems:
     """Tests for session item operations"""
 
-    def test_get_session_items(self, client, sample_session_item, sample_session, sample_product):
-        """Test retrieving all items in a session (no auth required for GET)"""
-        response = client.get(f"/api/session/{sample_session.id}/items")
+    def test_get_session_items(self, client, auth_headers, sample_session_item, sample_session, sample_product):
+        """Test retrieving all items in a session (auth required)"""
+        response = client.get(f"/api/session/{sample_session.id}/items", headers=auth_headers)
 
         assert response.status_code == status.HTTP_200_OK
         items = response.json()
@@ -181,9 +181,9 @@ class TestSessionItems:
         assert "product_name" in items[0]
         assert "distributor_name" in items[0]
 
-    def test_get_session_items_empty(self, client, sample_session):
+    def test_get_session_items_empty(self, client, auth_headers, sample_session):
         """Test retrieving items from session with no items"""
-        response = client.get(f"/api/session/{sample_session.id}/items")
+        response = client.get(f"/api/session/{sample_session.id}/items", headers=auth_headers)
 
         assert response.status_code == status.HTTP_200_OK
         items = response.json()
@@ -220,6 +220,53 @@ class TestSessionItems:
         )
 
         assert response.status_code == status.HTTP_403_FORBIDDEN
+
+    def test_add_item_to_nonexistent_session(self, client, auth_headers, sample_product):
+        """Test adding item to a nonexistent session returns 404"""
+        item_data = {
+            "product_id": sample_product.id,
+            "quantity": 3
+        }
+        response = client.post(
+            "/api/session/99999/items",
+            json=item_data,
+            headers=auth_headers
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        assert "Session not found" in response.json()["detail"]
+
+    def test_add_item_to_completed_session(self, client, auth_headers, db_session, sample_session, sample_product):
+        """Test adding item to a completed (inactive) session returns 400"""
+        from app.models import GlobalSessionItem
+
+        # Session needs at least one item to be completable
+        item = GlobalSessionItem(
+            session_id=sample_session.id,
+            product_id=sample_product.id,
+            quantity=2
+        )
+        db_session.add(item)
+        db_session.commit()
+
+        complete_response = client.post(
+            f"/api/session/{sample_session.id}/complete",
+            headers=auth_headers
+        )
+        assert complete_response.status_code == status.HTTP_200_OK
+
+        item_data = {
+            "product_id": sample_product.id,
+            "quantity": 3
+        }
+        response = client.post(
+            f"/api/session/{sample_session.id}/items",
+            json=item_data,
+            headers=auth_headers
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "no longer active" in response.json()["detail"]
 
     def test_add_existing_item_increments_quantity(self, client, auth_headers, sample_session_item, sample_session, sample_product):
         """Test adding existing item increments quantity"""
@@ -354,7 +401,7 @@ class TestSessionItems:
         assert "Cleared 2 items" in data["message"]
 
         # Verify items are cleared
-        get_response = client.get(f"/api/session/{sample_session.id}/items")
+        get_response = client.get(f"/api/session/{sample_session.id}/items", headers=auth_headers)
         assert len(get_response.json()) == 0
 
     def test_clear_session_no_auth(self, client, sample_session):
@@ -396,16 +443,23 @@ class TestStatistics:
         assert stats["sessions_count"] >= 1
         assert stats["active_sessions_count"] >= 1
 
-    def test_get_stats_with_active_session(self, client, sample_session, sample_session_item):
-        """Test stats includes active session information"""
+    def test_get_stats_does_not_leak_session_name(
+        self, client, sample_session, sample_session_item
+    ):
+        """Anonymous /api/stats must not disclose a tenant's session name/id.
+
+        The aggregate counts still reflect the active session, but the
+        user-controlled free-text name must not appear anywhere in the
+        anonymous response (SEC finding: cross-tenant name leak)."""
         response = client.get("/api/stats")
 
         assert response.status_code == status.HTTP_200_OK
         stats = response.json()
-        assert stats["active_session"] is not None
-        assert stats["active_session"]["id"] == sample_session.id
-        assert stats["active_session"]["name"] == "Test Session"
-        assert "items_count" in stats["active_session"]
+        # Aggregate counts remain.
+        assert stats["active_sessions_count"] >= 1
+        # No identifying session detail is exposed to anonymous callers.
+        assert stats["active_session"] is None
+        assert "Test Session" not in response.text
 
     def test_get_stats_without_active_session(self, client):
         """Test stats when no active session exists"""

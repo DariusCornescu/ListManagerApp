@@ -52,7 +52,16 @@ fun SessionScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
-                title = { Text("Sesiune Curentă") },
+                title = {
+                    Column {
+                        Text("Sesiune Curentă")
+                        Text(
+                            uiState.workspaceName,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Înapoi")

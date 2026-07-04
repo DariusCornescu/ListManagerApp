@@ -35,7 +35,8 @@ class GlobalSessionBase(BaseModel):
     name: str
 
 class GlobalSessionCreate(GlobalSessionBase):
-    pass
+    # Optional: when set, creates a team-owned session (caller must be a member).
+    team_id: Optional[int] = None
 
 class GlobalSessionDTO(GlobalSessionBase):
     id: int
@@ -43,7 +44,9 @@ class GlobalSessionDTO(GlobalSessionBase):
     created_at: datetime
     completed_at: Optional[datetime] = None
     version: int
-    
+    owner_user_id: Optional[int] = None
+    team_id: Optional[int] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # ===== Session Item Schemas =====
@@ -55,10 +58,12 @@ class GlobalSessionItemBase(BaseModel):
 class GlobalSessionItemCreate(BaseModel):
     product_id: int
     quantity: int = 1
+    idempotency_key: Optional[str] = None
 
 class GlobalSessionItemUpdate(BaseModel):
     quantity: int
-    version: int  
+    version: int
+    idempotency_key: Optional[str] = None
 
 class GlobalSessionItemDTO(GlobalSessionItemBase):
     id: int
@@ -68,7 +73,8 @@ class GlobalSessionItemDTO(GlobalSessionItemBase):
     
     product_name: Optional[str] = None
     distributor_name: Optional[str] = None
-    
+    item_uuid: Optional[str] = None
+
     model_config = ConfigDict(from_attributes=True)
 
 # ===== Auth Schemas =====
@@ -80,6 +86,10 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+
+class UserUpdate(BaseModel):
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
 
 class Token(BaseModel):
     access_token: str

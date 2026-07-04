@@ -12,6 +12,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.websocket.WebSocketService
+import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.data.websocket.WebSocketMessage
 import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.network.RetrofitClient
@@ -42,7 +43,24 @@ class MainActivity : ComponentActivity() {
         syncService.getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
         }
-        
+
+        // Restore observable login state from persisted token
+        if (syncService.isLoggedIn()) {
+            com.darius.listmanager.data.repository.AuthState.setLoggedIn(
+                true,
+                getSharedPreferences("auth", 0).getString("saved_username", null)
+            )
+        }
+
+        // Handle token expiry (HTTP 401 on an authenticated request): clear session,
+        // disconnect the WebSocket and signal the app to route to login.
+        RetrofitClient.onUnauthorized = {
+            Log.w(TAG, "Received 401 - session expired, clearing auth")
+            syncService.clearAuthToken()
+            webSocketService.disconnect()
+            com.darius.listmanager.data.repository.AuthState.notifySessionExpired()
+        }
+
         SyncWorkManager.initialize(applicationContext)
         Log.d(TAG, "SyncWorkManager initialized")
         
@@ -118,12 +136,12 @@ class MainActivity : ComponentActivity() {
 
                     is WebSocketMessage.SessionItemAdded -> {
                         Log.d(TAG, "WS: Session item added - ${message.productName} x${message.quantity}")
-                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.quantity )
+                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.quantity, message.version )
                     }
                     
                     is WebSocketMessage.SessionItemUpdated -> {
                         Log.d(TAG, "WS: Session item updated - ${message.productName}: ${message.oldQuantity} → ${message.newQuantity}")
-                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.newQuantity )
+                        updateLocalSessionItem( message.sessionId, message.itemId, message.productId, message.newQuantity, message.version )
                     }
                     
                     is WebSocketMessage.SessionItemDeleted -> {
@@ -136,8 +154,14 @@ class MainActivity : ComponentActivity() {
                         clearLocalSession(message.sessionId)
                     }
                     
-                    is WebSocketMessage.SessionCreated, is WebSocketMessage.SessionCompleted -> {
-                        Log.d(TAG, "WS: Session event received")
+                    is WebSocketMessage.SessionCompleted -> {
+                        Log.d(TAG, "WS: Session completed - ID ${message.sessionId}")
+                        completeLocalSession(message.sessionId)
+                    }
+
+                    is WebSocketMessage.SessionCreated -> {
+                        Log.d(TAG, "WS: Session created - ${message.sessionName}")
+                        SessionEvents.requestRefresh()
                     }
                     else -> { }
                 }
@@ -208,7 +232,7 @@ class MainActivity : ComponentActivity() {
     
     // ===== SESSION ITEM UPDATE FUNCTIONS FOR WEBSOCKET =====
     
-    private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int) {
+    private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int, version: Int) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
                 try {
@@ -216,7 +240,10 @@ class MainActivity : ComponentActivity() {
                         id = itemId,
                         sessionId = sessionId,
                         productId = productId,
-                        quantity = quantity
+                        quantity = quantity,
+                        // Preserve the server's optimistic-lock version; REPLACE
+                        // insert would otherwise reset it to the default (1).
+                        version = version
                     )
                     database.sessionItemDao().insert(entity)
                     Log.d(TAG, "Local DB: Upserted session item $itemId (product $productId, qty $quantity)")
@@ -240,6 +267,22 @@ class MainActivity : ComponentActivity() {
         }
     }
     
+    private fun completeLocalSession(sessionId: Long) {
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                try {
+                    database.sessionDao().completeSession(sessionId)
+                    Log.d(TAG, "Local DB: Marked session $sessionId completed")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to complete local session: ${e.message}", e)
+                }
+            }
+            // Re-resolve after the local state is updated so the session
+            // screen picks up the replacement active session.
+            SessionEvents.requestRefresh()
+        }
+    }
+
     private fun clearLocalSession(sessionId: Long) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {

@@ -53,6 +53,46 @@ class ConnectionManager:
                 except Exception as e:
                     logger.error(f"Error broadcasting to user {user_id}: {e}")
     
+    async def broadcast_to_session(self, message: dict, session_id: int, db):
+        """Broadcast a message only to users authorized for the given session.
+
+        Recipient resolution:
+          - personal session (owner_user_id set) -> {owner_user_id}
+          - team session (team_id set) -> all TeamMember.user_id for that team
+        If the session does not exist, the message is sent to no one.
+        """
+        from app import models
+
+        session = (
+            db.query(models.GlobalSession)
+            .filter(models.GlobalSession.id == session_id)
+            .first()
+        )
+        if session is None:
+            return
+
+        if session.owner_user_id is not None:
+            recipient_ids = {session.owner_user_id}
+        elif session.team_id is not None:
+            rows = (
+                db.query(models.TeamMember.user_id)
+                .filter(models.TeamMember.team_id == session.team_id)
+                .all()
+            )
+            recipient_ids = {row[0] for row in rows}
+        else:
+            recipient_ids = set()
+
+        for user_id in recipient_ids:
+            connections = self.active_connections.get(user_id)
+            if not connections:
+                continue
+            for connection in connections:
+                try:
+                    await connection.send_json(message)
+                except Exception as e:
+                    logger.error(f"Error broadcasting to user {user_id}: {e}")
+
     def get_total_connections(self) -> int:
         """Get total number of active connections"""
         return sum(len(connections) for connections in self.active_connections.values())

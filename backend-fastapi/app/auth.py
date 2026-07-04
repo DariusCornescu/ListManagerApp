@@ -6,16 +6,13 @@ import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-import os
-from dotenv import load_dotenv
+from .config import settings
 from .database import get_db
 from . import models
 
-load_dotenv()
-
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback-key-only-for-dev")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 1440))
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 BCRYPT_MAX_PASSWORD_LENGTH = 72
 security = HTTPBearer()
 

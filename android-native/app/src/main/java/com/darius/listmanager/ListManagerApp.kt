@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
+import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.sync.SyncService
@@ -46,32 +47,54 @@ fun AppContent() {
     // ===== WEBSOCKET STATE =====
     val webSocketService = remember { WebSocketService.getInstance() }
     val webSocketState by webSocketService.connectionState.collectAsState()
-    
+
+    // ===== WORKSPACE STATE =====
+    val workspaceManager = remember {
+        com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(context)
+    }
+    val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
+    val teamRepository = remember { com.darius.listmanager.data.repository.TeamRepository() }
+    var drawerTeams by remember {
+        mutableStateOf<List<com.darius.listmanager.network.TeamDTO>>(emptyList())
+    }
+
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
     val pendingCount by database.pendingOperationDao().getPendingCountFlow().collectAsState(initial = 0)
     
-    // Track login state with refresh trigger
-    var refreshTrigger by remember { mutableIntStateOf(0) }
-    
-    val isLoggedIn = remember(refreshTrigger) { 
-        syncService.isLoggedIn().also {
-            Log.d("AppContent", "isLoggedIn computed: $it (trigger: $refreshTrigger)")
+    // ===== OBSERVABLE LOGIN STATE (single source of truth, no disk polling) =====
+    val isLoggedIn by AuthState.isLoggedIn.collectAsState()
+    val username by AuthState.username.collectAsState()
+    val sessionExpiredEvent by AuthState.sessionExpiredEvent.collectAsState()
+
+    // Refresh the team list whenever the drawer is opened while logged in.
+    // On logout, drop the cached teams so the next user cannot see (or switch
+    // into) the previous user's workspaces.
+    LaunchedEffect(drawerState.isOpen, isLoggedIn) {
+        if (!isLoggedIn) {
+            drawerTeams = emptyList()
+        } else if (drawerState.isOpen) {
+            val result = teamRepository.getMyTeams()
+            if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
+                drawerTeams = result.data
+            }
         }
     }
-    val username = remember(refreshTrigger) { 
-        if (syncService.isLoggedIn()) {
-            context.getSharedPreferences("auth", 0).getString("saved_username", null)
-        } else null
-    }
-    val startDestination = "home"
-    
-    // Refresh login state when navigating
-    LaunchedEffect(navController) {
-        navController.currentBackStackEntryFlow.collect { entry ->
-            Log.d("AppContent", "Nav entry: ${entry.destination.route}")
-            kotlinx.coroutines.delay(100)
-            refreshTrigger++
+
+    // Decide where to start once, based on the persisted token at first composition.
+    val startDestination = remember { if (AuthState.isLoggedIn.value) "home" else "login" }
+
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    // On token expiry (HTTP 401), route to login clearing the back stack and inform the user.
+    LaunchedEffect(sessionExpiredEvent) {
+        if (sessionExpiredEvent > 0) {
+            Log.d("AppContent", "Session expired event -> routing to login")
+            navController.navigate("login") {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+            snackbarHostState.showSnackbar("Sesiune expirată")
         }
     }
 
@@ -80,6 +103,18 @@ fun AppContent() {
         gesturesEnabled = isLoggedIn,
         drawerContent = {
             DrawerContent(
+                workspaceName = currentWorkspace.displayName,
+                teams = drawerTeams,
+                onSwitchWorkspace = { workspace ->
+                    workspaceManager.switchTo(workspace)
+                    scope.launch {
+                        drawerState.close()
+                        navController.navigate("session") {
+                            popUpTo("home") { inclusive = false }
+                            launchSingleTop = true
+                        }
+                    }
+                },
                 onNavigate = { route ->
                     scope.launch {
                         drawerState.close()
@@ -92,7 +127,9 @@ fun AppContent() {
             )
         }
     ) {
-        Scaffold { padding ->
+        Scaffold(
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
                 val currentRoute = navController.currentBackStackEntryFlow
                     .collectAsState(initial = null).value?.destination?.route
@@ -125,10 +162,6 @@ fun AppContent() {
                         scope.launch {
                             drawerState.open()
                         }
-                    },
-                    onLoginStateChanged = { 
-                        Log.d("AppContent", "Login state changed callback triggered")
-                        refreshTrigger++ 
                     }
                 )
             }

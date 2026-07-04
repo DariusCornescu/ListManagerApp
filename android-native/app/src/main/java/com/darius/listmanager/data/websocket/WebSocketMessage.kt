@@ -17,8 +17,8 @@ sealed class WebSocketMessage {
     data class SessionCompleted( val sessionId: Long, val totalItems: Int, val distributorCount: Int, val pdfGenerated: Boolean ) : WebSocketMessage()
     data class SessionCleared( val sessionId: Long ) : WebSocketMessage()
     
-    data class SessionItemAdded( val sessionId: Long, val itemId: Long, val productId: Long, val productName: String, val quantity: Int, val userId: Long, val username: String) : WebSocketMessage()
-    data class SessionItemUpdated( val sessionId: Long, val itemId: Long, val productId: Long, val productName: String, val oldQuantity: Int, val newQuantity: Int, val userId: Long, val username: String ) : WebSocketMessage()
+    data class SessionItemAdded( val sessionId: Long, val itemId: Long, val productId: Long, val productName: String, val quantity: Int, val userId: Long, val username: String, val version: Int = 1 ) : WebSocketMessage()
+    data class SessionItemUpdated( val sessionId: Long, val itemId: Long, val productId: Long, val productName: String, val oldQuantity: Int, val newQuantity: Int, val userId: Long, val username: String, val version: Int = 1 ) : WebSocketMessage()
     data class SessionItemDeleted( val sessionId: Long, val itemId: Long, val productId: Long, val productName: String, val userId: Long, val username: String ) : WebSocketMessage()
     
     // ==================== PDF GENERATION ====================

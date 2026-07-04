@@ -10,71 +10,95 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
+logger = logging.getLogger(__name__)
+
+# Values considered "truthy" for opt-in environment flags.
+_TRUTHY = {"1", "true", "yes", "on"}
+
+
+def _is_truthy(value: str | None) -> bool:
+    return value is not None and value.strip().lower() in _TRUTHY
+
+
 def create_admin_user():
-    """Create default users for testing multi-device sync"""
+    """Idempotently seed accounts.
+
+    Safe to call on every startup:
+      - Never overwrites or re-hashes an existing user's password.
+      - Creates the admin only when ADMIN_PASSWORD is provided (no insecure
+        default credential).
+      - Creates the dev test user only when explicitly opted in via
+        SEED_DEV_USERS and TEST_USER_PASSWORD.
+      - Never logs plaintext passwords.
+    """
     db = SessionLocal()
-    
+
     try:
-        # User 1: Admin
-        admin_password = os.getenv("ADMIN_PASSWORD", "admin123")  # Default for development
-        admin = db.query(models.User).filter(models.User.username == "admin").first()
-        if not admin:
-            logging.info("Creating admin user...")
-            admin_user = models.User(
-                username="admin",
-                email="admin@listmanager.com",
-                hashed_password=get_password_hash(admin_password),
-                role="ADMIN",
-                is_active=True
+        # --- Admin user ---------------------------------------------------
+        admin_password = os.getenv("ADMIN_PASSWORD")
+        if not admin_password:
+            logger.warning(
+                "ADMIN_PASSWORD is not set; skipping admin user creation. "
+                "Set ADMIN_PASSWORD to seed an admin account."
             )
-            db.add(admin_user)
-            db.commit()
-            logging.info(f"✅ Admin user created: admin / {admin_password}")
         else:
-            logging.info("Admin user already exists!")
-            # Verify and fix password if needed
-            from .auth import verify_password
-            if not verify_password(admin_password, admin.hashed_password):
-                logging.info("⚠️  Admin password hash is invalid, re-hashing...")
-                admin.hashed_password = get_password_hash(admin_password)
-                db.commit()
-                logging.info("✅ Admin password re-hashed successfully!")
-        
-        # User 2: Test user (for multi-device testing)
-        test_user_password = os.getenv("TEST_USER_PASSWORD", "user123")  # Default for development
-        user2 = db.query(models.User).filter(models.User.username == "user").first()
-        if not user2:
-            logging.info("Creating test user...")
-            test_user = models.User(
-                username="user",
-                email="user@listmanager.com",
-                hashed_password=get_password_hash(test_user_password),
-                role="USER",
-                is_active=True
+            admin = (
+                db.query(models.User)
+                .filter(models.User.username == "admin")
+                .first()
             )
-            db.add(test_user)
-            db.commit()
-            logging.info(f"✅ Test user created: user / {test_user_password}")
-        else:
-            logging.info("Test user already exists!")
-            # Verify and fix password if needed
-            from .auth import verify_password
-            if not verify_password(test_user_password, user2.hashed_password):
-                logging.info("⚠️  Test user password hash is invalid, re-hashing...")
-                user2.hashed_password = get_password_hash(test_user_password)
+            if admin:
+                logger.info("Admin user already exists; leaving it untouched.")
+            else:
+                admin_user = models.User(
+                    username="admin",
+                    email="admin@listmanager.com",
+                    hashed_password=get_password_hash(admin_password),
+                    role="ADMIN",
+                    is_active=True,
+                )
+                db.add(admin_user)
                 db.commit()
-                logging.info("✅ Test user password re-hashed successfully!")
-        
-        logging.info("")
-        logging.info("=" * 50)
-        logging.info("📱 CREDENTIALS FOR MULTI-DEVICE TESTING:")
-        logging.info("=" * 50)
-        logging.info(f"  Device 1 (Emulator):   admin / {admin_password}")
-        logging.info(f"  Device 2 (Physical):   user  / {test_user_password}")
-        logging.info("=" * 50)
-        
+                logger.info("Admin user created.")
+
+        # --- Dev test user (opt-in only) ----------------------------------
+        seed_dev_users = _is_truthy(os.getenv("SEED_DEV_USERS"))
+        test_user_password = os.getenv("TEST_USER_PASSWORD")
+
+        if not seed_dev_users:
+            logger.info(
+                "SEED_DEV_USERS is not enabled; skipping dev test user."
+            )
+        elif not test_user_password:
+            logger.warning(
+                "SEED_DEV_USERS is enabled but TEST_USER_PASSWORD is not set; "
+                "skipping dev test user creation."
+            )
+        else:
+            user2 = (
+                db.query(models.User)
+                .filter(models.User.username == "user")
+                .first()
+            )
+            if user2:
+                logger.info(
+                    "Dev test user already exists; leaving it untouched."
+                )
+            else:
+                test_user = models.User(
+                    username="user",
+                    email="user@listmanager.com",
+                    hashed_password=get_password_hash(test_user_password),
+                    role="USER",
+                    is_active=True,
+                )
+                db.add(test_user)
+                db.commit()
+                logger.info("Dev test user created.")
+
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     models.Base.metadata.create_all(bind=engine)

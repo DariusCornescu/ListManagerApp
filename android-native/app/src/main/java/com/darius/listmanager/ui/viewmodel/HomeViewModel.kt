@@ -4,6 +4,8 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.darius.listmanager.data.embedding.EmbeddingBackfill
+import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.speech.AndroidSpeechProvider
@@ -13,6 +15,7 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -33,10 +36,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao() )
+    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
-    private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
+    private val embeddingModel = EmbeddingModel.getInstance(application)
+    private val productEmbeddingRepository = ProductEmbeddingRepository(database.productEmbeddingDao())
+    private val resolveSpokenProductUseCase =
+        ResolveSpokenProductUseCase(productRepository, embeddingModel, productEmbeddingRepository)
+    private val embeddingBackfill =
+        EmbeddingBackfill(database.productDao(), productEmbeddingRepository, embeddingModel)
     private val addProductUseCase = AddProductUseCase(sessionRepository)
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -71,6 +79,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 _uiState.value = _uiState.value.copy(reviewCount = items.size)
             }
         }
+
+        // Warm the embedding cache in the background (no-op if model unavailable)
+        viewModelScope.launch(Dispatchers.IO) {
+            embeddingBackfill.run()
+        }
     }
 
     // ==================== Speech Recognition ====================
@@ -96,7 +109,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 when (val result = resolveSpokenProductUseCase.execute(spokenText)) {
                     is ResolveResult.AutoAdd -> {
                         Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
-                        val session = sessionRepository.getOrCreateActiveSession()
+
+                        // High confidence - auto-add to the active (personal or team) session
+                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                        val session = sessionRepository.getOrCreateActiveSession(
+                            workspaceManager.currentWorkspace.value.teamIdOrNull
+                        )
                         addProductUseCase.execute(session.id, result.product.id, 1)
                         _uiState.value = _uiState.value.copy(
                             message = "Adăugat: ${result.product.name}",
@@ -108,7 +126,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     is ResolveResult.Suggestions -> {
                         Log.d(TAG, "Ambiguous -> needs review: '$spokenText'")
-                        val session = sessionRepository.getOrCreateActiveSession()
+                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                        val session = sessionRepository.getOrCreateActiveSession(
+                            workspaceManager.currentWorkspace.value.teamIdOrNull
+                        )
                         needsReviewRepository.insert(
                             spokenText = spokenText,
                             sessionId = session.id,
@@ -146,7 +167,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun addSuggestedProduct(productId: Long, productName: String) {
         viewModelScope.launch {
             try {
-                val session = sessionRepository.getOrCreateActiveSession()
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
                 addProductUseCase.execute(session.id, productId, 1)
 
                 _uiState.value = _uiState.value.copy( message = "Added: $productName", suggestions = emptyList() )

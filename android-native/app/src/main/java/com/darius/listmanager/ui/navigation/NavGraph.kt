@@ -20,6 +20,8 @@ import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
 import com.darius.listmanager.ui.screens.NeedsReviewScreen
+import com.darius.listmanager.ui.screens.TeamDetailScreen
+import com.darius.listmanager.ui.screens.TeamsScreen
 
 @Composable
 fun NavGraph(
@@ -39,9 +41,9 @@ fun NavGraph(
         composable("login") {
             LoginScreen(
                 onLoginSuccess = {
-                    onLoginStateChanged()  // Notify state change
+                    onLoginStateChanged()  // Notify state change (observable AuthState already updated)
                     navController.navigate("home") {
-                        popUpTo("login") { inclusive = true }
+                        popUpTo(0) { inclusive = true }
                     }
                 },
                 onBack = if (navController.previousBackStackEntry != null) {
@@ -72,9 +74,9 @@ fun NavGraph(
             AccountScreen(
                 onBack = { navController.popBackStack() },
                 onLogout = {
-                    onLoginStateChanged()  // Notify state change
-                    // Navigate to home after logout
-                    navController.navigate("home") {
+                    onLoginStateChanged()  // Notify state change (observable AuthState already cleared)
+                    // After logout, route to login and clear the entire back stack.
+                    navController.navigate("login") {
                         popUpTo(0) { inclusive = true }
                     }
                 },
@@ -110,6 +112,29 @@ fun NavGraph(
             val productId = backStackEntry.arguments?.getLong("productId") ?: 0L
             EditProductScreen(
                 productId = productId,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable("teams") {
+            TeamsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenTeam = { teamId, teamName ->
+                    navController.navigate(
+                        "team_detail/$teamId?name=${android.net.Uri.encode(teamName)}"
+                    )
+                }
+            )
+        }
+        composable(
+            route = "team_detail/{teamId}?name={teamName}",
+            arguments = listOf(
+                navArgument("teamId") { type = NavType.LongType },
+                navArgument("teamName") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { backStackEntry ->
+            TeamDetailScreen(
+                teamId = backStackEntry.arguments?.getLong("teamId") ?: 0L,
+                teamName = backStackEntry.arguments?.getString("teamName") ?: "",
                 onBack = { navController.popBackStack() }
             )
         }

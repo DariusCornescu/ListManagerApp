@@ -58,21 +58,24 @@ fun EditProductScreen(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = { showDeleteDialog = true },
-                        enabled = !uiState.isLoading && !uiState.isSaving
-                    ) {
-                        Icon(
-                            Icons.Rounded.Delete,
-                            "Șterge produsul",
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                    }
-                    IconButton(
-                        onClick = { viewModel.saveProduct() },
-                        enabled = !uiState.isLoading && !uiState.isSaving && uiState.hasChanges
-                    ) {
-                        Icon(Icons.Rounded.Check, "Salvează")
+                    // Edit/delete affordances are ADMIN-only
+                    if (uiState.isAdmin) {
+                        IconButton(
+                            onClick = { showDeleteDialog = true },
+                            enabled = !uiState.isLoading && !uiState.isSaving
+                        ) {
+                            Icon(
+                                Icons.Rounded.Delete,
+                                "Șterge produsul",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewModel.saveProduct() },
+                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.hasChanges
+                        ) {
+                            Icon(Icons.Rounded.Check, "Salvează")
+                        }
                     }
                 }
             )
@@ -125,6 +128,22 @@ fun EditProductScreen(
                         .padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
+                    // Read-only notice for non-admins
+                    if (!uiState.isAdmin) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.tertiaryContainer,
+                            shape = MaterialTheme.shapes.small
+                        ) {
+                            Text(
+                                "Vizualizare: doar administratorii pot modifica catalogul",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+
                     // Product Name
                     OutlinedTextField(
                         value = uiState.productName,
@@ -132,7 +151,7 @@ fun EditProductScreen(
                         label = { Text("Nume Produs *") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        enabled = !uiState.isSaving,
+                        enabled = uiState.isAdmin && !uiState.isSaving,
                         isError = uiState.productName.isBlank()
                     )
 
@@ -162,28 +181,30 @@ fun EditProductScreen(
                             Text("Opțional: Adaugă nume alternative pentru recunoaștere vocală mai bună")
                         },
                         minLines = 2,
-                        enabled = !uiState.isSaving
+                        enabled = uiState.isAdmin && !uiState.isSaving
                     )
 
                     Spacer(Modifier.weight(1f))
 
-                    // Save button
-                    Button(
-                        onClick = { viewModel.saveProduct() },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = !uiState.isSaving && uiState.hasChanges && uiState.productName.isNotBlank()
-                    ) {
-                        if (uiState.isSaving) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(Modifier.width(8.dp))
+                    // Save button (ADMIN-only)
+                    if (uiState.isAdmin) {
+                        Button(
+                            onClick = { viewModel.saveProduct() },
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !uiState.isSaving && uiState.hasChanges && uiState.productName.isNotBlank()
+                        ) {
+                            if (uiState.isSaving) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(if (uiState.isSaving) "Salvez..." else "Salvează Modificările")
                         }
-                        Text(if (uiState.isSaving) "Salvez..." else "Salvează Modificările")
                     }
 
-                    if (uiState.hasChanges) {
+                    if (uiState.isAdmin && uiState.hasChanges) {
                         Text(
                             "Aveți modificări nesalvate",
                             style = MaterialTheme.typography.bodySmall,

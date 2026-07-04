@@ -5,6 +5,10 @@ import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.data.embedding.EmbeddingModel
+import com.darius.listmanager.data.repository.ProductEmbeddingRepository
+import com.darius.listmanager.util.EmbeddingSearch
+import com.darius.listmanager.util.VectorMath
 
 sealed class ResolveResult {
     /**
@@ -31,11 +35,16 @@ sealed class ResolveResult {
  * - >= 0.60: Show suggestions (medium confidence)
  * - < 0.60: Store as unknown (low confidence)
  */
-class ResolveSpokenProductUseCase( private val productRepository: ProductRepository ) {
+class ResolveSpokenProductUseCase(
+    private val productRepository: ProductRepository,
+    private val embeddingModel: EmbeddingModel? = null,
+    private val embeddingRepository: ProductEmbeddingRepository? = null
+) {
     companion object {
         private const val AUTO_ADD_THRESHOLD = 0.82
         private const val SUGGESTIONS_THRESHOLD = 0.60
         private const val MAX_SUGGESTIONS = 5
+        private const val EMB_TOP_K = 10
     }
 
     suspend fun execute(spokenText: String): ResolveResult {
@@ -73,13 +82,33 @@ class ResolveSpokenProductUseCase( private val productRepository: ProductReposit
 
         android.util.Log.d("ResolveUseCase", "Candidate products: ${candidateProducts.size}")
 
-        if (candidateProducts.isEmpty()) {
+        // Step 3.5: Semantic retrieval (hybrid). If no model/vectors, this is a no-op.
+        var embeddingScores: Map<Long, Double> = emptyMap()
+        var embeddingCandidates: List<ProductEntity> = emptyList()
+        val queryVec = embeddingModel?.embed(spokenText)
+        if (queryVec != null && embeddingRepository != null) {
+            val cached = embeddingRepository.getAllForVersion(EmbeddingModel.MODEL_VERSION)
+            if (cached.isNotEmpty()) {
+                embeddingScores = cached.associate { (id, vec) ->
+                    id to VectorMath.cosineSimilarity(queryVec, vec).toDouble()
+                }
+                val topIds = EmbeddingSearch.topK(queryVec, cached, EMB_TOP_K).map { it.productId }.toSet()
+                if (topIds.isNotEmpty()) {
+                    val localById = productRepository.getAllLocal().associateBy { it.id }
+                    embeddingCandidates = topIds.mapNotNull { localById[it] }
+                }
+            }
+        }
+
+        val allCandidates = (candidateProducts + embeddingCandidates).distinctBy { it.id }
+
+        if (allCandidates.isEmpty()) {
             android.util.Log.d("ResolveUseCase", "No candidates -> Unknown")
             return ResolveResult.Unknown(spokenText)
         }
 
-        // Step 4: Rank products by similarity
-        val rankedProducts = ProductRanker.rank(spokenText, candidateProducts)
+        // Step 4: Rank products by similarity (fuzzy + embedding)
+        val rankedProducts = ProductRanker.rank(spokenText, allCandidates, embeddingScores)
         android.util.Log.d("ResolveUseCase", "Ranked ${rankedProducts.size} products")
 
         rankedProducts.take(5).forEach {

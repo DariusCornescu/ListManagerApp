@@ -33,4 +33,6 @@ data class SessionItemEntity(
     val sessionId: Long,
     val productId: Long,
     val quantity: Int = 1,
+    /** Server optimistic-lock version (GlobalSessionItem.version). Local-only rows keep 1. */
+    val version: Int = 1,
 )
