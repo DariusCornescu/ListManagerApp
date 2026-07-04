@@ -10,20 +10,23 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 
 /**
- * Editorial Minimal brand scheme. We deliberately do NOT use dynamicColor /
- * dynamicLightColorScheme — the indigo-on-paper identity is always applied.
+ * "Premium Vibe" brand scheme: gold accent + sage secondary on warm charcoal
+ * (dark) / cream (light). We deliberately do NOT use dynamicColor — the brand
+ * identity is always applied.
  */
 private val LightColorScheme = lightColorScheme(
     primary = LightPrimary,
     onPrimary = LightOnPrimary,
     primaryContainer = LightPrimaryContainer,
     onPrimaryContainer = LightOnPrimaryContainer,
-    secondary = LightPrimary,
-    onSecondary = LightOnPrimary,
-    secondaryContainer = LightPrimaryContainer,
-    onSecondaryContainer = LightOnPrimaryContainer,
-    tertiary = LightPrimary,
-    onTertiary = LightOnPrimary,
+    secondary = LightSecondary,
+    onSecondary = LightOnSecondary,
+    secondaryContainer = LightSecondaryContainer,
+    onSecondaryContainer = LightOnSecondaryContainer,
+    tertiary = LightSecondary,
+    onTertiary = LightOnSecondary,
+    tertiaryContainer = LightSecondaryContainer,
+    onTertiaryContainer = LightOnSecondaryContainer,
     background = LightBackground,
     onBackground = LightOnBackground,
     surface = LightSurface,
@@ -43,12 +46,14 @@ private val DarkColorScheme = darkColorScheme(
     onPrimary = DarkOnPrimary,
     primaryContainer = DarkPrimaryContainer,
     onPrimaryContainer = DarkOnPrimaryContainer,
-    secondary = DarkPrimary,
-    onSecondary = DarkOnPrimary,
-    secondaryContainer = DarkPrimaryContainer,
-    onSecondaryContainer = DarkOnPrimaryContainer,
-    tertiary = DarkPrimary,
-    onTertiary = DarkOnPrimary,
+    secondary = DarkSecondary,
+    onSecondary = DarkOnSecondary,
+    secondaryContainer = DarkSecondaryContainer,
+    onSecondaryContainer = DarkOnSecondaryContainer,
+    tertiary = DarkSecondary,
+    onTertiary = DarkOnSecondary,
+    tertiaryContainer = DarkSecondaryContainer,
+    onTertiaryContainer = DarkOnSecondaryContainer,
     background = DarkBackground,
     onBackground = DarkOnBackground,
     surface = DarkSurface,
