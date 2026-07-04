@@ -2,6 +2,7 @@ package com.darius.listmanager.data.usecase
 
 import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.ProductRepository
+import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
@@ -45,6 +46,45 @@ class ResolveSpokenProductUseCase(
         private const val SUGGESTIONS_THRESHOLD = 0.60
         private const val MAX_SUGGESTIONS = 5
         private const val EMB_TOP_K = 10
+        // Minimum fuzzy score for a word-window to be cut out as its own product
+        // during multi-product segmentation. Tunable.
+        private const val SEGMENT_THRESHOLD = 0.62
+        private const val SEGMENT_MAX_WINDOW = 4
+    }
+
+    /**
+     * Resolve a spoken phrase that may contain SEVERAL products said in one
+     * breath ("lalele pâine albă ouă"). Segments the phrase against the local
+     * catalog, then resolves each segment individually. Returns (segmentText,
+     * result) pairs. A single-product phrase yields a one-element list, so this
+     * is a safe superset of [execute].
+     */
+    suspend fun resolveMultiple(spokenText: String): List<Pair<String, ResolveResult>> {
+        if (spokenText.isBlank()) {
+            return listOf(spokenText to ResolveResult.Unknown(spokenText))
+        }
+
+        val localProducts = try {
+            productRepository.getAllLocal()
+        } catch (e: Exception) {
+            android.util.Log.e("ResolveUseCase", "getAllLocal failed: ${e.message}", e)
+            emptyList()
+        }
+
+        val segments = if (localProducts.isEmpty()) {
+            listOf(spokenText)
+        } else {
+            PhraseSegmenter.segment(
+                text = spokenText,
+                threshold = SEGMENT_THRESHOLD,
+                maxWindow = SEGMENT_MAX_WINDOW
+            ) { window ->
+                ProductRanker.rank(window, localProducts).firstOrNull()?.score ?: 0.0
+            }.ifEmpty { listOf(spokenText) }
+        }
+
+        android.util.Log.d("ResolveUseCase", "Segmented '$spokenText' -> $segments")
+        return segments.map { segment -> segment to execute(segment) }
     }
 
     suspend fun execute(spokenText: String): ResolveResult {

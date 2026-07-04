@@ -6,7 +6,8 @@ enum class RecognizerEvent {
     NO_MATCH,         // ERROR_NO_MATCH
     SPEECH_TIMEOUT,   // ERROR_SPEECH_TIMEOUT (silence)
     RECOGNIZER_BUSY,  // ERROR_RECOGNIZER_BUSY
-    FATAL_ERROR       // permissions / audio / client / server errors
+    TRANSIENT_ERROR,  // network / server / server-disconnected (code 11) / too-many-requests
+    FATAL_ERROR       // permissions / audio / client
 }
 
 /** What the provider should do next. */
@@ -29,6 +30,7 @@ object ListeningLoopPolicy {
             RecognizerEvent.NO_MATCH -> LoopAction.RESTART
             RecognizerEvent.SPEECH_TIMEOUT -> LoopAction.RESTART
             RecognizerEvent.RECOGNIZER_BUSY -> LoopAction.RETRY_SOON
+            RecognizerEvent.TRANSIENT_ERROR -> LoopAction.RETRY_SOON
             RecognizerEvent.FATAL_ERROR -> LoopAction.STOP
         }
     }

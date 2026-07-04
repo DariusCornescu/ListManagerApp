@@ -103,6 +103,14 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                         SpeechRecognizer.ERROR_NO_MATCH -> RecognizerEvent.NO_MATCH
                         SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> RecognizerEvent.SPEECH_TIMEOUT
                         SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> RecognizerEvent.RECOGNIZER_BUSY
+                        // Transient network/server hiccups (incl. code 11
+                        // SERVER_DISCONNECTED) — keep the continuous loop alive
+                        // instead of killing the whole session.
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                        SpeechRecognizer.ERROR_SERVER,
+                        SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+                        SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> RecognizerEvent.TRANSIENT_ERROR
                         else -> RecognizerEvent.FATAL_ERROR
                     }
                     val message = when (error) {
