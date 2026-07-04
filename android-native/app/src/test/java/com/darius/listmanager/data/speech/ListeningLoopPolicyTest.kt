@@ -39,4 +39,9 @@ class ListeningLoopPolicyTest {
     fun timeout_whenNotListening_stops() {
         assertEquals(LoopAction.STOP, ListeningLoopPolicy.decide(RecognizerEvent.SPEECH_TIMEOUT, false))
     }
+
+    @Test
+    fun transientError_whileListening_retriesSoon() {
+        assertEquals(LoopAction.RETRY_SOON, ListeningLoopPolicy.decide(RecognizerEvent.TRANSIENT_ERROR, true))
+    }
 }

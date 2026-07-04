@@ -106,53 +106,54 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 Log.d(TAG, "Processing spoken text: '$spokenText'")
 
-                when (val result = resolveSpokenProductUseCase.execute(spokenText)) {
-                    is ResolveResult.AutoAdd -> {
-                        Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
+                // Segment the utterance so several products said in one breath
+                // ("lalele pâine albă ouă") are each matched and added.
+                val results = resolveSpokenProductUseCase.resolveMultiple(spokenText)
 
-                        // High confidence - auto-add to the active (personal or team) session
-                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
-                        val session = sessionRepository.getOrCreateActiveSession(
-                            workspaceManager.currentWorkspace.value.teamIdOrNull
-                        )
-                        addProductUseCase.execute(session.id, result.product.id, 1)
-                        _uiState.value = _uiState.value.copy(
-                            message = "Adăugat: ${result.product.name}",
-                            suggestions = emptyList(),
-                            isProcessing = false,
-                            sessionAddedCount = _uiState.value.sessionAddedCount + 1
-                        )
-                        // Keep listening — do NOT reset speech state.
-                    }
-                    is ResolveResult.Suggestions -> {
-                        Log.d(TAG, "Ambiguous -> needs review: '$spokenText'")
-                        val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
-                        val session = sessionRepository.getOrCreateActiveSession(
-                            workspaceManager.currentWorkspace.value.teamIdOrNull
-                        )
-                        needsReviewRepository.insert(
-                            spokenText = spokenText,
-                            sessionId = session.id,
-                            createdAt = System.currentTimeMillis()
-                        )
-                        _uiState.value = _uiState.value.copy(
-                            message = "De verificat: '$spokenText'",
-                            suggestions = emptyList(),
-                            isProcessing = false
-                        )
-                        // Keep listening.
-                    }
-                    is ResolveResult.Unknown -> {
-                        Log.d(TAG, "Unknown: ${result.spokenText}")
-                        unknownRepository.insert(result.spokenText)
-                        _uiState.value = _uiState.value.copy(
-                            message = "Nerecunoscut: '${result.spokenText}'. Salvat.",
-                            suggestions = emptyList(),
-                            isProcessing = false
-                        )
-                        // Keep listening.
+                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
+                val session = sessionRepository.getOrCreateActiveSession(
+                    workspaceManager.currentWorkspace.value.teamIdOrNull
+                )
+
+                var added = 0
+                var review = 0
+                var unknown = 0
+                for ((segment, result) in results) {
+                    when (result) {
+                        is ResolveResult.AutoAdd -> {
+                            Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
+                            addProductUseCase.execute(session.id, result.product.id, 1)
+                            added++
+                        }
+                        is ResolveResult.Suggestions -> {
+                            Log.d(TAG, "Ambiguous -> needs review: '$segment'")
+                            needsReviewRepository.insert(
+                                spokenText = segment,
+                                sessionId = session.id,
+                                createdAt = System.currentTimeMillis()
+                            )
+                            review++
+                        }
+                        is ResolveResult.Unknown -> {
+                            Log.d(TAG, "Unknown: '${result.spokenText}'")
+                            unknownRepository.insert(result.spokenText)
+                            unknown++
+                        }
                     }
                 }
+
+                val parts = mutableListOf<String>()
+                if (added > 0) parts.add("adăugate: $added")
+                if (review > 0) parts.add("de verificat: $review")
+                if (unknown > 0) parts.add("necunoscute: $unknown")
+                _uiState.value = _uiState.value.copy(
+                    message = if (parts.isEmpty()) "Nimic recunoscut"
+                              else parts.joinToString(", ").replaceFirstChar { it.uppercase() },
+                    suggestions = emptyList(),
+                    isProcessing = false,
+                    sessionAddedCount = _uiState.value.sessionAddedCount + added
+                )
+                // Keep listening — do NOT reset speech state.
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing spoken text", e)
                 _uiState.value = _uiState.value.copy(
