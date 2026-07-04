@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import com.darius.listmanager.data.repository.AuthState
+import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.sync.SyncService
@@ -27,7 +28,16 @@ class ListManagerApp : Application() {
         
         Log.d("ListManagerApp", "Application starting...")
         SyncWorkManager.initialize(this)
-        
+
+        // Restore the saved auth token into the in-memory HTTP client so the user
+        // stays logged in across app restarts. Without this, the token lives only
+        // in encrypted prefs; RetrofitClient starts null, authenticated calls go
+        // out without a Bearer header -> 401 -> forced re-login.
+        SyncService(this).getAuthToken()?.let { token ->
+            RetrofitClient.setAuthToken(token)
+            Log.d("ListManagerApp", "Restored saved auth token")
+        }
+
         Log.d("ListManagerApp", "WorkManager initialized")
     }
 }
