@@ -56,6 +56,11 @@
   <script>
     let token = localStorage.getItem("lm_token") || null;
     let products = [], distributors = {};
+    let previewedFile = null;
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
 
     function authHeaders() { return { "Authorization": "Bearer " + token }; }
     function showApp(on) {
@@ -76,47 +81,66 @@
       showApp(true); loadProducts();
     }
 
-    async function importCsv(dryRun) {
-      const f = document.getElementById("csvFile").files[0];
-      if (!f) { alert("Choose a CSV file first"); return null; }
-      const fd = new FormData(); fd.append("file", f);
-      const r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, {
-        method: "POST", headers: authHeaders(), body: fd
-      });
+    async function importCsv(dryRun, file) {
+      if (!file) { alert("Choose a CSV file first"); return null; }
+      const fd = new FormData(); fd.append("file", file);
+      let r;
+      try {
+        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, {
+          method: "POST", headers: authHeaders(), body: fd
+        });
+      } catch (e) {
+        document.getElementById("preview").innerHTML = '<span class="err">Network error</span>';
+        return null;
+      }
       if (r.status === 401 || r.status === 403) { showApp(false); return null; }
       const body = await r.json();
-      if (!r.ok) { document.getElementById("preview").innerHTML = '<span class="err">' + (body.detail || "Error") + '</span>'; return null; }
+      if (!r.ok) {
+        document.getElementById("preview").innerHTML = '<span class="err">' + escapeHtml(body.detail || "Error") + '</span>';
+        return null;
+      }
       return body;
     }
 
-    async function preview() {
-      const b = await importCsv(true);
-      if (!b) return;
-      let html = `New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
-      if (b.errors.length) html += `<br><span class="err">${b.errors.length} row(s) skipped: ` +
-        b.errors.map(e => `line ${e.line}: ${e.reason}`).join("; ") + "</span>";
+    function renderSummary(b, prefix) {
+      let html = prefix + `New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
+      if (b.errors.length) {
+        html += `<br><span class="err">${b.errors.length} row(s) skipped: ` +
+          b.errors.map(e => `line ${e.line}: ${escapeHtml(e.reason)}`).join("; ") + "</span>";
+      }
       document.getElementById("preview").innerHTML = html;
+    }
+
+    async function preview() {
+      previewedFile = document.getElementById("csvFile").files[0];
+      const b = await importCsv(true, previewedFile);
+      if (!b) { document.getElementById("confirmBtn").disabled = true; return; }
+      renderSummary(b, "");
       document.getElementById("confirmBtn").disabled = false;
     }
 
     async function commit() {
-      const b = await importCsv(false);
+      const b = await importCsv(false, previewedFile);
       if (!b) return;
-      document.getElementById("preview").innerHTML =
-        `<b>Imported.</b> New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
+      renderSummary(b, "<b>Imported.</b> ");
       document.getElementById("confirmBtn").disabled = true;
+      previewedFile = null;
       loadProducts();
     }
 
     async function loadProducts() {
-      const [pr, dr] = await Promise.all([
-        fetch("/api/catalog/products").then(r => r.json()),
-        fetch("/api/catalog/distributors").then(r => r.json())
-      ]);
-      products = pr;
-      distributors = {};
-      dr.forEach(d => distributors[d.id] = d.distributor_name);
-      renderTable();
+      try {
+        const [pr, dr] = await Promise.all([
+          fetch("/api/catalog/products").then(r => r.json()),
+          fetch("/api/catalog/distributors").then(r => r.json())
+        ]);
+        products = pr;
+        distributors = {};
+        dr.forEach(d => distributors[d.id] = d.distributor_name);
+        renderTable();
+      } catch (e) {
+        document.getElementById("rows").innerHTML = '<tr><td colspan="4" class="err">Failed to load catalog</td></tr>';
+      }
     }
 
     function renderTable() {
@@ -127,11 +151,17 @@
         .filter(p => !q || p.name.toLowerCase().includes(q))
         .forEach(p => {
           const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${p.name}</td><td>${distributors[p.distributor_id] || ""}</td>` +
-            `<td>${p.aliases || ""}</td><td>${p.price == null ? "" : p.price}</td>`;
+          const cells = [p.name, distributors[p.distributor_id] || "", p.aliases || "", p.price == null ? "" : p.price];
+          cells.forEach(v => {
+            const td = document.createElement("td");
+            td.textContent = v;
+            tr.appendChild(td);
+          });
           tbody.appendChild(tr);
         });
     }
+
+    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
 
     if (token) { showApp(true); loadProducts(); } else { showApp(false); }
   </script>
