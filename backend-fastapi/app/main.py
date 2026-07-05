@@ -63,8 +63,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB cap on catalog CSV uploads
-
 # ===== RATE LIMITING =====
 limiter = Limiter(key_func=get_remote_address)
 # Disable in tests (or any env) via RATE_LIMIT_ENABLED=false
@@ -483,7 +481,9 @@ async def update_product(
 
 
 @app.post("/api/admin/catalog/import", response_model=schemas.ImportResultDTO)
+@limiter.limit("5/minute")
 async def import_catalog(
+    request: Request,
     file: UploadFile = File(...),
     dry_run: bool = True,
     db: Session = Depends(get_db),
@@ -494,8 +494,11 @@ async def import_catalog(
     dry_run=True (default) returns a preview without writing; dry_run=False commits.
     """
     raw = await file.read()
-    if len(raw) > MAX_IMPORT_BYTES:
-        raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
+    if len(raw) > settings.MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {settings.MAX_IMPORT_BYTES // (1024 * 1024)} MB)",
+        )
     try:
         content = raw.decode("utf-8")
     except UnicodeDecodeError:
@@ -505,6 +508,10 @@ async def import_catalog(
         result = import_catalog_csv(db, content, commit=not dry_run)
     except CatalogImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        logger.exception("Catalog import failed")
+        raise HTTPException(status_code=500, detail="Import failed")
 
     return schemas.ImportResultDTO(
         new=result.new,

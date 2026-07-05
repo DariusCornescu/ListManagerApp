@@ -67,9 +67,18 @@ def test_missing_header_is_400(client, admin_headers):
     assert resp.status_code == status.HTTP_400_BAD_REQUEST
 
 
+def test_empty_file_is_400(client, admin_headers):
+    resp = client.post(
+        "/api/admin/catalog/import",
+        files=_files(content=b""),
+        headers=admin_headers,
+    )
+    assert resp.status_code == status.HTTP_400_BAD_REQUEST
+
+
 def test_oversize_rejected(client, admin_headers, monkeypatch):
-    from app import main
-    monkeypatch.setattr(main, "MAX_IMPORT_BYTES", 10)
+    from app.config import settings
+    monkeypatch.setattr(settings, "MAX_IMPORT_BYTES", 10)
     resp = client.post(
         "/api/admin/catalog/import",
         files=_files(content=b"distributor,product_name\nMetro,Milk\n"),
