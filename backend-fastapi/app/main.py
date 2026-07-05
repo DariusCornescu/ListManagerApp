@@ -13,6 +13,7 @@ from fastapi import (
     File,
     Form,
 )
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -520,6 +521,16 @@ async def import_catalog(
         committed=result.committed,
         errors=[schemas.ImportRowErrorDTO(line=e.line, reason=e.reason) for e in result.errors],
     )
+
+
+_ADMIN_HTML_PATH = os.path.join(os.path.dirname(__file__), "static", "admin.html")
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    """Serve the self-contained catalog admin page."""
+    with open(_ADMIN_HTML_PATH, encoding="utf-8") as f:
+        return f.read()
 
 
 @app.delete("/api/catalog/products/{product_id}")
