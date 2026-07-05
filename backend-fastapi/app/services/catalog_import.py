@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
+from .. import models
+
 REQUIRED_COLUMNS = ("distributor", "product_name")
 
 
@@ -104,17 +108,19 @@ def parse_catalog_csv(content: str) -> ParsedCsv:
     return result
 
 
-from sqlalchemy.orm import Session  # noqa: E402
-
-from .. import models  # noqa: E402
-
-
 class CatalogImportError(Exception):
     """Structural problem with the file (bad/missing header, empty)."""
 
 
 @dataclass
 class ImportResult:
+    """Outcome of an import.
+
+    Note: a product appearing twice in the SAME file is last-wins — the second
+    occurrence matches the row just inserted and is counted under `updated`
+    (or `unchanged` if identical), not `new`. A dedicated duplicate-in-file
+    warning is a possible follow-on.
+    """
     new: int = 0
     updated: int = 0
     unchanged: int = 0

@@ -70,3 +70,14 @@ def test_missing_header_raises(db_session):
     import pytest
     with pytest.raises(CatalogImportError):
         import_catalog_csv(db_session, "product_name\nMilk\n", commit=True)
+
+
+def test_in_file_duplicate_is_last_wins(db_session):
+    parsed = parse_catalog_csv(
+        "distributor,product_name,price\nMetro,Milk,5.00\nMetro,Milk,6.50\n"
+    )
+    result = apply_catalog_import(db_session, parsed, commit=True)
+    assert _count_products(db_session) == 1
+    assert db_session.query(models.Product).one().price == Decimal("6.50")
+    assert result.new == 1
+    assert result.updated == 1
