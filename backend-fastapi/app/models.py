@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index, Numeric
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -30,6 +30,7 @@ class Product(Base):
     name = Column(String(200), nullable=False, index=True)
     distributor_id = Column(Integer, ForeignKey("distributors.id"), nullable=False)
     aliases = Column(String, nullable=True)
+    price = Column(Numeric(10, 2), nullable=True)
     created_at = Column(DateTime, default=func.now())
     distributor = relationship("Distributor", back_populates="products")
 

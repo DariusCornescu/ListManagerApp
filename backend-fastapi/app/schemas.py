@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, ConfigDict
+from decimal import Decimal
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
@@ -20,6 +21,7 @@ class ProductBase(BaseModel):
     name: str
     distributor_id: int
     aliases: Optional[str] = None
+    price: Optional[Decimal] = Field(default=None, ge=0)
 
 class ProductCreate(ProductBase):
     pass
