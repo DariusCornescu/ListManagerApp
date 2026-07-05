@@ -103,5 +103,18 @@ class UserDTO(BaseModel):
     email: str
     role: str
     is_active: bool
-    
+
     model_config = ConfigDict(from_attributes=True)
+
+# ===== Catalog Import Schemas =====
+class ImportRowErrorDTO(BaseModel):
+    line: int
+    reason: str
+
+
+class ImportResultDTO(BaseModel):
+    new: int
+    updated: int
+    unchanged: int
+    committed: bool
+    errors: list[ImportRowErrorDTO]

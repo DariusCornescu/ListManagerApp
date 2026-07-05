@@ -36,6 +36,7 @@ from .schemas_sync import OpDTO
 from .schemas_speech import TranscriptionResponse
 from .transcription import Transcriber, get_transcriber
 from .routers import teams
+from .services.catalog_import import import_catalog_csv, CatalogImportError
 from typing import Optional
 import logging
 
@@ -61,6 +62,8 @@ app = FastAPI(
     description="Voice-enabled list management backend with WebSocket support",
     version="1.0.0"
 )
+
+MAX_IMPORT_BYTES = 5 * 1024 * 1024  # 5 MB cap on catalog CSV uploads
 
 # ===== RATE LIMITING =====
 limiter = Limiter(key_func=get_remote_address)
@@ -477,6 +480,39 @@ async def update_product(
     })
 
     return product
+
+
+@app.post("/api/admin/catalog/import", response_model=schemas.ImportResultDTO)
+async def import_catalog(
+    file: UploadFile = File(...),
+    dry_run: bool = True,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Upsert the product catalog from a CSV (admin only).
+
+    dry_run=True (default) returns a preview without writing; dry_run=False commits.
+    """
+    raw = await file.read()
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 5 MB)")
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
+
+    try:
+        result = import_catalog_csv(db, content, commit=not dry_run)
+    except CatalogImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return schemas.ImportResultDTO(
+        new=result.new,
+        updated=result.updated,
+        unchanged=result.unchanged,
+        committed=result.committed,
+        errors=[schemas.ImportRowErrorDTO(line=e.line, reason=e.reason) for e in result.errors],
+    )
 
 
 @app.delete("/api/catalog/products/{product_id}")
