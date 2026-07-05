@@ -274,15 +274,16 @@
 
     async function renameDistributor(id, current) {
       const name = prompt("New name", current);
-      if (!name) return;
-      const ok = await apiMutate("/api/catalog/distributors/" + id, "PUT", { distributor_name: name });
+      if (name === null) return;                 // user cancelled
+      if (!name.trim()) { setStatus("Name required", true); return; }
+      const ok = await apiMutate("/api/catalog/distributors/" + id, "PUT", { distributor_name: name.trim() });
       if (!ok) return;
       setStatus("Distributor renamed");
       loadProducts();
     }
 
     async function deleteDistributor(id, name) {
-      if (!confirm('Delete distributor "' + name + '"? Products under it may be affected.')) return;
+      if (!confirm('Delete distributor "' + name + '"? This will ALSO permanently delete every product under it.')) return;
       const ok = await apiMutate("/api/catalog/distributors/" + id, "DELETE");
       if (!ok) return;
       setStatus("Distributor deleted");

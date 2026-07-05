@@ -461,6 +461,7 @@ async def update_product(
     product.name = product_update.name
     product.distributor_id = product_update.distributor_id
     product.aliases = product_update.aliases
+    product.price = product_update.price
 
     db.commit()
     db.refresh(product)
