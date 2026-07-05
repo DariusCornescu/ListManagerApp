@@ -49,7 +49,12 @@ def parse_catalog_csv(content: str) -> ParsedCsv:
         result.header_error = "File is empty"
         return result
 
-    headers = {(h or "").strip().lower() for h in reader.fieldnames}
+    fieldnames = [(h or "").strip().lower() for h in reader.fieldnames]
+    duplicates = sorted({h for h in fieldnames if h and fieldnames.count(h) > 1})
+    if duplicates:
+        result.header_error = f"Duplicate column(s): {', '.join(duplicates)}"
+        return result
+    headers = set(fieldnames)
     missing = [c for c in REQUIRED_COLUMNS if c not in headers]
     if missing:
         result.header_error = f"Missing required column(s): {', '.join(missing)}"
@@ -57,30 +62,43 @@ def parse_catalog_csv(content: str) -> ParsedCsv:
 
     # DictReader: header is line 1, so first data row is line 2.
     for line, raw in enumerate(reader, start=2):
-        row = {(k or "").strip().lower(): (v or "").strip() for k, v in raw.items()}
-        distributor = row.get("distributor", "")
-        product_name = row.get("product_name", "")
-        if not distributor:
-            result.errors.append(RowError(line, "missing distributor"))
-            continue
-        if not product_name:
-            result.errors.append(RowError(line, "missing product_name"))
-            continue
-
-        price: Optional[Decimal] = None
-        price_raw = row.get("price", "")
-        if price_raw:
-            try:
-                price = Decimal(price_raw.replace(",", "."))
-            except (InvalidOperation, ValueError):
-                result.errors.append(RowError(line, f"invalid price '{price_raw}'"))
+        try:
+            # `k is not None` drops csv.DictReader's overflow bucket (extra cells
+            # in a ragged row land under the None key as a list); non-str values
+            # are coerced to "" defensively.
+            row = {
+                (k or "").strip().lower(): (v.strip() if isinstance(v, str) else "")
+                for k, v in raw.items()
+                if k is not None
+            }
+            distributor = row.get("distributor", "")
+            product_name = row.get("product_name", "")
+            if not distributor:
+                result.errors.append(RowError(line, "missing distributor"))
                 continue
-            if price < 0:
-                result.errors.append(RowError(line, f"negative price '{price_raw}'"))
+            if not product_name:
+                result.errors.append(RowError(line, "missing product_name"))
                 continue
-            price = price.quantize(Decimal("0.01"))
 
-        aliases = row.get("aliases", "") or None
-        result.rows.append(ParsedRow(line, distributor, product_name, aliases, price))
+            price: Optional[Decimal] = None
+            price_raw = row.get("price", "")
+            if price_raw:
+                try:
+                    price = Decimal(price_raw.replace(",", "."))
+                except (InvalidOperation, ValueError):
+                    result.errors.append(RowError(line, f"invalid price '{price_raw}'"))
+                    continue
+                if not price.is_finite():  # rejects NaN / Infinity (valid Decimal input)
+                    result.errors.append(RowError(line, f"invalid price '{price_raw}'"))
+                    continue
+                if price < 0:
+                    result.errors.append(RowError(line, f"negative price '{price_raw}'"))
+                    continue
+                price = price.quantize(Decimal("0.01"))
+
+            aliases = row.get("aliases", "") or None
+            result.rows.append(ParsedRow(line, distributor, product_name, aliases, price))
+        except Exception:
+            result.errors.append(RowError(line, "could not parse row"))
 
     return result

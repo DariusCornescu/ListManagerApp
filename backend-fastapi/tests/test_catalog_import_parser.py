@@ -62,3 +62,39 @@ def test_bom_prefix_is_stripped():
     parsed = parse_catalog_csv("﻿distributor,product_name\nMetro,Milk\n")
     assert parsed.header_error is None
     assert parsed.rows[0].product_name == "Milk"
+
+
+def test_negative_price_is_row_error():
+    parsed = parse_catalog_csv("distributor,product_name,price\nMetro,Milk,-5\n")
+    assert parsed.rows == []
+    assert parsed.errors[0].reason == "negative price '-5'"
+
+
+def test_nan_price_is_row_error():
+    parsed = parse_catalog_csv("distributor,product_name,price\nMetro,Milk,NaN\n")
+    assert parsed.rows == []
+    assert "invalid price" in parsed.errors[0].reason
+
+
+def test_infinity_price_is_row_error():
+    parsed = parse_catalog_csv("distributor,product_name,price\nMetro,Milk,Infinity\n")
+    assert parsed.rows == []
+    assert "invalid price" in parsed.errors[0].reason
+
+
+def test_ragged_extra_cells_do_not_crash():
+    parsed = parse_catalog_csv("distributor,product_name\nMetro,Milk,extra1,extra2\n")
+    assert parsed.header_error is None
+    assert parsed.rows[0].product_name == "Milk"
+
+
+def test_duplicate_column_is_header_error():
+    parsed = parse_catalog_csv("distributor,distributor,product_name\nA,B,Milk\n")
+    assert parsed.header_error is not None
+    assert "Duplicate" in parsed.header_error
+
+
+def test_crlf_line_endings():
+    parsed = parse_catalog_csv("distributor,product_name\r\nMetro,Milk\r\n")
+    assert parsed.header_error is None
+    assert parsed.rows[0].product_name == "Milk"
