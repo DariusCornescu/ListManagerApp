@@ -14,6 +14,19 @@ A lightweight web page, **served by the existing FastAPI backend**, where the ad
 - Barcodes don't exist for this data, so scanning is out. CSV is the natural bulk-load mechanism and matches how supplier/product lists are usually kept (spreadsheets).
 - Single-tenant keeps the data model simple: catalog stays global, roles stay the existing `ADMIN`/`USER`.
 
+## Data source & curation
+
+The real catalog data originates from **SAGA** (Romanian accounting software). SAGA's article
+nomenclator uses its own columns (cod, denumire, U.M., preț, TVA, …) and generally has **no
+distributor per article** (the supplier lives on the purchase document, not the article). There is
+no ready-made spreadsheet yet.
+
+Therefore a **human curation step** sits upstream of this feature: someone exports from SAGA and
+maps it into the importer's CSV contract (§2) — assigning each product to a distributor, adding
+`aliases`, and setting `price`. This feature deliberately consumes only the clean CSV contract; it
+does **not** parse SAGA's native export format in v1. A "SAGA preset" column-mapping could be added
+later once a real SAGA export sample is available (clean follow-on, out of scope here).
+
 ## Non-goals (v1)
 
 - Multi-tenant / companies / per-firm catalogs / director role. (Explicitly deferred; clean to add later.)
