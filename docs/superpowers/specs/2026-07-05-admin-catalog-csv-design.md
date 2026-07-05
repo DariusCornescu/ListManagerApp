@@ -43,9 +43,9 @@ Add a nullable price field to **Product** on both sides. `aliases` already exist
 
 - **Backend** (`backend-fastapi/app/models.py`): `price = Column(Numeric(10, 2), nullable=True)` on `Product`. Alembic migration (additive, nullable — safe on existing rows).
 - **DTOs** (`backend-fastapi/app/schemas.py`): add optional `price: Optional[Decimal]` to product create/update/read schemas, with `Field(ge=0)` validation.
-- **Android** (`ProductEntity` + product DTO): add nullable `price`; Room migration with DB version bump. Carried through sync; not yet displayed. Currency is RON, stored as a plain decimal number (no currency logic).
+- **Android:** **deferred — no change in v1.** Retrofit uses Gson, which ignores unknown JSON fields, so the backend returning `price` does not affect the phone. The phone also uses `fallbackToDestructiveMigration()`, so a DB version bump would wipe the local cache — no benefit for a field v1 never displays. Adding `price` to the phone (entity + DTO + display) is a clean follow-on if/when price needs to appear on the phone or PDF.
 
-Catalog remains **global** (no tenant scoping).
+Currency is RON, stored as a plain decimal number (no currency logic). Catalog remains **global** (no tenant scoping).
 
 ## 2. CSV format
 
@@ -96,11 +96,11 @@ Plain HTML + vanilla JS (no framework, no build step) served by FastAPI. Kept sm
 - **Login screen:** username/password → `POST /api/auth/login` → store JWT (in-memory + `localStorage` so a refresh stays logged in). All API calls send `Authorization: Bearer`.
 - **Catalog table:** products grouped by distributor — columns: product name, aliases, price — with a client-side search box.
 - **Import CSV:** file picker → calls import (dry run) → renders the **preview panel** (new / updated / unchanged / errors) → **Confirm** button commits → success toast + table refresh.
-- **Inline edit / delete** a product, and **add** a product/distributor manually — all reusing existing endpoints.
+- The catalog table is **read-only in v1**. Adding products and updating price/aliases is done through **CSV upsert**, which covers the common cases. Inline edit / delete / manual add is a clean follow-on (reusing the existing admin CRUD endpoints) if needed later.
 
-## 6. Android
+## 6. Android — deferred (no v1 change)
 
-- Add nullable `price` to the product entity + DTO; Room migration with version bump; sync carries it through. **Not displayed in v1** (no PDF/price UI). This keeps the phone schema in step with the backend so sync doesn't break.
+No Android change ships in v1. Gson ignores the new `price` field in the product JSON, so the phone keeps working unchanged; and the destructive-migration setup means a version bump would wipe the local cache for no user-visible gain. When `price` is later needed on the phone/PDF, adding it (entity + DTO + `toEntity()` mapping + display) is a self-contained follow-on that rides its own destructive migration.
 
 ## 7. Error handling summary
 
@@ -120,7 +120,7 @@ Plain HTML + vanilla JS (no framework, no build step) served by FastAPI. Kept sm
 - **Importer unit tests** (`catalog_import.py`, pytest, no HTTP): upsert updates existing, inserts new, leaves others untouched; case-insensitive/trimmed match key; distributor auto-create; malformed rows skipped+reported; dry-run makes no writes; commit is transactional; idempotency (same file twice = no change).
 - **CSV parser tests:** quoted fields with commas, missing optional columns, blank price, invalid price, reordered/extra columns, in-file duplicates.
 - **Endpoint test:** admin required (403 without/for non-admin), dry-run vs commit paths, partial-success response shape.
-- **Migrations:** backend Alembic upgrade applies cleanly on an existing DB; Android Room migration test for the version bump.
+- **Migration:** backend Alembic upgrade applies cleanly on an existing DB (verified via the app's startup `alembic upgrade head`). No Android migration in v1.
 
 ## 9. Rollout notes
 
