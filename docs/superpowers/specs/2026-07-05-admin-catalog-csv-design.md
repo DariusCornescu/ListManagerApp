@@ -96,7 +96,7 @@ Plain HTML + vanilla JS (no framework, no build step) served by FastAPI. Kept sm
 - **Login screen:** username/password → `POST /api/auth/login` → store JWT (in-memory + `localStorage` so a refresh stays logged in). All API calls send `Authorization: Bearer`.
 - **Catalog table:** products grouped by distributor — columns: product name, aliases, price — with a client-side search box.
 - **Import CSV:** file picker → calls import (dry run) → renders the **preview panel** (new / updated / unchanged / errors) → **Confirm** button commits → success toast + table refresh.
-- The catalog table is **read-only in v1**. Adding products and updating price/aliases is done through **CSV upsert**, which covers the common cases. Inline edit / delete / manual add is a clean follow-on (reusing the existing admin CRUD endpoints) if needed later.
+- The catalog table shipped read-only in the first PR; a **follow-on** (`feat/admin-catalog-crud`) added full **CRUD for products + distributors** on the page (add/edit/delete forms + per-row actions), reusing the existing admin CRUD endpoints. CSV upsert remains the bulk path; the CRUD is for quick one-off edits. That follow-on also fixed a latent backend bug where `update_product` dropped the `price` field.
 
 ## 6. Android — deferred (no v1 change)
 
