@@ -5,6 +5,50 @@ Newest entries on top.
 
 ---
 
+## 2026-07-05 — Admin catalog CSV import + web page (feat/admin-catalog-csv)
+
+Backend-only feature: bulk-load/update the product catalog from a CSV via an admin web
+page, so the operator's SAGA-derived product list can be curated into one file and imported
+instead of adding products one at a time. Built test-first across five tasks, each with
+spec + code-quality review.
+
+**What changed**
+
+- **`price` on Product** (`app/models.py`, `app/schemas.py`, migration `9d27ab57ce58`):
+  nullable `Numeric(10,2)` column + `price: Optional[Decimal] = Field(ge=0)` on `ProductBase`.
+  Serialized as a JSON string (`"8.50"`) per Pydantic v2 — exact, 2-decimal.
+- **CSV parser** (`app/services/catalog_import.py`, pure/DB-free): validates headers
+  (`distributor`, `product_name` required; `aliases`, `price` optional), tolerates
+  reordered/extra columns + BOM + CRLF, and isolates bad rows into `RowError`s (missing
+  name, invalid/negative/NaN/Infinity price, ragged rows, duplicate headers) — one bad row
+  never crashes the batch.
+- **Upsert** (`apply_catalog_import`): matches `(distributor, product_name)` case-insensitively,
+  auto-creates distributors, updates changed / inserts new / leaves absent products untouched
+  (never deletes). Two-step: `dry_run` flush+rollback preview, then commit. Idempotent.
+- **Endpoint** `POST /api/admin/catalog/import` (`app/main.py`): admin-gated,
+  `@limiter.limit("5/minute")`, `settings.MAX_IMPORT_BYTES` (5 MB) → 413, non-UTF-8 → 400,
+  `CatalogImportError` → 400, other failures → rollback + 500. `dry_run=true` default.
+  Returns `ImportResultDTO` (new/updated/unchanged/committed/errors).
+- **Admin web page** `GET /admin` (`app/static/admin.html`, self-contained): login (JWT),
+  CSV preview → confirm, read-only catalog table. Output via `textContent` + escaping
+  (no XSS from operator CSV free-text).
+
+**Tests:** parser (15), upsert (9), endpoint (8), page (1) — full suite green (201 passed).
+
+**What's next**
+
+- Deploy rides the normal backend deploy (Render runs `alembic upgrade head` at startup).
+- Curate a real SAGA export into the CSV format and import it; optionally add a "SAGA preset"
+  column-mapping later.
+- Deferred follow-ons: `price` on the Android phone/PDF; inline edit/delete + manual add on
+  the page; a duplicate-in-file warning signal.
+
+**Open questions**
+
+- None blocking. Confirm the operator's curated CSV columns once a real SAGA export exists.
+
+---
+
 ## 2026-06-11 — Alembic migrations adopted (feature/alembic-migrations)
 
 Replaced `Base.metadata.create_all()` with Alembic migrations across five tasks on

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Catalog Admin</title>
+  <style>
+    :root { --gold:#DDA92B; --charcoal:#2A2A2A; --cream:#F6F2E9; --sage:#71805C; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin:0; background:var(--cream); color:var(--charcoal); }
+    header { background:var(--charcoal); color:var(--cream); padding:14px 20px; font-weight:700; }
+    main { max-width:900px; margin:0 auto; padding:20px; }
+    .card { background:#fff; border:1px solid #DAD3C4; border-radius:12px; padding:16px; margin-bottom:16px; }
+    input, button { font-size:15px; padding:8px 10px; border-radius:8px; border:1px solid #DAD3C4; }
+    button { background:var(--gold); color:var(--charcoal); border:none; cursor:pointer; font-weight:600; }
+    button.secondary { background:var(--sage); color:#fff; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #EDE8DC; }
+    .hidden { display:none; }
+    .err { color:#C4553F; }
+    .muted { color:#6E6A60; font-size:13px; }
+    #preview { white-space:pre-wrap; }
+  </style>
+</head>
+<body>
+  <header>List Manager — Catalog Admin</header>
+  <main>
+    <div id="loginCard" class="card">
+      <h3>Sign in</h3>
+      <div><input id="username" placeholder="username" /></div>
+      <div style="margin-top:8px"><input id="password" type="password" placeholder="password" /></div>
+      <div style="margin-top:8px"><button onclick="login()">Login</button></div>
+      <div id="loginErr" class="err"></div>
+    </div>
+
+    <div id="appCard" class="hidden">
+      <div class="card">
+        <h3>Import CSV</h3>
+        <p class="muted">Columns: <code>distributor, product_name, aliases, price</code>. First two required. Re-upload is an upsert (updates + adds, never deletes).</p>
+        <input type="file" id="csvFile" accept=".csv" />
+        <button onclick="preview()">Preview</button>
+        <button class="secondary" id="confirmBtn" onclick="commit()" disabled>Confirm import</button>
+        <div id="preview" class="muted"></div>
+      </div>
+      <div class="card">
+        <h3>Catalog</h3>
+        <input id="search" placeholder="filter…" oninput="renderTable()" />
+        <button onclick="loadProducts()">Refresh</button>
+        <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th></tr></thead>
+          <tbody id="rows"></tbody></table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let token = localStorage.getItem("lm_token") || null;
+    let products = [], distributors = {};
+    let previewedFile = null;
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function authHeaders() { return { "Authorization": "Bearer " + token }; }
+    function showApp(on) {
+      document.getElementById("loginCard").classList.toggle("hidden", on);
+      document.getElementById("appCard").classList.toggle("hidden", !on);
+    }
+
+    async function login() {
+      const username = document.getElementById("username").value;
+      const password = document.getElementById("password").value;
+      const r = await fetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      if (!r.ok) { document.getElementById("loginErr").textContent = "Login failed"; return; }
+      token = (await r.json()).access_token;
+      localStorage.setItem("lm_token", token);
+      showApp(true); loadProducts();
+    }
+
+    async function importCsv(dryRun, file) {
+      if (!file) { alert("Choose a CSV file first"); return null; }
+      const fd = new FormData(); fd.append("file", file);
+      let r;
+      try {
+        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, {
+          method: "POST", headers: authHeaders(), body: fd
+        });
+      } catch (e) {
+        document.getElementById("preview").innerHTML = '<span class="err">Network error</span>';
+        return null;
+      }
+      if (r.status === 401 || r.status === 403) { showApp(false); return null; }
+      const body = await r.json();
+      if (!r.ok) {
+        document.getElementById("preview").innerHTML = '<span class="err">' + escapeHtml(body.detail || "Error") + '</span>';
+        return null;
+      }
+      return body;
+    }
+
+    function renderSummary(b, prefix) {
+      let html = prefix + `New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
+      if (b.errors.length) {
+        html += `<br><span class="err">${b.errors.length} row(s) skipped: ` +
+          b.errors.map(e => `line ${e.line}: ${escapeHtml(e.reason)}`).join("; ") + "</span>";
+      }
+      document.getElementById("preview").innerHTML = html;
+    }
+
+    async function preview() {
+      previewedFile = document.getElementById("csvFile").files[0];
+      const b = await importCsv(true, previewedFile);
+      if (!b) { document.getElementById("confirmBtn").disabled = true; return; }
+      renderSummary(b, "");
+      document.getElementById("confirmBtn").disabled = false;
+    }
+
+    async function commit() {
+      const b = await importCsv(false, previewedFile);
+      if (!b) return;
+      renderSummary(b, "<b>Imported.</b> ");
+      document.getElementById("confirmBtn").disabled = true;
+      previewedFile = null;
+      loadProducts();
+    }
+
+    async function loadProducts() {
+      try {
+        const [pr, dr] = await Promise.all([
+          fetch("/api/catalog/products").then(r => r.json()),
+          fetch("/api/catalog/distributors").then(r => r.json())
+        ]);
+        products = pr;
+        distributors = {};
+        dr.forEach(d => distributors[d.id] = d.distributor_name);
+        renderTable();
+      } catch (e) {
+        document.getElementById("rows").innerHTML = '<tr><td colspan="4" class="err">Failed to load catalog</td></tr>';
+      }
+    }
+
+    function renderTable() {
+      const q = (document.getElementById("search").value || "").toLowerCase();
+      const tbody = document.getElementById("rows");
+      tbody.innerHTML = "";
+      products
+        .filter(p => !q || p.name.toLowerCase().includes(q))
+        .forEach(p => {
+          const tr = document.createElement("tr");
+          const cells = [p.name, distributors[p.distributor_id] || "", p.aliases || "", p.price == null ? "" : p.price];
+          cells.forEach(v => {
+            const td = document.createElement("td");
+            td.textContent = v;
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        });
+    }
+
+    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+
+    if (token) { showApp(true); loadProducts(); } else { showApp(false); }
+  </script>
+</body>
+</html>

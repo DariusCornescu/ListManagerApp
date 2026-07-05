@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # Maximum accepted audio upload size in bytes (default: 25 MB).
     MAX_AUDIO_BYTES: int = 25 * 1024 * 1024
 
+    # Maximum accepted catalog CSV upload size in bytes (default: 5 MB).
+    MAX_IMPORT_BYTES: int = 5 * 1024 * 1024
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

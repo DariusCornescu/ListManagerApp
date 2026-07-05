@@ -13,6 +13,7 @@ from fastapi import (
     File,
     Form,
 )
+from fastapi.responses import HTMLResponse
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -36,6 +37,7 @@ from .schemas_sync import OpDTO
 from .schemas_speech import TranscriptionResponse
 from .transcription import Transcriber, get_transcriber
 from .routers import teams
+from .services.catalog_import import import_catalog_csv, CatalogImportError
 from typing import Optional
 import logging
 
@@ -477,6 +479,58 @@ async def update_product(
     })
 
     return product
+
+
+@app.post("/api/admin/catalog/import", response_model=schemas.ImportResultDTO)
+@limiter.limit("5/minute")
+async def import_catalog(
+    request: Request,
+    file: UploadFile = File(...),
+    dry_run: bool = True,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Upsert the product catalog from a CSV (admin only).
+
+    dry_run=True (default) returns a preview without writing; dry_run=False commits.
+    """
+    raw = await file.read()
+    if len(raw) > settings.MAX_IMPORT_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large (max {settings.MAX_IMPORT_BYTES // (1024 * 1024)} MB)",
+        )
+    try:
+        content = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=400, detail="File must be UTF-8 encoded CSV")
+
+    try:
+        result = import_catalog_csv(db, content, commit=not dry_run)
+    except CatalogImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception:
+        db.rollback()
+        logger.exception("Catalog import failed")
+        raise HTTPException(status_code=500, detail="Import failed")
+
+    return schemas.ImportResultDTO(
+        new=result.new,
+        updated=result.updated,
+        unchanged=result.unchanged,
+        committed=result.committed,
+        errors=[schemas.ImportRowErrorDTO(line=e.line, reason=e.reason) for e in result.errors],
+    )
+
+
+_ADMIN_HTML_PATH = os.path.join(os.path.dirname(__file__), "static", "admin.html")
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page():
+    """Serve the self-contained catalog admin page."""
+    with open(_ADMIN_HTML_PATH, encoding="utf-8") as f:
+        return f.read()
 
 
 @app.delete("/api/catalog/products/{product_id}")
