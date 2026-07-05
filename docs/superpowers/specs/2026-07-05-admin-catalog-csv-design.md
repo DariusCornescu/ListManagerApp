@@ -111,7 +111,7 @@ No Android change ships in v1. Gson ignores the new `price` field in the product
 | Row missing `product_name` | Skip row, report line number |
 | Row with unparseable `price` | Skip row, report line + bad value |
 | Unknown distributor | Auto-create |
-| Duplicate rows within the same file | Last one wins; note in preview |
+| Duplicate rows within the same file | Last one wins; the second occurrence is counted as an update (a dedicated duplicate-in-file warning is a follow-on) |
 | File too large / too many rows | Reject with limit message |
 | Not admin | 403 (endpoint is admin-gated) |
 

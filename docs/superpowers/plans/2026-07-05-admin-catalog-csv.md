@@ -62,7 +62,8 @@ def test_create_product_with_price(client, admin_headers, sample_distributor):
     assert resp.status_code == status.HTTP_200_OK
     data = resp.json()
     assert data["name"] == "Coca-Cola 2L"
-    assert data["price"] == 8.5
+    # Pydantic v2 serializes Decimal to a JSON string (exact, 2-decimal).
+    assert data["price"] == "8.50"
 
 
 def test_create_product_without_price_defaults_null(client, admin_headers, sample_distributor):
@@ -969,5 +970,13 @@ The feature is complete when: full suite green, `/admin` works end-to-end locall
 
 - **DRY:** the endpoint reuses `import_catalog_csv`; the page reuses the existing `/api/catalog/products` and `/api/catalog/distributors` GET endpoints — no new list endpoints.
 - **YAGNI / no Android:** do not touch `android-native/`. Gson ignores the new `price` JSON field, so the phone is unaffected; a Room version bump would destructively wipe the local cache for zero v1 benefit.
-- **Decimal:** FastAPI's encoder serializes `Decimal` to a JSON number, so `8.50` → `8.5` in responses (tests assert accordingly).
+- **Decimal:** with a `response_model`, Pydantic v2 serializes `Decimal` to a JSON **string** (e.g. `"8.50"`), not a float. This is the intended price contract — exact and 2-decimal; the admin table displays it directly and a future Gson client parses it fine. Tests assert the string form.
 - **Dry-run safety:** `apply_catalog_import` flushes to assign ids during matching, then `rollback()`s when `commit=False`; nothing persists.
+
+## Post-review hardening (applied during execution)
+
+Code-quality review surfaced fixes that were folded in beyond the base task code:
+- **Parser (Task 2):** wrapped per-row processing in try/except → `RowError` (a malformed row never crashes the batch); drop `csv.DictReader`'s `None` overflow bucket (ragged rows); reject non-finite prices (`NaN`/`Infinity`) via `is_finite()`; reject duplicate header columns.
+- **Upsert (Task 3):** documented the in-file duplicate = last-wins behavior on `ImportResult` and pinned it with a test; moved imports to the top.
+- **Endpoint (Task 4):** `MAX_IMPORT_BYTES` moved into `Settings` (`settings.MAX_IMPORT_BYTES`, interpolated in the 413 message); added `@limiter.limit("5/minute")`; added an `except Exception → rollback + 500` guard so DB failures return a clean response.
+- **Page (Task 5):** render catalog cells via `textContent` and escape error/detail strings (closes stored-XSS from operator CSV free-text); capture the previewed file so Confirm can't upload a different file; visible message on catalog-load failure; Enter-to-submit on login.
