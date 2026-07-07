@@ -139,4 +139,40 @@ class InventoryLineParserTest {
     fun blank_returnsNull() {
         assertNull(InventoryLineParser.parse("   "))
     }
+
+    // ===== robustness / pinning tests (behavior documented, not "ideal") =====
+
+    @Test
+    fun adversarialInputs_neverThrow() {
+        val inputs = listOf(
+            "4,", ",5", "4.5.6", "4,5.6",
+            "lapte 99999999999999999999999 99999999999999999999999 lei",
+            "lapte virgulă", "virgulă", "lei", "bani", "lapte 4 virgulă",
+            "lapte 4, lei 50", "5 5 5 5 5 5 5 5 5 5"
+        )
+        for (input in inputs) {
+            InventoryLineParser.parse(input) // must not throw
+        }
+    }
+
+    @Test
+    fun singularCurrencySynonyms() {
+        val leu = InventoryLineParser.parse("pâine 1 1 leu")!!
+        assertEquals(100L, leu.priceBani)
+        val ban = InventoryLineParser.parse("sare 2 1 ban")!!
+        assertEquals(1L, ban.priceBani)
+        val ron = InventoryLineParser.parse("apă 3 4 ron")!!
+        assertEquals(400L, ron.priceBani)
+    }
+
+    @Test
+    fun numberWord_pinnedMisattribution() {
+        // "cinci" is not a digit token: it breaks the trailing region, the
+        // stranded "lei" is swallowed by the region scan, and "50" becomes the
+        // quantity. Pinned so a refactor can't silently change this mode.
+        val p = InventoryLineParser.parse("lapte cinci lei 50")!!
+        assertEquals("lapte cinci", p.nameText)
+        assertEquals(50.0, p.quantity!!, 0.0)
+        assertNull(p.priceBani)
+    }
 }

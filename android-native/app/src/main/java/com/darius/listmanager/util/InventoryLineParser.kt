@@ -21,6 +21,9 @@ data class ParsedInventoryLine(
  * tokens like "2l" or "1.5%" are not pure numbers, so numbers inside product
  * names never leak into the amounts. First trailing amount = quantity, second
  * = price; a single amount carrying a money marker (lei/bani) is the price.
+ * Number WORDS ("cinci") are out of scope: they break the trailing region and
+ * can misattribute a later digit (e.g. "lapte cinci lei 50" -> qty 50) — the
+ * row stays editable, so the operator corrects it; this is pinned by tests.
  */
 object InventoryLineParser {
 
