@@ -42,6 +42,7 @@ class InventoryMathTest {
         assertEquals("0,05 lei", InventoryMath.formatLei(5L))
         assertEquals("0,00 lei", InventoryMath.formatLei(0L))
         assertEquals("12345,67 lei", InventoryMath.formatLei(1234567L))
+        assertEquals("-4,50 lei", InventoryMath.formatLei(-450L))
     }
 
     @Test
