@@ -35,6 +35,7 @@
     </div>
 
     <div id="appCard" class="hidden">
+      <div id="status" class="muted"></div>
       <div class="card">
         <h3>Import CSV</h3>
         <p class="muted">Columns: <code>distributor, product_name, aliases, price</code>. First two required. Re-upload is an upsert (updates + adds, never deletes).</p>
@@ -44,10 +45,27 @@
         <div id="preview" class="muted"></div>
       </div>
       <div class="card">
+        <h3>Distributors</h3>
+        <input id="distName" placeholder="new distributor" />
+        <button onclick="createDistributor()">Add</button>
+        <ul id="distList"></ul>
+      </div>
+      <div class="card">
+        <h3>Add / edit product</h3>
+        <div><input id="pName" placeholder="product name" /></div>
+        <div style="margin-top:8px"><select id="pDist"></select></div>
+        <div style="margin-top:8px"><input id="pAliases" placeholder="aliases (a|b|c)" /></div>
+        <div style="margin-top:8px"><input id="pPrice" type="number" step="0.01" placeholder="price" /></div>
+        <div style="margin-top:8px">
+          <button id="saveProductBtn" onclick="saveProduct()">Add</button>
+          <button class="secondary" onclick="clearProductForm()">Cancel</button>
+        </div>
+      </div>
+      <div class="card">
         <h3>Catalog</h3>
         <input id="search" placeholder="filter…" oninput="renderTable()" />
         <button onclick="loadProducts()">Refresh</button>
-        <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th></tr></thead>
+        <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody></table>
       </div>
     </div>
@@ -57,6 +75,33 @@
     let token = localStorage.getItem("lm_token") || null;
     let products = [], distributors = {};
     let previewedFile = null;
+    let editingProductId = null;
+    let distributorList = [];
+
+    function setStatus(msg, isError) {
+      const el = document.getElementById("status");
+      el.textContent = msg || "";
+      el.className = isError ? "err" : "muted";
+    }
+
+    async function apiMutate(url, method, body) {
+      const opts = { method, headers: { ...authHeaders() } };
+      if (body !== undefined) {
+        opts.headers["Content-Type"] = "application/json";
+        opts.body = JSON.stringify(body);
+      }
+      let r;
+      try { r = await fetch(url, opts); }
+      catch (e) { setStatus("Network error", true); return false; }
+      if (r.status === 401 || r.status === 403) { showApp(false); return false; }
+      if (!r.ok) {
+        let detail = "Error " + r.status;
+        try { detail = (await r.json()).detail || detail; } catch (e) {}
+        setStatus(detail, true);
+        return false;
+      }
+      return true;
+    }
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -137,9 +182,12 @@
         products = pr;
         distributors = {};
         dr.forEach(d => distributors[d.id] = d.distributor_name);
+        distributorList = dr;
         renderTable();
+        renderDistributors();
+        populateDistributorSelect();
       } catch (e) {
-        document.getElementById("rows").innerHTML = '<tr><td colspan="4" class="err">Failed to load catalog</td></tr>';
+        document.getElementById("rows").innerHTML = '<tr><td colspan="5" class="err">Failed to load catalog</td></tr>';
       }
     }
 
@@ -157,8 +205,144 @@
             td.textContent = v;
             tr.appendChild(td);
           });
+
+          const actionsTd = document.createElement("td");
+          const editBtn = document.createElement("button");
+          editBtn.textContent = "Edit";
+          editBtn.addEventListener("click", () => editProduct(p));
+          const delBtn = document.createElement("button");
+          delBtn.className = "secondary";
+          delBtn.textContent = "Delete";
+          delBtn.style.marginLeft = "6px";
+          delBtn.addEventListener("click", () => deleteProduct(p));
+          actionsTd.appendChild(editBtn);
+          actionsTd.appendChild(delBtn);
+          tr.appendChild(actionsTd);
+
           tbody.appendChild(tr);
         });
+    }
+
+    function renderDistributors() {
+      const list = document.getElementById("distList");
+      list.innerHTML = "";
+      distributorList.forEach(d => {
+        const li = document.createElement("li");
+        const span = document.createElement("span");
+        span.textContent = d.distributor_name;
+        const renameBtn = document.createElement("button");
+        renameBtn.textContent = "Rename";
+        renameBtn.style.marginLeft = "8px";
+        renameBtn.addEventListener("click", () => renameDistributor(d.id, d.distributor_name));
+        const delBtn = document.createElement("button");
+        delBtn.className = "secondary";
+        delBtn.textContent = "Delete";
+        delBtn.style.marginLeft = "6px";
+        delBtn.addEventListener("click", () => deleteDistributor(d.id, d.distributor_name));
+        li.appendChild(span);
+        li.appendChild(renameBtn);
+        li.appendChild(delBtn);
+        list.appendChild(li);
+      });
+    }
+
+    function populateDistributorSelect() {
+      const select = document.getElementById("pDist");
+      const current = select.value;
+      select.innerHTML = "";
+      distributorList.forEach(d => {
+        const option = document.createElement("option");
+        option.value = d.id;
+        option.textContent = d.distributor_name;
+        select.appendChild(option);
+      });
+      if (current && distributorList.some(d => String(d.id) === current)) {
+        select.value = current;
+      }
+    }
+
+    async function createDistributor() {
+      const input = document.getElementById("distName");
+      const name = input.value.trim();
+      if (!name) return;
+      const ok = await apiMutate("/api/catalog/distributors", "POST", { distributor_name: name });
+      if (!ok) return;
+      input.value = "";
+      setStatus("Distributor added");
+      loadProducts();
+    }
+
+    async function renameDistributor(id, current) {
+      const name = prompt("New name", current);
+      if (name === null) return;                 // user cancelled
+      if (!name.trim()) { setStatus("Name required", true); return; }
+      const ok = await apiMutate("/api/catalog/distributors/" + id, "PUT", { distributor_name: name.trim() });
+      if (!ok) return;
+      setStatus("Distributor renamed");
+      loadProducts();
+    }
+
+    async function deleteDistributor(id, name) {
+      if (!confirm('Delete distributor "' + name + '"? This will ALSO permanently delete every product under it.')) return;
+      const ok = await apiMutate("/api/catalog/distributors/" + id, "DELETE");
+      if (!ok) return;
+      setStatus("Distributor deleted");
+      loadProducts();
+    }
+
+    async function saveProduct() {
+      const name = document.getElementById("pName").value.trim();
+      const distSelect = document.getElementById("pDist");
+      const aliasesVal = document.getElementById("pAliases").value.trim();
+      const priceVal = document.getElementById("pPrice").value;
+
+      if (!name || !distSelect.value) {
+        setStatus("Name and distributor required", true);
+        return;
+      }
+
+      const body = {
+        name,
+        distributor_id: Number(distSelect.value),
+        aliases: aliasesVal || null,
+        price: priceVal === "" ? null : Number(priceVal)
+      };
+
+      let ok;
+      if (editingProductId) {
+        ok = await apiMutate("/api/catalog/products/" + editingProductId, "PUT", body);
+      } else {
+        ok = await apiMutate("/api/catalog/products", "POST", body);
+      }
+      if (!ok) return;
+      clearProductForm();
+      setStatus("Saved");
+      loadProducts();
+    }
+
+    function editProduct(p) {
+      document.getElementById("pName").value = p.name || "";
+      document.getElementById("pDist").value = p.distributor_id;
+      document.getElementById("pAliases").value = p.aliases || "";
+      document.getElementById("pPrice").value = p.price == null ? "" : p.price;
+      editingProductId = p.id;
+      document.getElementById("saveProductBtn").textContent = "Update";
+    }
+
+    function clearProductForm() {
+      document.getElementById("pName").value = "";
+      document.getElementById("pAliases").value = "";
+      document.getElementById("pPrice").value = "";
+      editingProductId = null;
+      document.getElementById("saveProductBtn").textContent = "Add";
+    }
+
+    async function deleteProduct(p) {
+      if (!confirm('Delete product "' + p.name + '"?')) return;
+      const ok = await apiMutate("/api/catalog/products/" + p.id, "DELETE");
+      if (!ok) return;
+      setStatus("Product deleted");
+      loadProducts();
     }
 
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });

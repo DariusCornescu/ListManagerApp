@@ -5,6 +5,43 @@ Newest entries on top.
 
 ---
 
+## 2026-07-05 — Admin catalog CRUD on the page (feat/admin-catalog-crud)
+
+Follow-on to the CSV import page: full CRUD for products + distributors directly in the
+`/admin` web page, so one-off edits don't require editing and re-uploading a CSV. Front-end
+work in `app/static/admin.html` calling the existing admin-gated catalog endpoints — plus one
+backend bug fix surfaced by the review.
+
+**What changed**
+
+- **Distributors card:** add, rename (`prompt`), delete (`confirm`) — wired to
+  `POST/PUT/DELETE /api/catalog/distributors`.
+- **Products:** an add/edit form (name, distributor `<select>`, aliases, price) + per-row
+  Edit/Delete — wired to `POST/PUT/DELETE /api/catalog/products`. Create/update toggled via
+  `editingProductId`; `price` sent as number-or-null.
+- **XSS-safe throughout:** all new DOM built with `createElement`/`textContent`/`addEventListener`;
+  no `innerHTML` with catalog data. Mutations go through one `apiMutate()` helper (401/403 →
+  re-login, errors surfaced in a `#status` line).
+- **Backend fix:** `update_product` (`app/main.py`) never assigned `price` — editing a product
+  silently dropped the price. Added `product.price = product_update.price` + a regression test
+  (`test_update_product_persists_price`). `create_product` was unaffected (uses `model_dump()`).
+- **Honest delete copy:** deleting a distributor CASCADES (deletes all its products); the confirm
+  dialog now says so explicitly.
+
+**Tests:** `test_product_price.py` (4), `test_admin_page.py` (1); full suite green.
+
+**What's next**
+
+- Ships as a follow-on PR stacked on the CSV-import PR; merge that first.
+- Deferred: a duplicate-in-file CSV warning; `price` on the Android phone/PDF.
+
+**Open questions**
+
+- Distributor delete cascade is intentional backend behavior; revisit only if accidental
+  mass-deletes become a concern (could add a "distributor not empty" guard server-side).
+
+---
+
 ## 2026-07-05 — Admin catalog CSV import + web page (feat/admin-catalog-csv)
 
 Backend-only feature: bulk-load/update the product catalog from a CSV via an admin web
