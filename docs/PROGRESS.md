@@ -5,6 +5,36 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — Crash-loop counter no longer accumulates across healthy sessions (fix/crash-loop-stale-streak)
+
+Closes the drill's open question: `rapid_crash_count` only ever went up (or to 1 on a
+slow crash), so three rapid crashes spread over weeks would eventually hit the heal
+threshold and wipe the local Room DB with no actual crash loop happening.
+
+**What changed**
+
+- `CrashLoopPolicy` (pure, JVM-tested): new `STREAK_TTL_MS` (24h) + `isStreakStale()`;
+  `nextCount()` now takes an optional `msSinceLastCrash` and starts a fresh streak
+  (count = 1) when the previous crash is at least the TTL old. Negative age (wall
+  clock moved backwards) deliberately counts as *fresh* — errors favor not wiping.
+- `CrashLoopGuard`: `onCrash` stores `last_crash_at` (wall clock) and feeds the age
+  into the policy; `onAppStart` posts a main-thread reset at `RAPID_WINDOW_MS` that
+  zeroes the counter once the session provably survives the window (`onCrash` cancels
+  it so the dying process can't race the reset).
+- Both streak-breakers are needed: the survival reset handles "crashes around healthy
+  long sessions", the TTL handles usage patterns where sessions never last 60s.
+- TDD: 7 new `CrashLoopPolicyTest` cases written first (watched red), including the
+  exact bug scenario (three rapid crashes a week apart → no heal) and the live-loop
+  counter-case (relaunch within seconds → still heals). Full `testDebug` green.
+
+**What's next / open**
+
+- The `Handler`-based survival reset is Android glue with no JVM coverage (no
+  Robolectric in the project); the induced-crash drill on a device is the way to
+  verify it end-to-end if needed.
+
+---
+
 ## 2026-07-08 — Induced-crash drill found the Application class was never registered (fix/register-application-class)
 
 Deliberate end-to-end test of the crash pipeline (`adb shell am crash` on the preview
@@ -38,6 +68,7 @@ auto-initializes. Evidence trail: crash left no `files/crashes/` and no
 `CrashLoopGuard` counts rapid crashes but never resets on a healthy session — three
 rapid crashes weeks apart could accumulate and trigger an unwanted local-cache wipe.
 Consider resetting the counter after the process survives the rapid window.
+*Resolved 2026-07-08 — see the fix/crash-loop-stale-streak entry above.*
 
 ---
 

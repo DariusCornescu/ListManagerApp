@@ -37,4 +37,60 @@ class CrashLoopPolicyTest {
         repeat(3) { count = CrashLoopPolicy.nextCount(rapid = true, previous = count) }
         assertTrue(CrashLoopPolicy.shouldHeal(count))
     }
+
+    @Test
+    fun streakGoesStaleOnlyAfterTtl() {
+        assertFalse(CrashLoopPolicy.isStreakStale(0))
+        assertFalse(CrashLoopPolicy.isStreakStale(CrashLoopPolicy.STREAK_TTL_MS - 1))
+        assertTrue(CrashLoopPolicy.isStreakStale(CrashLoopPolicy.STREAK_TTL_MS))
+        // Wall clock moved backwards between crashes — keep the streak, never wipe early.
+        assertFalse(CrashLoopPolicy.isStreakStale(-5_000))
+    }
+
+    @Test
+    fun staleStreak_rapidCrashStartsFresh() {
+        val week = 7L * 24 * 60 * 60 * 1000
+        assertEquals(1, CrashLoopPolicy.nextCount(rapid = true, previous = 2, msSinceLastCrash = week))
+        assertEquals(1, CrashLoopPolicy.nextCount(rapid = true, previous = 7, msSinceLastCrash = CrashLoopPolicy.STREAK_TTL_MS))
+    }
+
+    @Test
+    fun freshStreak_rapidCrashStillAccumulates() {
+        assertEquals(3, CrashLoopPolicy.nextCount(rapid = true, previous = 2, msSinceLastCrash = 30_000))
+        assertEquals(3, CrashLoopPolicy.nextCount(rapid = true, previous = 2, msSinceLastCrash = CrashLoopPolicy.STREAK_TTL_MS - 1))
+    }
+
+    @Test
+    fun unknownLastCrashTime_accumulatesAsBefore() {
+        assertEquals(3, CrashLoopPolicy.nextCount(rapid = true, previous = 2, msSinceLastCrash = null))
+    }
+
+    @Test
+    fun slowCrash_resetsToOne_regardlessOfStreakAge() {
+        assertEquals(1, CrashLoopPolicy.nextCount(rapid = false, previous = 2, msSinceLastCrash = 10_000))
+        assertEquals(1, CrashLoopPolicy.nextCount(rapid = false, previous = 2, msSinceLastCrash = CrashLoopPolicy.STREAK_TTL_MS * 2))
+    }
+
+    @Test
+    fun rapidCrashesSpreadOverWeeks_neverHeal() {
+        val week = 7L * 24 * 60 * 60 * 1000
+        var count = 0
+        var sinceLast: Long? = null
+        repeat(3) {
+            count = CrashLoopPolicy.nextCount(rapid = true, previous = count, msSinceLastCrash = sinceLast)
+            sinceLast = week
+        }
+        assertFalse(CrashLoopPolicy.shouldHeal(count))
+    }
+
+    @Test
+    fun liveCrashLoop_withTimestamps_stillHeals() {
+        var count = 0
+        var sinceLast: Long? = null
+        repeat(3) {
+            count = CrashLoopPolicy.nextCount(rapid = true, previous = count, msSinceLastCrash = sinceLast)
+            sinceLast = 30_000 // user relaunched the broken app within seconds
+        }
+        assertTrue(CrashLoopPolicy.shouldHeal(count))
+    }
 }
