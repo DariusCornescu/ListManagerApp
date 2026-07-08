@@ -92,6 +92,16 @@ commits `58c75c9`..`a9d1efb` is worth running once the limit lifts.
 - Parallel tracks (agreed roadmap): online presence (drawer "Online acum") and home
   redesign + profile (big REC layout, backend profile fields). Later: inventory sync v2.
 
+**v1.1 (2026-07-08, same branch)** — driven by first real use ("cuie de 5" parsed as
+qty 5): (1) **catalog-aware split** — `parse(text, nameScorer)` lets the name swallow
+trailing numbers when a longer candidate matches the catalog ≥ 0.82, so hardware-style
+names keep their size numbers (5 new parser tests, 26 total); (2) **live transcript +
+draft row** — `SpeechState.Partial` now renders the words in real time plus a ghost
+Produs|Cant|Preț row parsed live; (3) **continuous dictation toggle** — one tap, many
+rows (a pause ends a row), off by default. Also added a `preview` build type
+(`.preview` appId suffix, label "ListManager NOU") for side-by-side installs next to
+the daily app. Deferred still: catalog-price autofill (needs the Android `price` field).
+
 **Open questions**
 
 - None blocking. Number words ("cinci") are out of scope v1 (pinned behavior; rows are
