@@ -5,6 +5,65 @@ Newest entries on top.
 
 ---
 
+## 2026-07-05 — Inventory lists v1 (feat/inventory-lists)
+
+Android-only feature: a new "Inventar" screen where the operator taps the mic, speaks one
+line — product, quantity, price in fixed order ("lapte zuzu 5 4 lei 50") — and the app
+appends an editable table row with value = qty × price and a live grand total, exportable
+to PDF. Local, single active list (sync is a planned v2). Spec:
+`docs/superpowers/specs/2026-07-05-inventory-lists-design.md`; plan:
+`docs/superpowers/plans/2026-07-05-inventory-lists.md`.
+
+**What changed**
+
+- **`InventoryLineParser`** (`util/`, pure): trailing-numeric-region parsing — tokens like
+  "2L" aren't pure numbers, so product names keep their digits; first trailing amount =
+  quantity, second = price; a single money-marked amount ("5 lei") is the price. Romanian
+  money forms: "4 lei 50 (bani)", "4 virgulă 50", "4,50"/"4.5", leu/ban/ron synonyms.
+  Missing fields → nulls (highlighted in UI). 21 JVM tests incl. crash-regression and
+  pinned number-word behavior.
+- **`InventoryMath`** (`util/`, pure): money as integer bani; line value rounds per row
+  then totals sum (invoice behavior); "4,50 lei" formatting. 6 tests.
+- **Room v7**: `InventoryItemEntity` (nullable quantity/priceBani) + DAO + thin repository.
+  NOTE: the version bump rides `fallbackToDestructiveMigration()` (established pattern) —
+  first launch after update wipes the local cache including the pending-operations offline
+  queue; catalog re-syncs from the server.
+- **`PdfRepository.createInventoryPdf`** (additive): Produs | Cant. | Preț | Valoare table
+  + grand-total row, mirroring the existing layout machinery. Two inherited cosmetic
+  pagination quirks (page-count overstatement; total-row/footer collision on exactly-full
+  pages) are logged as a separate follow-up task.
+- **`InventoryViewModel`**: tap-to-speak one line per tap — the collector (Main.immediate)
+  stops the provider on the first `Final` before the restart policy runs (verified against
+  both interleavings); catalog name adopted only at ranker score ≥ 0.82, else free text;
+  CRUD + PDF export + share intent.
+- **`InventoryScreen`** + `inventory` route in NavGraph + "Liste inventar" drawer item +
+  Home button: editable rows (tap → dialog), missing cells highlighted, live total,
+  Export PDF, "Listă nouă" with confirm.
+
+**Verification gate:** compile + full JVM unit suite + assembleDebug (established gate; no
+emulator/instrumented tests in this environment). On-device checklist for manual testing:
+say a full line → row + total; line without price → highlighted blank cell, fill via tap;
+unknown product → free-text row; Export PDF → share sheet; Listă nouă → confirm → empty.
+
+**Process note:** built subagent-driven with two-stage reviews through Task 5 (spec review
+of the ViewModel verified independently); the account's monthly spend limit stopped
+subagents mid-Task 5, so the Task 5 quality probe (one-shot speech concurrency) and all of
+Task 6 were reviewed inline by the coordinator instead. A retroactive review pass over
+commits `58c75c9`..`a9d1efb` is worth running once the limit lifts.
+
+**What's next**
+
+- Push + PR into `development`; user merges and tests on device.
+- Parallel tracks (agreed roadmap): online presence (drawer "Online acum") and home
+  redesign + profile (big REC layout, backend profile fields). Later: inventory sync v2.
+
+**Open questions**
+
+- None blocking. Number words ("cinci") are out of scope v1 (pinned behavior; rows are
+  editable).
+
+---
+
 ## 2026-07-05 — Admin catalog CSV import + web page (feat/admin-catalog-csv)
 
 Backend-only feature: bulk-load/update the product catalog from a CSV via an admin web

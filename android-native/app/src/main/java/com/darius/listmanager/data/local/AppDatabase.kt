@@ -22,9 +22,10 @@ import kotlinx.coroutines.launch
         UnknownProductEntity::class,
         PendingOperationEntity::class,
         NeedsReviewEntity::class,
-        ProductEmbeddingEntity::class
+        ProductEmbeddingEntity::class,
+        InventoryItemEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun pendingOperationDao(): PendingOperationDao
     abstract fun needsReviewDao(): NeedsReviewDao
     abstract fun productEmbeddingDao(): ProductEmbeddingDao
+    abstract fun inventoryItemDao(): InventoryItemDao
 
     companion object {
         @Volatile

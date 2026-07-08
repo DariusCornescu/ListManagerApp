@@ -20,6 +20,7 @@ import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
 import com.darius.listmanager.ui.screens.NeedsReviewScreen
+import com.darius.listmanager.ui.screens.InventoryScreen
 import com.darius.listmanager.ui.screens.TeamDetailScreen
 import com.darius.listmanager.ui.screens.TeamsScreen
 
@@ -57,6 +58,7 @@ fun NavGraph(
                 onNavigateToSession = { navController.navigate("session") },
                 onNavigateToUnknown = { navController.navigate("unknown") },
                 onNavigateToReview = { navController.navigate("review") },
+                onNavigateToInventory = { navController.navigate("inventory") },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToAccount = { 
                     // Navigate to account if logged in, login if not
@@ -91,6 +93,9 @@ fun NavGraph(
         }
         composable("review") {
             NeedsReviewScreen(onBack = { navController.popBackStack() })
+        }
+        composable("inventory") {
+            InventoryScreen(onBack = { navController.popBackStack() })
         }
         composable("pdfs") {
             PDFsScreen(onBack = { navController.popBackStack() })
