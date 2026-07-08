@@ -50,6 +50,12 @@
         <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th></tr></thead>
           <tbody id="rows"></tbody></table>
       </div>
+      <div class="card">
+        <h3>Crashes</h3>
+        <p class="muted">Rapoarte de crash trimise automat de telefoane la repornirea aplicației.</p>
+        <button onclick="loadCrashes()">Refresh</button>
+        <div id="crashList" class="muted">Se încarcă…</div>
+      </div>
     </div>
   </main>
 
@@ -78,7 +84,7 @@
       if (!r.ok) { document.getElementById("loginErr").textContent = "Login failed"; return; }
       token = (await r.json()).access_token;
       localStorage.setItem("lm_token", token);
-      showApp(true); loadProducts();
+      showApp(true); loadProducts(); loadCrashes();
     }
 
     async function importCsv(dryRun, file) {
@@ -163,7 +169,34 @@
 
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
 
-    if (token) { showApp(true); loadProducts(); } else { showApp(false); }
+    async function loadCrashes() {
+      const box = document.getElementById("crashList");
+      let r;
+      try {
+        r = await fetch("/api/admin/crashes", { headers: authHeaders() });
+      } catch (e) { box.textContent = "Network error"; return; }
+      if (r.status === 401 || r.status === 403) { showApp(false); return; }
+      const crashes = await r.json();
+      box.textContent = "";
+      if (!crashes.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
+      crashes.forEach(c => {
+        const det = document.createElement("details");
+        det.style.marginBottom = "8px";
+        const sum = document.createElement("summary");
+        const firstLine = (c.stacktrace || "").split("\n")[0];
+        sum.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
+          `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"} — ${firstLine.slice(0, 80)}`;
+        const pre = document.createElement("pre");
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.fontSize = "12px";
+        pre.textContent = c.stacktrace;
+        det.appendChild(sum);
+        det.appendChild(pre);
+        box.appendChild(det);
+      });
+    }
+
+    if (token) { showApp(true); loadProducts(); loadCrashes(); } else { showApp(false); }
   </script>
 </body>
 </html>
