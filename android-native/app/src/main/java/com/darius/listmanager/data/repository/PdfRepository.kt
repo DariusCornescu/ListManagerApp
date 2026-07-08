@@ -22,6 +22,25 @@ class PdfRepository(private val context: Context) {
         private const val FOOTER_HEIGHT = 50f
         private const val ROW_HEIGHT = 30f
         private const val CELL_PADDING = 8f
+
+        /** Vertical space available for item rows; the first page also carries the document header. */
+        private fun rowAreaHeight(firstPage: Boolean): Float =
+            if (firstPage) PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f
+            else PAGE_HEIGHT - FOOTER_HEIGHT - 80f
+
+        internal fun maxRowsPerPage(firstPage: Boolean): Int =
+            (rowAreaHeight(firstPage) / ROW_HEIGHT).toInt()
+
+        /** First pass over the same pagination the drawing loops produce, so "Page X of N" matches. */
+        internal fun countPages(itemCount: Int): Int {
+            var pages = 1
+            var remaining = itemCount - maxRowsPerPage(firstPage = true)
+            while (remaining > 0) {
+                pages++
+                remaining -= maxRowsPerPage(firstPage = false)
+            }
+            return pages
+        }
     }
 
     suspend fun upsertDistributorPdf(
@@ -78,8 +97,7 @@ class PdfRepository(private val context: Context) {
         val sizeColStart = productColStart + productColWidth
 
         // Calculate total pages needed
-        val maxItemsPerPage = ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-        val totalPages = kotlin.math.ceil(items.size.toDouble() / maxItemsPerPage).toInt()
+        val totalPages = countPages(items.size)
 
         var currentPage = 1
         var itemIndex = 0
@@ -132,11 +150,7 @@ class PdfRepository(private val context: Context) {
             yPosition = tableHeaderY + ROW_HEIGHT
 
             // === TABLE BODY ===
-            val pageItemLimit = if (currentPage == 1) {
-                ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-            } else {
-                ((PAGE_HEIGHT - FOOTER_HEIGHT - 80f) / ROW_HEIGHT).toInt()
-            }
+            val pageItemLimit = maxRowsPerPage(firstPage = currentPage == 1)
 
             var rowCount = 0
             while (itemIndex < items.size && rowCount < pageItemLimit) {
@@ -267,8 +281,7 @@ class PdfRepository(private val context: Context) {
         val valueColStart = priceColStart + priceColWidth
         val tableEnd = PAGE_WIDTH - MARGIN
 
-        val maxItemsPerPage = ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-        val totalPages = maxOf(1, kotlin.math.ceil(items.size.toDouble() / maxItemsPerPage).toInt())
+        val totalPages = countPages(items.size)
 
         var currentPage = 1
         var itemIndex = 0
@@ -308,11 +321,7 @@ class PdfRepository(private val context: Context) {
 
             yPosition = tableHeaderY + ROW_HEIGHT
 
-            val pageItemLimit = if (currentPage == 1) {
-                ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-            } else {
-                ((PAGE_HEIGHT - FOOTER_HEIGHT - 80f) / ROW_HEIGHT).toInt()
-            }
+            val pageItemLimit = maxRowsPerPage(firstPage = currentPage == 1)
 
             var rowCount = 0
             while (itemIndex < items.size && rowCount < pageItemLimit) {
