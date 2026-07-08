@@ -24,7 +24,10 @@ import kotlinx.coroutines.launch
 class ListManagerApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        
+
+        // Install crash telemetry FIRST so anything below is covered.
+        com.darius.listmanager.util.CrashReporter.install(this)
+
         Log.d("ListManagerApp", "Application starting...")
         SyncWorkManager.initialize(this)
 
@@ -35,6 +38,11 @@ class ListManagerApp : Application() {
         SyncService(this).getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
             Log.d("ListManagerApp", "Restored saved auth token")
+        }
+
+        // Upload any crash reports saved by a previous run (background, offline-safe).
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.darius.listmanager.util.CrashReporter.flushPending(this@ListManagerApp)
         }
 
         Log.d("ListManagerApp", "WorkManager initialized")

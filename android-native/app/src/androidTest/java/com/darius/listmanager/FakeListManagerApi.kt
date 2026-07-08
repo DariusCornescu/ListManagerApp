@@ -19,6 +19,9 @@ import java.io.IOException
  * triggering the offline fallback.
  */
 class FakeListManagerApi : ListManagerApi {
+    override suspend fun reportCrash(crash: CrashReportRequest): Response<Unit> =
+        Response.success(Unit)
+
 
     private fun offline(): Nothing = throw IOException("FakeListManagerApi: no backend in tests")
 

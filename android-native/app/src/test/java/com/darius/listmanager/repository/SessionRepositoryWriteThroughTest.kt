@@ -120,6 +120,9 @@ class SessionRepositoryWriteThroughTest {
     }
 
     private class FakeApi : ListManagerApi {
+        override suspend fun reportCrash(crash: CrashReportRequest): Response<Unit> =
+            Response.success(Unit)
+
         val addCalls = mutableListOf<Pair<Long, AddItemRequest>>()
         val updateCalls = mutableListOf<Pair<Long, UpdateItemRequest>>()
         val deleteCalls = mutableListOf<Long>()

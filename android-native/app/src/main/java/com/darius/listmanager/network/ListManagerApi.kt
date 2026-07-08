@@ -39,6 +39,10 @@ interface ListManagerApi {
     suspend fun deleteDistributor(@Path("distributor_id") distributorId: Long): Response<Unit>
         
   
+    // ===== Crash reporting =====
+    @POST("/api/crashes")
+    suspend fun reportCrash(@Body crash: CrashReportRequest): Response<Unit>
+
     // ===== Authentication =====
     @POST("/api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
