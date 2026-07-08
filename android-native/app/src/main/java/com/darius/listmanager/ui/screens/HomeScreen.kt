@@ -38,6 +38,7 @@ fun HomeScreen(
     onNavigateToSession: () -> Unit,
     onNavigateToUnknown: () -> Unit,
     onNavigateToReview: () -> Unit,
+    onNavigateToInventory: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAccount: () -> Unit,
     isLoggedIn: Boolean = false,
@@ -344,6 +345,14 @@ fun HomeScreen(
                     text = "Mergi spre sesiunea curentă",
                     icon = Icons.Rounded.ShoppingCart,
                     onClick = onNavigateToSession
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                PrimaryButton(
+                    text = "Listă de inventar",
+                    icon = Icons.Rounded.FactCheck,
+                    onClick = onNavigateToInventory
                 )
 
                 Spacer(Modifier.weight(1f))
