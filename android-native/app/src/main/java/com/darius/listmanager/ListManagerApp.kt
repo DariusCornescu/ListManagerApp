@@ -25,8 +25,16 @@ class ListManagerApp : Application() {
     override fun onCreate() {
         super.onCreate()
 
-        // Install crash telemetry FIRST so anything below is covered.
+        // Crash-loop self-heal check + telemetry FIRST so anything below is covered.
+        val selfHealed = com.darius.listmanager.util.CrashLoopGuard.onAppStart(this)
         com.darius.listmanager.util.CrashReporter.install(this)
+        if (selfHealed) {
+            android.widget.Toast.makeText(
+                this,
+                "Aplicația s-a recuperat după erori repetate — datele locale au fost resetate",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
 
         Log.d("ListManagerApp", "Application starting...")
         SyncWorkManager.initialize(this)

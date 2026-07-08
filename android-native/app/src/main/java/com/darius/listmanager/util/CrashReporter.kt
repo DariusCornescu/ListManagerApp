@@ -30,6 +30,7 @@ object CrashReporter {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
+                CrashLoopGuard.onCrash(context.applicationContext)
                 persist(context.applicationContext, throwable)
             } catch (_: Exception) {
                 // never let crash reporting break crash handling
