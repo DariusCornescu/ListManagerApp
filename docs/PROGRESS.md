@@ -5,6 +5,41 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — PDF pagination quirk fixes (feat/inventory-lists)
+
+Closes the follow-up logged on 2026-07-05: the two inherited cosmetic pagination quirks in
+`PdfRepository`, fixed identically in `upsertDistributorPdf` and `createInventoryPdf`.
+
+**What changed**
+
+- **Page count** (`6a77ce1`): "Page X of N" no longer overstates N. `totalPages` divided by
+  the first page's row limit (20, doc header included) although continuation pages fit 23
+  rows — 41 items printed "of 3" on a 2-page PDF. New `countPages()` first pass walks the
+  same per-page capacities the drawing loops use.
+- **Grand-total row vs footer** (`f9bf306`): on an exactly-full last page the total row was
+  drawn at y≈820–850, colliding with the footer text (y=812) and running past the page
+  edge (842). New `totalRowFits()` check draws it only while spacing + one row fit in the
+  row area; otherwise it spills onto a fresh page (repeated table header + total row), and
+  `countPages()` counts that spill page so the label stays right.
+- Pagination math exposed as `internal` companion functions; 6 JVM tests
+  (`PdfRepositoryPaginationTest`) pin capacities (20/23), fit thresholds, and page counts.
+- Item-row layout is untouched — limits and coordinates render exactly as before; only the
+  total-row placement and the page label changed.
+
+**Verification gate:** full JVM unit suite (80 tests, 0 failures) + assembleDebug.
+
+**What's next**
+
+- Unchanged from 2026-07-05: push + PR into `development`; presence + home/profile tracks.
+
+**Open questions**
+
+- The distributor first page's row limit (20) lets the last item rows reach y≈825, slightly
+  past the footer text (y=812) — pre-existing, out of scope here since only the total row
+  was flagged; worth a look if the distributor PDF ever gets a visual pass.
+
+---
+
 ## 2026-07-05 — Inventory lists v1 (feat/inventory-lists)
 
 Android-only feature: a new "Inventar" screen where the operator taps the mic, speaks one
