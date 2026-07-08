@@ -19,6 +19,7 @@ import com.darius.listmanager.data.speech.SpeechState
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.InventoryLineParser
 import com.darius.listmanager.util.InventoryMath
+import com.darius.listmanager.util.ParsedInventoryLine
 import com.darius.listmanager.util.ProductRanker
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -32,7 +33,10 @@ data class InventoryUiState(
     val speechState: SpeechState = SpeechState.Idle,
     val message: String? = null,
     val isGeneratingPdf: Boolean = false,
-    val generatedPdf: File? = null
+    val generatedPdf: File? = null,
+    val partialText: String? = null,
+    val draft: ParsedInventoryLine? = null,
+    val continuous: Boolean = false
 )
 
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
@@ -60,12 +64,35 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         }
         viewModelScope.launch {
             speechRepository.speechState.collect { state ->
-                _uiState.value = _uiState.value.copy(speechState = state)
-                if (state is SpeechState.Final) {
-                    // One line per tap: stop BEFORE the provider's policy can
-                    // restart (collector runs synchronously on Main.immediate).
-                    speechRepository.stopListening()
-                    addSpokenLine(state.text)
+                when (state) {
+                    is SpeechState.Partial -> {
+                        // Live "chatbot" feedback: show the words + a draft row
+                        // parsed from the partial (plain parse — partials fire
+                        // several times a second; catalog scoring waits for Final).
+                        _uiState.value = _uiState.value.copy(
+                            speechState = state,
+                            partialText = state.text,
+                            draft = InventoryLineParser.parse(state.text)
+                        )
+                    }
+                    is SpeechState.Final -> {
+                        _uiState.value = _uiState.value.copy(
+                            speechState = state, partialText = null, draft = null
+                        )
+                        if (!_uiState.value.continuous) {
+                            // One line per tap: stop BEFORE the provider's policy
+                            // can restart (collector runs synchronously on
+                            // Main.immediate). In continuous mode the loop is
+                            // left alive and each utterance becomes one row.
+                            speechRepository.stopListening()
+                        }
+                        addSpokenLine(state.text)
+                    }
+                    else -> {
+                        _uiState.value = _uiState.value.copy(
+                            speechState = state, partialText = null, draft = null
+                        )
+                    }
                 }
             }
         }
@@ -80,16 +107,31 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun stopListening() { speechRepository.stopListening() }
 
+    fun setContinuous(enabled: Boolean) {
+        _uiState.value = _uiState.value.copy(continuous = enabled)
+    }
+
     // ==================== Rows ====================
 
     fun addSpokenLine(text: String) {
         viewModelScope.launch {
-            val parsed = InventoryLineParser.parse(text)
+            val local = try {
+                productRepository.getAllLocal()
+            } catch (e: Exception) {
+                Log.e(TAG, "getAllLocal failed: ${e.message}", e)
+                emptyList()
+            }
+            // Catalog-aware split: names ending in a bare number ("cuie de 5")
+            // keep it when the catalog recognizes the longer name.
+            val scorer: ((String) -> Double)? = if (local.isEmpty()) null else { candidate ->
+                ProductRanker.rank(candidate, local).firstOrNull()?.score ?: 0.0
+            }
+            val parsed = InventoryLineParser.parse(text, scorer)
             if (parsed == null || parsed.nameText.isBlank()) {
                 _uiState.value = _uiState.value.copy(message = "Nu am înțeles produsul — mai zi o dată")
                 return@launch
             }
-            val (name, productId) = resolveName(parsed.nameText)
+            val (name, productId) = resolveName(parsed.nameText, local)
             inventoryRepository.insert(
                 InventoryItemEntity(
                     name = name,
@@ -110,13 +152,10 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     /** Adopt the catalog name + id only on a high-confidence match; else keep free text. */
-    private suspend fun resolveName(nameText: String): Pair<String, Long?> {
-        val local = try {
-            productRepository.getAllLocal()
-        } catch (e: Exception) {
-            Log.e(TAG, "getAllLocal failed: ${e.message}", e)
-            emptyList()
-        }
+    private fun resolveName(
+        nameText: String,
+        local: List<com.darius.listmanager.data.local.entity.ProductEntity>
+    ): Pair<String, Long?> {
         if (local.isEmpty()) return nameText to null
         val top = ProductRanker.rank(nameText, local).firstOrNull()
         return if (top != null && top.score >= MATCH_THRESHOLD) top.product.name to top.product.id

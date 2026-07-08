@@ -132,6 +132,35 @@ fun InventoryScreen(
             // ===== Total + controls =====
             Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    // Live transcript + draft row while speaking ("chatbot" feedback)
+                    val listening = uiState.speechState is SpeechState.Listening ||
+                        uiState.speechState is SpeechState.Partial
+                    if (listening) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                                Text(
+                                    uiState.partialText ?: "Ascult…",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                uiState.draft?.let { draft ->
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(Modifier.fillMaxWidth()) {
+                                        DraftCell("Produs", draft.nameText.ifBlank { "…" }, Modifier.weight(1f))
+                                        DraftCell("Cant.", draft.quantity?.let { InventoryMath.formatQuantity(it) } ?: "…", Modifier.width(64.dp))
+                                        DraftCell("Preț", draft.priceBani?.let { InventoryMath.formatLei(it) } ?: "…", Modifier.width(88.dp))
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                    }
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -192,6 +221,21 @@ fun InventoryScreen(
                                 Text("Export PDF")
                             }
                         }
+                    }
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Switch(
+                            checked = uiState.continuous,
+                            onCheckedChange = { viewModel.setContinuous(it) }
+                        )
+                        Text(
+                            "Dictare continuă (o pauză = un rând)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -264,6 +308,25 @@ private fun InventoryRow(
                 )
             }
         }
+    }
+}
+
+/** One cell of the live draft row shown while the operator is speaking. */
+@Composable
+private fun DraftCell(label: String, value: String, modifier: Modifier) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            maxLines = 1
+        )
     }
 }
 
