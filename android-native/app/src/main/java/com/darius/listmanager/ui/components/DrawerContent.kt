@@ -24,6 +24,7 @@ fun DrawerContent(
     teams: List<TeamDTO> = emptyList(),
     username: String? = null,
     webSocketState: WebSocketState = WebSocketState.Disconnected,
+    serverReachable: Boolean = false,
     onlineUsers: List<OnlineUser> = emptyList(),
     pendingCount: Int = 0,
     isSyncing: Boolean = false,
@@ -86,22 +87,34 @@ fun DrawerContent(
             }
         }
 
-        // Connection & sync status (moved here from the old top banner)
+        // Connection & sync status (the old banner's three states, moved here):
+        // live (WebSocket) / server reachable (REST fine, no live socket) / offline.
         val live = webSocketState is WebSocketState.Connected
         Box(Modifier.padding(horizontal = 12.dp)) {
             NavigationDrawerItem(
                 icon = {
                     Icon(
-                        if (live) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
+                        when {
+                            live -> Icons.Rounded.CloudDone
+                            serverReachable -> Icons.Rounded.Cloud
+                            else -> Icons.Rounded.CloudOff
+                        },
                         contentDescription = null,
-                        tint = if (live) MaterialTheme.colorScheme.secondary
-                               else MaterialTheme.colorScheme.error
+                        tint = when {
+                            live -> MaterialTheme.colorScheme.secondary
+                            serverReachable -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.error
+                        }
                     )
                 },
                 label = {
                     Column {
                         Text(
-                            if (live) "Conectat live" else "Fără conexiune live",
+                            when {
+                                live -> "Conectat live"
+                                serverReachable -> "Server disponibil"
+                                else -> "Offline"
+                            },
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
@@ -109,6 +122,7 @@ fun DrawerContent(
                                 isSyncing -> "Sincronizare…"
                                 pendingCount > 0 -> "$pendingCount în așteptare — apasă pentru sync"
                                 live -> username?.let { "Sincronizat • $it" } ?: "Sincronizare activă"
+                                serverReachable -> "Se reconectează live…"
                                 else -> "Datele se salvează local"
                             },
                             style = MaterialTheme.typography.labelSmall,

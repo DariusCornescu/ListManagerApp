@@ -83,6 +83,7 @@ fun AppContent() {
     var drawerTeams by remember {
         mutableStateOf<List<com.darius.listmanager.network.TeamDTO>>(emptyList())
     }
+    var serverReachable by remember { mutableStateOf(false) }
 
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
@@ -103,6 +104,20 @@ fun AppContent() {
             val result = teamRepository.getMyTeams()
             if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
                 drawerTeams = result.data
+            }
+            // Server reachability (the old banner's middle state): REST can be
+            // perfectly fine while the live WebSocket is down — show that
+            // honestly instead of a scary "no connection".
+            serverReachable = try {
+                com.darius.listmanager.util.NetworkHelper.isServerReachable()
+            } catch (e: Exception) { false }
+            // If the live socket dropped but we're logged in and the server is
+            // up, quietly reconnect it.
+            if (serverReachable && webSocketState !is WebSocketState.Connected) {
+                SyncService(context).getAuthToken()?.let { token ->
+                    Log.d("AppContent", "Drawer open: reconnecting WebSocket")
+                    webSocketService.connect(token)
+                }
             }
             // Presence fallback: WebSocket pushes keep it live, but refresh on
             // open too so the list is right even after a silent reconnect.
@@ -147,6 +162,7 @@ fun AppContent() {
                 teams = drawerTeams,
                 username = username,
                 webSocketState = webSocketState,
+                serverReachable = serverReachable,
                 onlineUsers = onlineUsers,
                 pendingCount = pendingCount,
                 isSyncing = syncStatus.isSyncing,
