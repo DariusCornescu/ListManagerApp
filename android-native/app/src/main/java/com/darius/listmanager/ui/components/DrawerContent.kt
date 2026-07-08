@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.data.workspace.Workspace
 import com.darius.listmanager.network.TeamDTO
 
@@ -17,6 +18,11 @@ fun DrawerContent(
     onNavigate: (String) -> Unit,
     workspaceName: String = "Personal",
     teams: List<TeamDTO> = emptyList(),
+    username: String? = null,
+    webSocketState: WebSocketState = WebSocketState.Disconnected,
+    pendingCount: Int = 0,
+    isSyncing: Boolean = false,
+    onSyncClick: () -> Unit = {},
     onSwitchWorkspace: (Workspace) -> Unit = {},
 ) {
     var switcherExpanded by remember { mutableStateOf(false) }
@@ -73,6 +79,41 @@ fun DrawerContent(
                     }
                 )
             }
+        }
+
+        // Connection & sync status (moved here from the old top banner)
+        val live = webSocketState is WebSocketState.Connected
+        Box(Modifier.padding(horizontal = 12.dp)) {
+            NavigationDrawerItem(
+                icon = {
+                    Icon(
+                        if (live) Icons.Rounded.CloudDone else Icons.Rounded.CloudOff,
+                        contentDescription = null,
+                        tint = if (live) MaterialTheme.colorScheme.secondary
+                               else MaterialTheme.colorScheme.error
+                    )
+                },
+                label = {
+                    Column {
+                        Text(
+                            if (live) "Conectat live" else "Fără conexiune live",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            when {
+                                isSyncing -> "Sincronizare…"
+                                pendingCount > 0 -> "$pendingCount în așteptare — apasă pentru sync"
+                                live -> username?.let { "Sincronizat • $it" } ?: "Sincronizare activă"
+                                else -> "Datele se salvează local"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                },
+                selected = false,
+                onClick = onSyncClick
+            )
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

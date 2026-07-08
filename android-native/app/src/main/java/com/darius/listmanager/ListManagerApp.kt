@@ -18,7 +18,6 @@ import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorker
 import com.darius.listmanager.sync.SyncWorkManager
 import com.darius.listmanager.ui.components.DrawerContent
-import com.darius.listmanager.ui.components.SyncStatusBar
 import com.darius.listmanager.ui.navigation.NavGraph
 import kotlinx.coroutines.launch
 
@@ -115,6 +114,18 @@ fun AppContent() {
             DrawerContent(
                 workspaceName = currentWorkspace.displayName,
                 teams = drawerTeams,
+                username = username,
+                webSocketState = webSocketState,
+                pendingCount = pendingCount,
+                isSyncing = syncStatus.isSyncing,
+                onSyncClick = {
+                    Log.d("AppContent", "Sync from drawer, pendingCount=$pendingCount")
+                    try {
+                        SyncWorker.scheduleImmediateSync(context)
+                    } catch (e: Exception) {
+                        Log.e("AppContent", "Error scheduling sync", e)
+                    }
+                },
                 onSwitchWorkspace = { workspace ->
                     workspaceManager.switchTo(workspace)
                     scope.launch {
@@ -141,28 +152,6 @@ fun AppContent() {
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
-                val currentRoute = navController.currentBackStackEntryFlow
-                    .collectAsState(initial = null).value?.destination?.route
-                
-                if (currentRoute != "login") {
-                    SyncStatusBar(
-                        pendingCount = pendingCount,
-                        isSyncing = syncStatus.isSyncing,
-                        isLoggedIn = isLoggedIn,
-                        username = username,
-                        webSocketState = webSocketState,
-                        onSyncClick = {
-                            Log.d("AppContent", " Sync button pressed! pendingCount=$pendingCount")
-                            try {
-                                SyncWorker.scheduleImmediateSync(context)
-                                Log.d("AppContent", " Sync scheduled successfully")
-                            } catch (e: Exception) {
-                                Log.e("AppContent", " Error scheduling sync", e)
-                            }
-                        }
-                    )
-                }
-                
                 NavGraph(
                     navController = navController,
                     startDestination = startDestination,

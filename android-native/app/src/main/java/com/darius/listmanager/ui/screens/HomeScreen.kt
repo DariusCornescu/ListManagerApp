@@ -38,7 +38,6 @@ fun HomeScreen(
     onNavigateToSession: () -> Unit,
     onNavigateToUnknown: () -> Unit,
     onNavigateToReview: () -> Unit,
-    onNavigateToInventory: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAccount: () -> Unit,
     isLoggedIn: Boolean = false,
@@ -145,10 +144,10 @@ fun HomeScreen(
                     .fillMaxWidth()
                     .padding(24.dp)
             ) {
-                // Mic Icon Area with Processing Overlay
+                // Mic Icon Area with Processing Overlay — the hero of the screen
                 Box(
                     contentAlignment = Alignment.Center,
-                    modifier = Modifier.size(120.dp)
+                    modifier = Modifier.size(160.dp)
                 ) {
                     Surface(
                         shape = CircleShape,
@@ -185,7 +184,7 @@ fun HomeScreen(
                         Box(contentAlignment = Alignment.Center) {
                             if (uiState.isProcessing) {
                                 CircularProgressIndicator(
-                                    modifier = Modifier.size(64.dp),
+                                    modifier = Modifier.size(72.dp),
                                     strokeWidth = 3.dp
                                 )
                             } else {
@@ -195,7 +194,7 @@ fun HomeScreen(
                                     else
                                         Icons.Rounded.Mic,
                                     contentDescription = "Microphone",
-                                    modifier = Modifier.size(64.dp),
+                                    modifier = Modifier.size(72.dp),
                                     tint = when (uiState.speechState) {
                                         is SpeechState.Listening -> MaterialTheme.colorScheme.onPrimaryContainer
                                         else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -209,7 +208,7 @@ fun HomeScreen(
                     if (uiState.isProcessing) {
                         CircularProgressIndicator(
                             modifier = Modifier
-                                .size(100.dp)
+                                .size(140.dp)
                                 .padding(8.dp),
                             strokeWidth = 2.dp,
                             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
@@ -219,7 +218,7 @@ fun HomeScreen(
 
                 Text(
                     when (val state = uiState.speechState) {
-                        is SpeechState.Idle -> "Apasă pentru a incepe inregistrarea"
+                        is SpeechState.Idle -> "Apasă pentru a începe înregistrarea"
                         is SpeechState.Listening -> "Ascultare..."
                         is SpeechState.Partial -> "Am auzit: ${state.text}"
                         is SpeechState.Final -> "Procesez: ${state.text}"
@@ -260,7 +259,7 @@ fun HomeScreen(
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
-                                "Processing your request...",
+                                "Procesez cererea…",
                                 style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onTertiaryContainer
@@ -347,131 +346,86 @@ fun HomeScreen(
                     onClick = onNavigateToSession
                 )
 
-                Spacer(Modifier.height(8.dp))
-
-                PrimaryButton(
-                    text = "Listă de inventar",
-                    icon = Icons.Rounded.FactCheck,
-                    onClick = onNavigateToInventory
-                )
-
                 Spacer(Modifier.weight(1f))
 
-                if (uiState.reviewCount > 0) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(32.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                        ),
-                        onClick = onNavigateToReview
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(24.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "De verificat",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = MaterialTheme.colorScheme.onTertiaryContainer
-                                    )
-                                    Badge(
-                                        containerColor = MaterialTheme.colorScheme.error,
-                                        contentColor = MaterialTheme.colorScheme.onError
-                                    ) {
-                                        Text(
-                                            "${uiState.reviewCount}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "Apasă pentru a confirma ${uiState.reviewCount} produs(e) ambigue",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                                )
-                            }
-                            Icon(
-                                Icons.Rounded.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
+                // Compact status row: what needs attention, at a glance
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    HomeStatCard(
+                        title = "De verificat",
+                        count = uiState.reviewCount,
+                        icon = Icons.Rounded.Checklist,
+                        onClick = onNavigateToReview,
+                        modifier = Modifier.weight(1f)
+                    )
+                    HomeStatCard(
+                        title = "Necunoscute",
+                        count = uiState.unknownProductCount,
+                        icon = Icons.Rounded.Help,
+                        onClick = onNavigateToUnknown,
+                        modifier = Modifier.weight(1f)
+                    )
                 }
 
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(32.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ),
-                    onClick = onNavigateToUnknown
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        "Produse necunoscute",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                    if (uiState.unknownProductCount > 0) {
-                                        Badge(
-                                            containerColor = MaterialTheme.colorScheme.error,
-                                            contentColor = MaterialTheme.colorScheme.onError
-                                        ) {
-                                            Text(
-                                                "${uiState.unknownProductCount}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold
-                                            )
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    if (uiState.unknownProductCount > 0)
-                                        "Apasa pentru a adauga ${uiState.unknownProductCount} produsul${if (uiState.unknownProductCount != 1) "s" else ""} in catalog"
-                                    else
-                                        "Niciun produs necunoscut in sesiunea curenta",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            Icon(
-                                Icons.Rounded.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
             }
         }
     }
 }
 
 // ==================== UTILITY FUNCTIONS ====================
+
+@Composable
+private fun HomeStatCard(
+    title: String,
+    count: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val highlighted = count > 0
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (highlighted) MaterialTheme.colorScheme.secondaryContainer
+                             else MaterialTheme.colorScheme.surfaceVariant
+        ),
+        onClick = onClick
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    icon, contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = if (highlighted) MaterialTheme.colorScheme.onSecondaryContainer
+                           else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    count.toString(),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = if (highlighted) MaterialTheme.colorScheme.onSecondaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = if (highlighted) MaterialTheme.colorScheme.onSecondaryContainer
+                        else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
 
 @Composable
 private fun SuggestionItem(
