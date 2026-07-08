@@ -5,6 +5,43 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — Admin overview dashboard (feat/inventory-lists, continued)
+
+Requested view for `/admin`: stores, headcount, products, generated lists as an
+always-current chart, and bug reports grouped by phone.
+
+**Decisions**
+
+- "Stores" map to the existing **Team** entity (each team/workspace = one store) — no
+  schema change. A dedicated Store entity stays an option for later.
+- The daily chart plots **both** lists completed (`GlobalSession.completed_at`) and
+  products registered (`GlobalSessionItem.created_at`) — both already server-side, so
+  zero Android changes.
+
+**What changed**
+
+- `GET /api/admin/dashboard` (admin only): stores with member counts; users / products /
+  distributors / completed-lists / crash counters; zero-filled per-day activity series
+  (clamped 7–90 days, default 30), recomputed live on every call. Date bucketing
+  normalized so SQLite and Postgres group identically.
+- `/admin` page: "Privire de ansamblu" card — stat tiles, store chips, and a
+  dependency-free inline SVG chart (gold bars = products/day, sage line = lists/day, each
+  on its own scale so a single list is still visible). Crashes card now opens with a
+  per-device summary (reports grouped by phone). All DOM built via `textContent`
+  (keeps the page's XSS hygiene).
+- Tests: 7 new in `tests/test_admin_dashboard.py` (auth, counts, zero-fill, clamping,
+  distinct-device counting); full backend suite **223 passed**. Endpoint also
+  smoke-tested against a live local server with the seeded catalog.
+
+**What's next**
+
+- Merge PR #15 (contains everything since PR #14: crash reporting, presence, UI cleanup,
+  this dashboard) → Render redeploys → verify `/admin` live.
+- Later candidates: real Store entity with addresses; inventory-list export pings so
+  local inventory PDFs can join the chart.
+
+---
+
 ## 2026-07-08 — Reliability + presence (feat/inventory-lists, continued)
 
 Priority list agreed: crash reporting → who-is-online → consolidate features.
