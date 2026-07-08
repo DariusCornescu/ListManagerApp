@@ -175,4 +175,51 @@ class InventoryLineParserTest {
         assertEquals(50.0, p.quantity!!, 0.0)
         assertNull(p.priceBani)
     }
+
+    // ===== catalog-aware split (v1.1) =====
+
+    /** Fake catalog: known names score 1.0, everything else 0.1. */
+    private fun scorerFor(vararg known: String): (String) -> Double = { name ->
+        if (known.any { it.equals(name, ignoreCase = true) }) 1.0 else 0.1
+    }
+
+    @Test
+    fun catalogAwareSplit_keepsBareNumberInProductName() {
+        val p = InventoryLineParser.parse("cuie de 5 10 4 lei", scorerFor("cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertEquals(10.0, p.quantity!!, 0.0)
+        assertEquals(400L, p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_nameOnlyLine() {
+        val p = InventoryLineParser.parse("cuie de 5", scorerFor("cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertNull(p.quantity)
+        assertNull(p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_noConfidentMatch_fallsBackToDefault() {
+        val p = InventoryLineParser.parse("cuie de 5 10 4 lei", scorerFor("altceva"))!!
+        assertEquals("cuie", p.nameText)
+        assertEquals(5.0, p.quantity!!, 0.0)
+        assertEquals(1000L, p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_prefersLongerNameOnTie() {
+        val p = InventoryLineParser.parse("cuie de 5 10", scorerFor("cuie", "cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertEquals(10.0, p.quantity!!, 0.0)
+        assertNull(p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_doesNotAffectPlainNames() {
+        val p = InventoryLineParser.parse("lapte zuzu 5 4 lei 50", scorerFor("lapte zuzu"))!!
+        assertEquals("lapte zuzu", p.nameText)
+        assertEquals(5.0, p.quantity!!, 0.0)
+        assertEquals(450L, p.priceBani)
+    }
 }

@@ -24,6 +24,12 @@ data class ParsedInventoryLine(
  * Number WORDS ("cinci") are out of scope: they break the trailing region and
  * can misattribute a later digit (e.g. "lapte cinci lei 50" -> qty 50) — the
  * row stays editable, so the operator corrects it; this is pinned by tests.
+ *
+ * With a [nameScorer] (catalog match score in 0..1), the split becomes
+ * catalog-aware: the name may swallow leading tokens of the numeric region
+ * when a longer candidate matches the catalog with high confidence, so names
+ * ending in a bare number ("cuie de 5") keep it instead of losing it to the
+ * quantity. Without a scorer (or no confident match) behavior is unchanged.
  */
 object InventoryLineParser {
 
@@ -34,9 +40,12 @@ object InventoryLineParser {
 
     private val NUMBER = Regex("^\\d+([.,]\\d+)?$")
 
+    /** Minimum catalog score for a longer name candidate to override the default split. */
+    private const val CATALOG_OVERRIDE_THRESHOLD = 0.82
+
     private data class Amount(val value: Double, val money: Boolean)
 
-    fun parse(text: String): ParsedInventoryLine? {
+    fun parse(text: String, nameScorer: ((String) -> Double)? = null): ParsedInventoryLine? {
         val tokens = text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return null
 
@@ -49,12 +58,38 @@ object InventoryLineParser {
                 start = i
             } else break
         }
-        val region = tokens.subList(start, tokens.size)
-        if (region.none { isNumber(it) }) {
+        if (tokens.subList(start, tokens.size).none { isNumber(it) }) {
             // no numbers at the end -> the whole line is a product name
             return ParsedInventoryLine(tokens.joinToString(" "), quantity = null, priceBani = null)
         }
-        val nameText = tokens.subList(0, start).joinToString(" ")
+
+        // 1b. Catalog-aware override: let the name grow into the numeric region
+        //     ("cuie" -> "cuie de 5") when a candidate matches the catalog with
+        //     high confidence. Ties prefer the longer name.
+        var splitAt = start
+        if (nameScorer != null && start < tokens.size) {
+            var bestScore = 0.0
+            var bestAt = -1
+            for (i in start..tokens.size) {
+                val candidate = tokens.subList(0, i).joinToString(" ")
+                if (candidate.isBlank()) continue
+                val score = nameScorer(candidate)
+                if (score >= bestScore) {
+                    bestScore = score
+                    bestAt = i
+                }
+            }
+            if (bestScore >= CATALOG_OVERRIDE_THRESHOLD && bestAt > start) {
+                splitAt = bestAt
+            }
+        }
+
+        val region = tokens.subList(splitAt, tokens.size)
+        val nameText = tokens.subList(0, splitAt).joinToString(" ")
+        if (region.none { isNumber(it) }) {
+            // the catalog consumed every trailing number ("cuie de 5" alone)
+            return ParsedInventoryLine(nameText, quantity = null, priceBani = null)
+        }
 
         // 2. Collapse the region into amounts (left to right).
         val amounts = mutableListOf<Amount>()
