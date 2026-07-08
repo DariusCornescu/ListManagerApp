@@ -232,7 +232,7 @@ fun InventoryScreen(
                             onCheckedChange = { viewModel.setContinuous(it) }
                         )
                         Text(
-                            "Dictare continuă (o pauză = un rând)",
+                            "Dictare continuă — vorbește fluent, rândurile se taie singure",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

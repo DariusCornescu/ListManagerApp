@@ -142,6 +142,50 @@ object InventoryLineParser {
         )
     }
 
+    /**
+     * Split one fluently-spoken utterance into raw line segments, so dictation
+     * needs NO forced pauses: a new line starts where, after the numeric region
+     * of the previous line, a plain word appears again ("lapte 2 6 lei pâine 3"
+     * -> ["lapte 2 6 lei", "pâine 3"]). Money/filler words count as region only
+     * AFTER a number was seen, so fillers inside names ("lapte de vacă") don't
+     * split. The last segment may still be incomplete (mid-speech).
+     */
+    fun segmentLines(text: String): List<String> {
+        val tokens = text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return emptyList()
+
+        val segments = mutableListOf<String>()
+        var segStart = 0
+        var inRegion = false
+        for (i in tokens.indices) {
+            val t = tokens[i]
+            when {
+                isNumber(t) -> inRegion = true
+                inRegion && (t in FILLER || t in CURRENCY || t in SUBUNIT || t in COMMA_WORD) -> {
+                    // still part of the current line's numeric region
+                }
+                else -> {
+                    // a plain word: starts/continues a name; if numbers already
+                    // ended a line, this word begins the NEXT line
+                    if (inRegion) {
+                        segments.add(tokens.subList(segStart, i).joinToString(" "))
+                        segStart = i
+                        inRegion = false
+                    }
+                }
+            }
+        }
+        segments.add(tokens.subList(segStart, tokens.size).joinToString(" "))
+        return segments
+    }
+
+    /** [segmentLines] + [parse] per segment: one fluent breath -> many lines. */
+    fun parseMultiple(
+        text: String,
+        nameScorer: ((String) -> Double)? = null
+    ): List<ParsedInventoryLine> =
+        segmentLines(text).mapNotNull { parse(it, nameScorer) }
+
     private fun isNumber(t: String) = NUMBER.matches(t)
 
     private fun numberOf(t: String) = t.replace(',', '.').toDouble()

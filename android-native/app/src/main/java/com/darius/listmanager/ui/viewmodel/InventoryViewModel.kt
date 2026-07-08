@@ -53,6 +53,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _uiState = MutableStateFlow(InventoryUiState())
     val uiState: StateFlow<InventoryUiState> = _uiState.asStateFlow()
 
+    /** How many segments of the CURRENT utterance were already inserted live. */
+    private var committedSegments = 0
+
     init {
         viewModelScope.launch {
             inventoryRepository.getAllFlow().collect { items ->
@@ -66,14 +69,26 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             speechRepository.speechState.collect { state ->
                 when (state) {
                     is SpeechState.Partial -> {
-                        // Live "chatbot" feedback: show the words + a draft row
-                        // parsed from the partial (plain parse — partials fire
-                        // several times a second; catalog scoring waits for Final).
+                        // Live "chatbot" feedback: raw words + a draft row parsed
+                        // from the CURRENT (last) segment. Plain parse — partials
+                        // fire several times a second; catalog scoring runs at
+                        // insert time.
+                        val segments = InventoryLineParser.segmentLines(state.text)
                         _uiState.value = _uiState.value.copy(
                             speechState = state,
                             partialText = state.text,
-                            draft = InventoryLineParser.parse(state.text)
+                            draft = segments.lastOrNull()?.let { InventoryLineParser.parse(it) }
                         )
+                        // Fluent dictation: the moment a NEXT line starts, the
+                        // previous one is complete — insert it live. No forced
+                        // pauses; lines are cut from TEXT, not from silence.
+                        if (_uiState.value.continuous && segments.size - 1 > committedSegments) {
+                            val completed = segments.subList(committedSegments, segments.size - 1).toList()
+                            committedSegments = segments.size - 1
+                            viewModelScope.launch {
+                                completed.forEach { insertSegment(it, quiet = true) }
+                            }
+                        }
                     }
                     is SpeechState.Final -> {
                         _uiState.value = _uiState.value.copy(
@@ -82,13 +97,21 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                         if (!_uiState.value.continuous) {
                             // One line per tap: stop BEFORE the provider's policy
                             // can restart (collector runs synchronously on
-                            // Main.immediate). In continuous mode the loop is
-                            // left alive and each utterance becomes one row.
+                            // Main.immediate). In continuous mode the loop stays
+                            // alive and restarts by itself.
                             speechRepository.stopListening()
                         }
-                        addSpokenLine(state.text)
+                        val segments = InventoryLineParser.segmentLines(state.text)
+                        val remaining = if (committedSegments < segments.size) {
+                            segments.subList(committedSegments, segments.size).toList()
+                        } else emptyList()
+                        committedSegments = 0
+                        addSegments(remaining)
                     }
                     else -> {
+                        // Idle / Listening / Error: a new utterance begins (or
+                        // the session ended) — reset the live-commit cursor.
+                        committedSegments = 0
                         _uiState.value = _uiState.value.copy(
                             speechState = state, partialText = null, draft = null
                         )
@@ -113,34 +136,53 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     // ==================== Rows ====================
 
-    fun addSpokenLine(text: String) {
+    /** Insert every remaining segment of an utterance (Final). */
+    private fun addSegments(segments: List<String>) {
+        if (segments.isEmpty()) return
         viewModelScope.launch {
-            val local = try {
-                productRepository.getAllLocal()
-            } catch (e: Exception) {
-                Log.e(TAG, "getAllLocal failed: ${e.message}", e)
-                emptyList()
+            if (segments.size == 1) {
+                insertSegment(segments[0], quiet = false)
+            } else {
+                var added = 0
+                segments.forEach { if (insertSegment(it, quiet = true)) added++ }
+                _uiState.value = _uiState.value.copy(message = "Adăugate: $added rânduri")
             }
-            // Catalog-aware split: names ending in a bare number ("cuie de 5")
-            // keep it when the catalog recognizes the longer name.
-            val scorer: ((String) -> Double)? = if (local.isEmpty()) null else { candidate ->
-                ProductRanker.rank(candidate, local).firstOrNull()?.score ?: 0.0
-            }
-            val parsed = InventoryLineParser.parse(text, scorer)
-            if (parsed == null || parsed.nameText.isBlank()) {
+        }
+    }
+
+    /**
+     * Parse one raw line segment (catalog-aware split: "cuie de 5" keeps its
+     * number when the catalog recognizes the longer name) and insert it as a
+     * row. Quiet mode skips per-line snackbar messages (fluent dictation).
+     */
+    private suspend fun insertSegment(segText: String, quiet: Boolean): Boolean {
+        val local = try {
+            productRepository.getAllLocal()
+        } catch (e: Exception) {
+            Log.e(TAG, "getAllLocal failed: ${e.message}", e)
+            emptyList()
+        }
+        val scorer: ((String) -> Double)? = if (local.isEmpty()) null else { candidate ->
+            ProductRanker.rank(candidate, local).firstOrNull()?.score ?: 0.0
+        }
+        val parsed = InventoryLineParser.parse(segText, scorer)
+        if (parsed == null || parsed.nameText.isBlank()) {
+            if (!quiet) {
                 _uiState.value = _uiState.value.copy(message = "Nu am înțeles produsul — mai zi o dată")
-                return@launch
             }
-            val (name, productId) = resolveName(parsed.nameText, local)
-            inventoryRepository.insert(
-                InventoryItemEntity(
-                    name = name,
-                    productId = productId,
-                    quantity = parsed.quantity,
-                    priceBani = parsed.priceBani,
-                    createdAt = System.currentTimeMillis()
-                )
+            return false
+        }
+        val (name, productId) = resolveName(parsed.nameText, local)
+        inventoryRepository.insert(
+            InventoryItemEntity(
+                name = name,
+                productId = productId,
+                quantity = parsed.quantity,
+                priceBani = parsed.priceBani,
+                createdAt = System.currentTimeMillis()
             )
+        )
+        if (!quiet) {
             val missing = mutableListOf<String>()
             if (parsed.quantity == null) missing.add("cantitatea")
             if (parsed.priceBani == null) missing.add("prețul")
@@ -149,6 +191,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                           else "Lipsește ${missing.joinToString(" și ")} — completează în tabel"
             )
         }
+        return true
     }
 
     /** Adopt the catalog name + id only on a high-confidence match; else keep free text. */
