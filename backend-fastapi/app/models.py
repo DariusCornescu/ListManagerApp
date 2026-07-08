@@ -159,3 +159,16 @@ class SessionOp(Base):
     __table_args__ = (
         Index("ix_session_ops_session_id_seq", "session_id", "seq"),
     )
+
+class CrashReport(Base):
+    """Self-hosted crash telemetry: the Android app uploads uncaught-exception
+    reports on its next launch; admins read them in the /admin page."""
+    __tablename__ = "crash_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    app_version = Column(String(50), nullable=True)
+    android_version = Column(String(50), nullable=True)
+    device = Column(String(100), nullable=True)
+    username = Column(String(50), nullable=True)
+    stacktrace = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=func.now())

@@ -118,3 +118,19 @@ class ImportResultDTO(BaseModel):
     unchanged: int
     committed: bool
     errors: list[ImportRowErrorDTO]
+
+
+# ===== Crash Reporting Schemas =====
+class CrashReportCreate(BaseModel):
+    app_version: Optional[str] = Field(default=None, max_length=50)
+    android_version: Optional[str] = Field(default=None, max_length=50)
+    device: Optional[str] = Field(default=None, max_length=100)
+    username: Optional[str] = Field(default=None, max_length=50)
+    stacktrace: str = Field(min_length=1, max_length=20000)
+
+
+class CrashReportDTO(CrashReportCreate):
+    id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
