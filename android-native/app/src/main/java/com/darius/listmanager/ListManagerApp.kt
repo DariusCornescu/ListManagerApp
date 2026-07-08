@@ -72,6 +72,7 @@ fun AppContent() {
     // ===== WEBSOCKET STATE =====
     val webSocketService = remember { WebSocketService.getInstance() }
     val webSocketState by webSocketService.connectionState.collectAsState()
+    val onlineUsers by webSocketService.onlineUsers.collectAsState()
 
     // ===== WORKSPACE STATE =====
     val workspaceManager = remember {
@@ -103,6 +104,20 @@ fun AppContent() {
             if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
                 drawerTeams = result.data
             }
+            // Presence fallback: WebSocket pushes keep it live, but refresh on
+            // open too so the list is right even after a silent reconnect.
+            try {
+                val presence = RetrofitClient.api.getPresence()
+                if (presence.isSuccessful) {
+                    webSocketService.setOnlineUsers(
+                        presence.body().orEmpty().map {
+                            com.darius.listmanager.data.websocket.OnlineUser(it.user_id, it.username)
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.d("AppContent", "Presence refresh failed: ${e.message}")
+            }
         }
     }
 
@@ -132,6 +147,7 @@ fun AppContent() {
                 teams = drawerTeams,
                 username = username,
                 webSocketState = webSocketState,
+                onlineUsers = onlineUsers,
                 pendingCount = pendingCount,
                 isSyncing = syncStatus.isSyncing,
                 onSyncClick = {

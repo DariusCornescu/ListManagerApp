@@ -37,3 +37,6 @@ data class CrashReportRequest(
     val username: String?,
     val stacktrace: String
 )
+
+// ===== Presence =====
+data class PresenceUserDTO( val user_id: Long, val username: String )

@@ -43,6 +43,10 @@ interface ListManagerApi {
     @POST("/api/crashes")
     suspend fun reportCrash(@Body crash: CrashReportRequest): Response<Unit>
 
+    // ===== Presence =====
+    @GET("/api/presence")
+    suspend fun getPresence(): Response<List<PresenceUserDTO>>
+
     // ===== Authentication =====
     @POST("/api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>

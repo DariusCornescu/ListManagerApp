@@ -1,14 +1,18 @@
 package com.darius.listmanager.ui.components
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.darius.listmanager.data.websocket.OnlineUser
 import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.data.workspace.Workspace
 import com.darius.listmanager.network.TeamDTO
@@ -20,6 +24,7 @@ fun DrawerContent(
     teams: List<TeamDTO> = emptyList(),
     username: String? = null,
     webSocketState: WebSocketState = WebSocketState.Disconnected,
+    onlineUsers: List<OnlineUser> = emptyList(),
     pendingCount: Int = 0,
     isSyncing: Boolean = false,
     onSyncClick: () -> Unit = {},
@@ -114,6 +119,33 @@ fun DrawerContent(
                 selected = false,
                 onClick = onSyncClick
             )
+        }
+
+        // ===== Online now (presence) =====
+        if (onlineUsers.isNotEmpty()) {
+            Text(
+                "Online acum",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 28.dp, top = 8.dp)
+            )
+            onlineUsers.forEach { user ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(start = 28.dp, top = 6.dp, end = 28.dp)
+                ) {
+                    Box(
+                        Modifier
+                            .size(8.dp)
+                            .background(MaterialTheme.colorScheme.secondary, shape = CircleShape)
+                    )
+                    Text(
+                        if (user.username == username) "${user.username} (tu)" else user.username,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
         }
 
         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))

@@ -21,6 +21,8 @@ import java.io.IOException
 class FakeListManagerApi : ListManagerApi {
     override suspend fun reportCrash(crash: CrashReportRequest): Response<Unit> =
         Response.success(Unit)
+    override suspend fun getPresence(): Response<List<PresenceUserDTO>> =
+        Response.success(emptyList())
 
 
     private fun offline(): Nothing = throw IOException("FakeListManagerApi: no backend in tests")

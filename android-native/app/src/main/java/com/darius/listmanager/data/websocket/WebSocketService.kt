@@ -21,6 +21,12 @@ class WebSocketService private constructor() {
     
     private val _messages = MutableStateFlow<WebSocketMessage?>(null)
     val messages: StateFlow<WebSocketMessage?> = _messages.asStateFlow()
+
+    private val _onlineUsers = MutableStateFlow<List<OnlineUser>>(emptyList())
+    val onlineUsers: StateFlow<List<OnlineUser>> = _onlineUsers.asStateFlow()
+
+    /** Also fed from the REST fallback (GET /api/presence) when the drawer opens. */
+    fun setOnlineUsers(users: List<OnlineUser>) { _onlineUsers.value = users }
     
     companion object {
         private const val TAG = "WebSocketService"
@@ -75,6 +81,20 @@ class WebSocketService private constructor() {
                             userId = json.optLong("user_id"),
                             username = json.optString("username")
                         )
+
+                        // Presence ("Online acum")
+                        "presence" -> {
+                            val data = json.getJSONObject("data")
+                            val arr = data.getJSONArray("online")
+                            val users = buildList {
+                                for (i in 0 until arr.length()) {
+                                    val o = arr.getJSONObject(i)
+                                    add(OnlineUser(o.getLong("user_id"), o.optString("username")))
+                                }
+                            }
+                            _onlineUsers.value = users
+                            WebSocketMessage.PresenceUpdate(users)
+                        }
                         
                         // Distributors
                         "distributor_created" -> {
@@ -223,11 +243,13 @@ class WebSocketService private constructor() {
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code - $reason")
                 _connectionState.value = WebSocketState.Disconnected
+                _onlineUsers.value = emptyList()
             }
             
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket error: ${t.message}", t)
                 _connectionState.value = WebSocketState.Error(t.message ?: "Unknown error")
+                _onlineUsers.value = emptyList()
             }
         })
     }
