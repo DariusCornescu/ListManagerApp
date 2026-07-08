@@ -140,3 +140,28 @@ class CrashReportDTO(CrashReportCreate):
 class PresenceUserDTO(BaseModel):
     user_id: int
     username: str
+
+
+# ===== Admin Dashboard Schemas =====
+class StoreDTO(BaseModel):
+    """A 'store' on the admin dashboard = a Team (workspace) with headcount."""
+    id: int
+    name: str
+    member_count: int
+
+
+class ActivityDayDTO(BaseModel):
+    date: str  # ISO YYYY-MM-DD
+    lists_completed: int
+    items_added: int
+
+
+class AdminDashboardDTO(BaseModel):
+    stores: list[StoreDTO]
+    users_count: int
+    products_count: int
+    distributors_count: int
+    lists_completed_count: int
+    crashes_count: int
+    devices_count: int
+    activity: list[ActivityDayDTO]

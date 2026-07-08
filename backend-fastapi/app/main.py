@@ -1,7 +1,7 @@
 # app/main.py
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from fastapi import (
     FastAPI,
     Depends,
@@ -19,6 +19,7 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from .websocket_manager import manager
 from .auth import decode_access_token
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from typing import List
 from .auth import (
@@ -1176,6 +1177,81 @@ def get_crashes(
 
 
 # ==================== ADMIN ENDPOINTS ====================
+
+@app.get("/api/admin/dashboard", response_model=schemas.AdminDashboardDTO)
+def get_admin_dashboard(
+    days: int = 30,
+    current_user: models.User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Overview for the /admin page: stores (= teams) with headcount, global
+    counters, and a per-day activity series for the chart. Computed live on
+    every call, so the numbers are always current."""
+    days = min(max(days, 7), 90)
+    since = (datetime.now(timezone.utc) - timedelta(days=days - 1)).date()
+
+    stores = [
+        schemas.StoreDTO(id=team.id, name=team.name, member_count=members)
+        for team, members in (
+            db.query(models.Team, func.count(models.TeamMember.id))
+            .outerjoin(models.TeamMember, models.TeamMember.team_id == models.Team.id)
+            .group_by(models.Team.id)
+            .order_by(models.Team.name)
+            .all()
+        )
+    ]
+
+    # func.date() returns 'YYYY-MM-DD' text on SQLite but a date object on
+    # Postgres — normalize keys through str() so both backends bucket alike.
+    completed_day = func.date(models.GlobalSession.completed_at)
+    completed_by_day = {
+        str(day)[:10]: count
+        for day, count in (
+            db.query(completed_day, func.count())
+            .filter(models.GlobalSession.completed_at.isnot(None))
+            .filter(completed_day >= since.isoformat())
+            .group_by(completed_day)
+            .all()
+        )
+    }
+    items_day = func.date(models.GlobalSessionItem.created_at)
+    items_by_day = {
+        str(day)[:10]: count
+        for day, count in (
+            db.query(items_day, func.count())
+            .filter(items_day >= since.isoformat())
+            .group_by(items_day)
+            .all()
+        )
+    }
+
+    activity = []
+    for offset in range(days):
+        key = (since + timedelta(days=offset)).isoformat()
+        activity.append(
+            schemas.ActivityDayDTO(
+                date=key,
+                lists_completed=completed_by_day.get(key, 0),
+                items_added=items_by_day.get(key, 0),
+            )
+        )
+
+    return schemas.AdminDashboardDTO(
+        stores=stores,
+        users_count=db.query(models.User).count(),
+        products_count=db.query(models.Product).count(),
+        distributors_count=db.query(models.Distributor).count(),
+        lists_completed_count=db.query(models.GlobalSession)
+        .filter(models.GlobalSession.completed_at.isnot(None))
+        .count(),
+        crashes_count=db.query(models.CrashReport).count(),
+        devices_count=db.query(models.CrashReport.device)
+        .filter(models.CrashReport.device.isnot(None))
+        .distinct()
+        .count(),
+        activity=activity,
+    )
+
 
 @app.get("/api/admin/users", response_model=List[schemas.UserDTO])
 def get_all_users(
