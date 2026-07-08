@@ -134,3 +134,9 @@ class CrashReportDTO(CrashReportCreate):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ===== Presence Schemas =====
+class PresenceUserDTO(BaseModel):
+    user_id: int
+    username: str

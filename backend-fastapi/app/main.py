@@ -1133,6 +1133,14 @@ def get_stats(db: Session = Depends(get_db)):
     return stats
 
 
+# ==================== PRESENCE ====================
+
+@app.get("/api/presence", response_model=List[schemas.PresenceUserDTO])
+def get_presence(current_user: models.User = Depends(get_current_user)):
+    """Who is connected over WebSocket right now (drawer 'Online acum')."""
+    return manager.online_users()
+
+
 # ==================== CRASH REPORTING ====================
 
 @app.post("/api/crashes", response_model=schemas.CrashReportDTO)
@@ -1342,7 +1350,7 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
         return
 
     # Connect user
-    await manager.connect(websocket, user_id)
+    await manager.connect(websocket, user_id, username)
 
     try:
         # Send welcome message
@@ -1352,6 +1360,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
             "message": f"Welcome {username}!",
             "user_id": user_id
         })
+
+        # Everyone (including the newcomer) learns who is online now
+        await manager.broadcast_presence()
 
         # Keep connection alive and handle incoming messages
         while True:
@@ -1370,7 +1381,9 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
     except WebSocketDisconnect:
         manager.disconnect(websocket, user_id)
         logger.info(f"User {user_id} disconnected")
+        await manager.broadcast_presence()
 
     except Exception as e:
         logger.error(f"WebSocket error for user {user_id}: {e}")
         manager.disconnect(websocket, user_id)
+        await manager.broadcast_presence()
