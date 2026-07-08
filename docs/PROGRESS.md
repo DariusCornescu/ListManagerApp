@@ -5,6 +5,42 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — Induced-crash drill found the Application class was never registered (fix/register-application-class)
+
+Deliberate end-to-end test of the crash pipeline (`adb shell am crash` on the preview
+app) produced **no report** — and the investigation found a bug present since the first
+commit.
+
+**Root cause**
+
+`AndroidManifest.xml` never had `android:name=".ListManagerApp"` on `<application>`, so
+Android used the base `Application` class and **everything wired in
+`ListManagerApp.onCreate` was dead code in every build so far**: crash reporting,
+crash-loop guard, `SyncWorkManager.initialize`, and the startup auth-token restore.
+The app appeared to work because login sets the token directly and WorkManager
+auto-initializes. Evidence trail: crash left no `files/crashes/` and no
+`crash_loop_guard.xml`; installed APK *did* contain the classes; logcat showed
+`ProfileInstaller` debug logs but zero `ListManagerApp` logs → `onCreate` never ran.
+
+**Fix + verification**
+
+- One line: register `.ListManagerApp` in the manifest; instrumented regression test
+  (`ApplicationRegistrationTest`) fails loudly if it ever goes missing again.
+- Re-ran the drill on the phone: crash → stacktrace persisted + loop counter bumped →
+  relaunch → `Uploaded crash report` in logcat, local file deleted, report visible on
+  the live `/admin` dashboard. Token restore now also logs `Restored saved auth token`.
+- Unit suite + androidTest compile green. Test loop-counter cleaned off the phone.
+- Samsung note: `am crash <pkg>` works (ignore the "user 150" Secure Folder warning);
+  `am crash --user 0 <pkg>` silently no-ops on this device.
+
+**Open question**
+
+`CrashLoopGuard` counts rapid crashes but never resets on a healthy session — three
+rapid crashes weeks apart could accumulate and trigger an unwanted local-cache wipe.
+Consider resetting the counter after the process survives the rapid window.
+
+---
+
 ## 2026-07-08 — Admin overview dashboard (feat/inventory-lists, continued)
 
 Requested view for `/admin`: stores, headcount, products, generated lists as an
