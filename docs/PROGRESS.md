@@ -5,6 +5,44 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — Reliability + presence (feat/inventory-lists, continued)
+
+Priority list agreed: crash reporting → who-is-online → consolidate features.
+
+**What changed**
+
+- **Fluent dictation (inventory):** lines are now cut from TEXT, not silence —
+  `segmentLines`/`parseMultiple` split one fluent breath into rows, committed live from
+  partial results in continuous mode. No forced pauses (33 parser tests).
+- **Self-hosted crash reporting:** phones persist uncaught exceptions locally and upload
+  on next launch to `POST /api/crashes` (rate-limited, 20k cap); `crash_reports` table
+  (migration `9819cacf8390`); admin-only listing + a "Crashes" card in `/admin`. A
+  private `/crash-triage` skill closes the loop (fetch → group → root-cause → fix PR).
+- **Crash-loop guard:** 3 rapid startup crashes in a row → next launch deletes the local
+  Room cache (login + pending crash reports preserved) and notifies the user. Pure
+  `CrashLoopPolicy` + tests.
+- **Presence ("Online acum"):** WebSocket manager tracks usernames and broadcasts
+  `{type: presence}` on connect/disconnect; `GET /api/presence` as REST fallback
+  (7 backend tests). Android renders live green-dot list in the drawer, refreshed on
+  drawer open.
+- **UI cleanup:** the "Server disponibil" top banner is gone — connection/sync status is
+  a compact drawer row (tap = manual sync). Home: bigger central mic (160dp), inventory
+  button removed (drawer-only), the two large status cards replaced by compact stat
+  cards, Romanian copy fixes.
+- **Demo accounts** created on the live backend for populating/testing: tata, ana,
+  mihai, depozit (credentials shared privately, not committed).
+
+**Verification:** backend 216 passed; Android unit suite + assemblePreview + androidTest
+compile all green.
+
+**What's next**
+
+- Merge PR #14 → Render redeploys (crash + presence endpoints go live) → rebuild/reinstall.
+- Consolidation pass over existing features; optional: GitHub-Actions crash→issue→PR
+  automation; profile/home-redesign track per roadmap.
+
+---
+
 ## 2026-07-08 — PDF pagination quirk fixes (feat/inventory-lists)
 
 Closes the follow-up logged on 2026-07-05: the two inherited cosmetic pagination quirks in
