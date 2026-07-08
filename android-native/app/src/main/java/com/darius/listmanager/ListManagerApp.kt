@@ -18,14 +18,24 @@ import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorker
 import com.darius.listmanager.sync.SyncWorkManager
 import com.darius.listmanager.ui.components.DrawerContent
-import com.darius.listmanager.ui.components.SyncStatusBar
 import com.darius.listmanager.ui.navigation.NavGraph
 import kotlinx.coroutines.launch
 
 class ListManagerApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        
+
+        // Crash-loop self-heal check + telemetry FIRST so anything below is covered.
+        val selfHealed = com.darius.listmanager.util.CrashLoopGuard.onAppStart(this)
+        com.darius.listmanager.util.CrashReporter.install(this)
+        if (selfHealed) {
+            android.widget.Toast.makeText(
+                this,
+                "Aplicația s-a recuperat după erori repetate — datele locale au fost resetate",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+
         Log.d("ListManagerApp", "Application starting...")
         SyncWorkManager.initialize(this)
 
@@ -36,6 +46,11 @@ class ListManagerApp : Application() {
         SyncService(this).getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
             Log.d("ListManagerApp", "Restored saved auth token")
+        }
+
+        // Upload any crash reports saved by a previous run (background, offline-safe).
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            com.darius.listmanager.util.CrashReporter.flushPending(this@ListManagerApp)
         }
 
         Log.d("ListManagerApp", "WorkManager initialized")
@@ -57,6 +72,7 @@ fun AppContent() {
     // ===== WEBSOCKET STATE =====
     val webSocketService = remember { WebSocketService.getInstance() }
     val webSocketState by webSocketService.connectionState.collectAsState()
+    val onlineUsers by webSocketService.onlineUsers.collectAsState()
 
     // ===== WORKSPACE STATE =====
     val workspaceManager = remember {
@@ -67,6 +83,7 @@ fun AppContent() {
     var drawerTeams by remember {
         mutableStateOf<List<com.darius.listmanager.network.TeamDTO>>(emptyList())
     }
+    var serverReachable by remember { mutableStateOf(false) }
 
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
@@ -87,6 +104,34 @@ fun AppContent() {
             val result = teamRepository.getMyTeams()
             if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
                 drawerTeams = result.data
+            }
+            // Server reachability (the old banner's middle state): REST can be
+            // perfectly fine while the live WebSocket is down — show that
+            // honestly instead of a scary "no connection".
+            serverReachable = try {
+                com.darius.listmanager.util.NetworkHelper.isServerReachable()
+            } catch (e: Exception) { false }
+            // If the live socket dropped but we're logged in and the server is
+            // up, quietly reconnect it.
+            if (serverReachable && webSocketState !is WebSocketState.Connected) {
+                SyncService(context).getAuthToken()?.let { token ->
+                    Log.d("AppContent", "Drawer open: reconnecting WebSocket")
+                    webSocketService.connect(token)
+                }
+            }
+            // Presence fallback: WebSocket pushes keep it live, but refresh on
+            // open too so the list is right even after a silent reconnect.
+            try {
+                val presence = RetrofitClient.api.getPresence()
+                if (presence.isSuccessful) {
+                    webSocketService.setOnlineUsers(
+                        presence.body().orEmpty().map {
+                            com.darius.listmanager.data.websocket.OnlineUser(it.user_id, it.username)
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.d("AppContent", "Presence refresh failed: ${e.message}")
             }
         }
     }
@@ -115,6 +160,20 @@ fun AppContent() {
             DrawerContent(
                 workspaceName = currentWorkspace.displayName,
                 teams = drawerTeams,
+                username = username,
+                webSocketState = webSocketState,
+                serverReachable = serverReachable,
+                onlineUsers = onlineUsers,
+                pendingCount = pendingCount,
+                isSyncing = syncStatus.isSyncing,
+                onSyncClick = {
+                    Log.d("AppContent", "Sync from drawer, pendingCount=$pendingCount")
+                    try {
+                        SyncWorker.scheduleImmediateSync(context)
+                    } catch (e: Exception) {
+                        Log.e("AppContent", "Error scheduling sync", e)
+                    }
+                },
                 onSwitchWorkspace = { workspace ->
                     workspaceManager.switchTo(workspace)
                     scope.launch {
@@ -141,28 +200,6 @@ fun AppContent() {
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
             Column(modifier = Modifier.padding(padding)) {
-                val currentRoute = navController.currentBackStackEntryFlow
-                    .collectAsState(initial = null).value?.destination?.route
-                
-                if (currentRoute != "login") {
-                    SyncStatusBar(
-                        pendingCount = pendingCount,
-                        isSyncing = syncStatus.isSyncing,
-                        isLoggedIn = isLoggedIn,
-                        username = username,
-                        webSocketState = webSocketState,
-                        onSyncClick = {
-                            Log.d("AppContent", " Sync button pressed! pendingCount=$pendingCount")
-                            try {
-                                SyncWorker.scheduleImmediateSync(context)
-                                Log.d("AppContent", " Sync scheduled successfully")
-                            } catch (e: Exception) {
-                                Log.e("AppContent", " Error scheduling sync", e)
-                            }
-                        }
-                    )
-                }
-                
                 NavGraph(
                     navController = navController,
                     startDestination = startDestination,

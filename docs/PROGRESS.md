@@ -5,6 +5,116 @@ Newest entries on top.
 
 ---
 
+## 2026-07-08 — Admin overview dashboard (feat/inventory-lists, continued)
+
+Requested view for `/admin`: stores, headcount, products, generated lists as an
+always-current chart, and bug reports grouped by phone.
+
+**Decisions**
+
+- "Stores" map to the existing **Team** entity (each team/workspace = one store) — no
+  schema change. A dedicated Store entity stays an option for later.
+- The daily chart plots **both** lists completed (`GlobalSession.completed_at`) and
+  products registered (`GlobalSessionItem.created_at`) — both already server-side, so
+  zero Android changes.
+
+**What changed**
+
+- `GET /api/admin/dashboard` (admin only): stores with member counts; users / products /
+  distributors / completed-lists / crash counters; zero-filled per-day activity series
+  (clamped 7–90 days, default 30), recomputed live on every call. Date bucketing
+  normalized so SQLite and Postgres group identically.
+- `/admin` page: "Privire de ansamblu" card — stat tiles, store chips, and a
+  dependency-free inline SVG chart (gold bars = products/day, sage line = lists/day, each
+  on its own scale so a single list is still visible). Crashes card now opens with a
+  per-device summary (reports grouped by phone). All DOM built via `textContent`
+  (keeps the page's XSS hygiene).
+- Tests: 7 new in `tests/test_admin_dashboard.py` (auth, counts, zero-fill, clamping,
+  distinct-device counting); full backend suite **223 passed**. Endpoint also
+  smoke-tested against a live local server with the seeded catalog.
+
+**What's next**
+
+- Merge PR #15 (contains everything since PR #14: crash reporting, presence, UI cleanup,
+  this dashboard) → Render redeploys → verify `/admin` live.
+- Later candidates: real Store entity with addresses; inventory-list export pings so
+  local inventory PDFs can join the chart.
+
+---
+
+## 2026-07-08 — Reliability + presence (feat/inventory-lists, continued)
+
+Priority list agreed: crash reporting → who-is-online → consolidate features.
+
+**What changed**
+
+- **Fluent dictation (inventory):** lines are now cut from TEXT, not silence —
+  `segmentLines`/`parseMultiple` split one fluent breath into rows, committed live from
+  partial results in continuous mode. No forced pauses (33 parser tests).
+- **Self-hosted crash reporting:** phones persist uncaught exceptions locally and upload
+  on next launch to `POST /api/crashes` (rate-limited, 20k cap); `crash_reports` table
+  (migration `9819cacf8390`); admin-only listing + a "Crashes" card in `/admin`. A
+  private `/crash-triage` skill closes the loop (fetch → group → root-cause → fix PR).
+- **Crash-loop guard:** 3 rapid startup crashes in a row → next launch deletes the local
+  Room cache (login + pending crash reports preserved) and notifies the user. Pure
+  `CrashLoopPolicy` + tests.
+- **Presence ("Online acum"):** WebSocket manager tracks usernames and broadcasts
+  `{type: presence}` on connect/disconnect; `GET /api/presence` as REST fallback
+  (7 backend tests). Android renders live green-dot list in the drawer, refreshed on
+  drawer open.
+- **UI cleanup:** the "Server disponibil" top banner is gone — connection/sync status is
+  a compact drawer row (tap = manual sync). Home: bigger central mic (160dp), inventory
+  button removed (drawer-only), the two large status cards replaced by compact stat
+  cards, Romanian copy fixes.
+- **Demo accounts** created on the live backend for populating/testing: tata, ana,
+  mihai, depozit (credentials shared privately, not committed).
+
+**Verification:** backend 216 passed; Android unit suite + assemblePreview + androidTest
+compile all green.
+
+**What's next**
+
+- Merge PR #14 → Render redeploys (crash + presence endpoints go live) → rebuild/reinstall.
+- Consolidation pass over existing features; optional: GitHub-Actions crash→issue→PR
+  automation; profile/home-redesign track per roadmap.
+
+---
+
+## 2026-07-08 — PDF pagination quirk fixes (feat/inventory-lists)
+
+Closes the follow-up logged on 2026-07-05: the two inherited cosmetic pagination quirks in
+`PdfRepository`, fixed identically in `upsertDistributorPdf` and `createInventoryPdf`.
+
+**What changed**
+
+- **Page count** (`6a77ce1`): "Page X of N" no longer overstates N. `totalPages` divided by
+  the first page's row limit (20, doc header included) although continuation pages fit 23
+  rows — 41 items printed "of 3" on a 2-page PDF. New `countPages()` first pass walks the
+  same per-page capacities the drawing loops use.
+- **Grand-total row vs footer** (`f9bf306`): on an exactly-full last page the total row was
+  drawn at y≈820–850, colliding with the footer text (y=812) and running past the page
+  edge (842). New `totalRowFits()` check draws it only while spacing + one row fit in the
+  row area; otherwise it spills onto a fresh page (repeated table header + total row), and
+  `countPages()` counts that spill page so the label stays right.
+- Pagination math exposed as `internal` companion functions; 6 JVM tests
+  (`PdfRepositoryPaginationTest`) pin capacities (20/23), fit thresholds, and page counts.
+- Item-row layout is untouched — limits and coordinates render exactly as before; only the
+  total-row placement and the page label changed.
+
+**Verification gate:** full JVM unit suite (80 tests, 0 failures) + assembleDebug.
+
+**What's next**
+
+- Unchanged from 2026-07-05: push + PR into `development`; presence + home/profile tracks.
+
+**Open questions**
+
+- The distributor first page's row limit (20) lets the last item rows reach y≈825, slightly
+  past the footer text (y=812) — pre-existing, out of scope here since only the total row
+  was flagged; worth a look if the distributor PDF ever gets a visual pass.
+
+---
+
 ## 2026-07-05 — Inventory lists v1 (feat/inventory-lists)
 
 Android-only feature: a new "Inventar" screen where the operator taps the mic, speaks one
@@ -56,6 +166,16 @@ commits `58c75c9`..`a9d1efb` is worth running once the limit lifts.
 - Push + PR into `development`; user merges and tests on device.
 - Parallel tracks (agreed roadmap): online presence (drawer "Online acum") and home
   redesign + profile (big REC layout, backend profile fields). Later: inventory sync v2.
+
+**v1.1 (2026-07-08, same branch)** — driven by first real use ("cuie de 5" parsed as
+qty 5): (1) **catalog-aware split** — `parse(text, nameScorer)` lets the name swallow
+trailing numbers when a longer candidate matches the catalog ≥ 0.82, so hardware-style
+names keep their size numbers (5 new parser tests, 26 total); (2) **live transcript +
+draft row** — `SpeechState.Partial` now renders the words in real time plus a ghost
+Produs|Cant|Preț row parsed live; (3) **continuous dictation toggle** — one tap, many
+rows (a pause ends a row), off by default. Also added a `preview` build type
+(`.preview` appId suffix, label "ListManager NOU") for side-by-side installs next to
+the daily app. Deferred still: catalog-price autofill (needs the Android `price` field).
 
 **Open questions**
 

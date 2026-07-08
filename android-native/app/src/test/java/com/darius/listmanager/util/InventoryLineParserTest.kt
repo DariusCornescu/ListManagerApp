@@ -175,4 +175,125 @@ class InventoryLineParserTest {
         assertEquals(50.0, p.quantity!!, 0.0)
         assertNull(p.priceBani)
     }
+
+    // ===== catalog-aware split (v1.1) =====
+
+    /** Fake catalog: known names score 1.0, everything else 0.1. */
+    private fun scorerFor(vararg known: String): (String) -> Double = { name ->
+        if (known.any { it.equals(name, ignoreCase = true) }) 1.0 else 0.1
+    }
+
+    @Test
+    fun catalogAwareSplit_keepsBareNumberInProductName() {
+        val p = InventoryLineParser.parse("cuie de 5 10 4 lei", scorerFor("cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertEquals(10.0, p.quantity!!, 0.0)
+        assertEquals(400L, p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_nameOnlyLine() {
+        val p = InventoryLineParser.parse("cuie de 5", scorerFor("cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertNull(p.quantity)
+        assertNull(p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_noConfidentMatch_fallsBackToDefault() {
+        val p = InventoryLineParser.parse("cuie de 5 10 4 lei", scorerFor("altceva"))!!
+        assertEquals("cuie", p.nameText)
+        assertEquals(5.0, p.quantity!!, 0.0)
+        assertEquals(1000L, p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_prefersLongerNameOnTie() {
+        val p = InventoryLineParser.parse("cuie de 5 10", scorerFor("cuie", "cuie de 5"))!!
+        assertEquals("cuie de 5", p.nameText)
+        assertEquals(10.0, p.quantity!!, 0.0)
+        assertNull(p.priceBani)
+    }
+
+    @Test
+    fun catalogAwareSplit_doesNotAffectPlainNames() {
+        val p = InventoryLineParser.parse("lapte zuzu 5 4 lei 50", scorerFor("lapte zuzu"))!!
+        assertEquals("lapte zuzu", p.nameText)
+        assertEquals(5.0, p.quantity!!, 0.0)
+        assertEquals(450L, p.priceBani)
+    }
+
+    // ===== multi-line segmentation (v1.2 — fluent dictation, no forced pauses) =====
+
+    @Test
+    fun parseMultiple_singleLine_behavesLikeParse() {
+        val lines = InventoryLineParser.parseMultiple("lapte zuzu 5 4 lei 50")
+        assertEquals(1, lines.size)
+        assertEquals("lapte zuzu", lines[0].nameText)
+        assertEquals(450L, lines[0].priceBani)
+    }
+
+    @Test
+    fun parseMultiple_splitsTwoFluentLines() {
+        val lines = InventoryLineParser.parseMultiple("lapte zuzu 2 6 lei 50 pâine 3 2,50")
+        assertEquals(2, lines.size)
+        assertEquals("lapte zuzu", lines[0].nameText)
+        assertEquals(2.0, lines[0].quantity!!, 0.0)
+        assertEquals(650L, lines[0].priceBani)
+        assertEquals("pâine", lines[1].nameText)
+        assertEquals(3.0, lines[1].quantity!!, 0.0)
+        assertEquals(250L, lines[1].priceBani)
+    }
+
+    @Test
+    fun parseMultiple_threeLines_lastIncomplete() {
+        val lines = InventoryLineParser.parseMultiple("apă 6 5 lei ouă 10 1 virgulă 20 cafea")
+        assertEquals(3, lines.size)
+        assertEquals("apă", lines[0].nameText)
+        assertEquals(500L, lines[0].priceBani)
+        assertEquals("ouă", lines[1].nameText)
+        assertEquals(120L, lines[1].priceBani)
+        assertEquals("cafea", lines[2].nameText)
+        assertNull(lines[2].quantity)
+        assertNull(lines[2].priceBani)
+    }
+
+    @Test
+    fun parseMultiple_qtyOnlyLineMidStream() {
+        val lines = InventoryLineParser.parseMultiple("lapte 5 pâine 3 2 lei")
+        assertEquals(2, lines.size)
+        assertEquals("lapte", lines[0].nameText)
+        assertEquals(5.0, lines[0].quantity!!, 0.0)
+        assertNull(lines[0].priceBani)
+        assertEquals("pâine", lines[1].nameText)
+        assertEquals(200L, lines[1].priceBani)
+    }
+
+    @Test
+    fun parseMultiple_catalogScorerAppliedPerLine() {
+        val lines = InventoryLineParser.parseMultiple(
+            "cuie de 5 10 4 lei lapte zuzu 2 6 lei",
+            scorerFor("cuie de 5", "lapte zuzu")
+        )
+        assertEquals(2, lines.size)
+        assertEquals("cuie de 5", lines[0].nameText)
+        assertEquals(10.0, lines[0].quantity!!, 0.0)
+        assertEquals(400L, lines[0].priceBani)
+        assertEquals("lapte zuzu", lines[1].nameText)
+        assertEquals(2.0, lines[1].quantity!!, 0.0)
+        assertEquals(600L, lines[1].priceBani)
+    }
+
+    @Test
+    fun parseMultiple_fillerBeforeNumbersStaysInName() {
+        val lines = InventoryLineParser.parseMultiple("lapte de vacă 5 4 lei")
+        assertEquals(1, lines.size)
+        assertEquals("lapte de vacă", lines[0].nameText)
+        assertEquals(5.0, lines[0].quantity!!, 0.0)
+    }
+
+    @Test
+    fun parseMultiple_blankReturnsEmpty() {
+        assertEquals(0, InventoryLineParser.parseMultiple("   ").size)
+    }
 }

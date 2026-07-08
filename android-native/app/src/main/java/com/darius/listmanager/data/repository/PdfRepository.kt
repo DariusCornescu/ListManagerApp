@@ -22,6 +22,36 @@ class PdfRepository(private val context: Context) {
         private const val FOOTER_HEIGHT = 50f
         private const val ROW_HEIGHT = 30f
         private const val CELL_PADDING = 8f
+        private const val TOTAL_ROW_SPACING = 20f
+
+        /** Vertical space available for item rows; the first page also carries the document header. */
+        private fun rowAreaHeight(firstPage: Boolean): Float =
+            if (firstPage) PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f
+            else PAGE_HEIGHT - FOOTER_HEIGHT - 80f
+
+        internal fun maxRowsPerPage(firstPage: Boolean): Int =
+            (rowAreaHeight(firstPage) / ROW_HEIGHT).toInt()
+
+        /** The grand-total row (spacing + one row) must stay inside the row area, above the footer band. */
+        internal fun totalRowFits(rowsOnPage: Int, firstPage: Boolean): Boolean =
+            rowsOnPage * ROW_HEIGHT + TOTAL_ROW_SPACING + ROW_HEIGHT <= rowAreaHeight(firstPage)
+
+        /** First pass over the same pagination the drawing loops produce, so "Page X of N" matches. */
+        internal fun countPages(itemCount: Int): Int {
+            var pages = 1
+            var remaining = itemCount
+            while (true) {
+                val firstPage = pages == 1
+                val rows = minOf(maxRowsPerPage(firstPage), remaining)
+                remaining -= rows
+                if (remaining == 0) {
+                    // the grand-total row gets a page of its own when the last page is full
+                    if (!totalRowFits(rows, firstPage)) pages++
+                    return pages
+                }
+                pages++
+            }
+        }
     }
 
     suspend fun upsertDistributorPdf(
@@ -78,13 +108,13 @@ class PdfRepository(private val context: Context) {
         val sizeColStart = productColStart + productColWidth
 
         // Calculate total pages needed
-        val maxItemsPerPage = ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-        val totalPages = kotlin.math.ceil(items.size.toDouble() / maxItemsPerPage).toInt()
+        val totalPages = countPages(items.size)
 
         var currentPage = 1
         var itemIndex = 0
+        var totalRowDrawn = items.isEmpty()
 
-        while (itemIndex < items.size) {
+        while (itemIndex < items.size || !totalRowDrawn) {
             val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, currentPage).create()
             val page = pdfDocument.startPage(pageInfo)
             val canvas = page.canvas
@@ -132,11 +162,7 @@ class PdfRepository(private val context: Context) {
             yPosition = tableHeaderY + ROW_HEIGHT
 
             // === TABLE BODY ===
-            val pageItemLimit = if (currentPage == 1) {
-                ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-            } else {
-                ((PAGE_HEIGHT - FOOTER_HEIGHT - 80f) / ROW_HEIGHT).toInt()
-            }
+            val pageItemLimit = maxRowsPerPage(firstPage = currentPage == 1)
 
             var rowCount = 0
             while (itemIndex < items.size && rowCount < pageItemLimit) {
@@ -174,9 +200,10 @@ class PdfRepository(private val context: Context) {
             }
 
             // === FOOTER SECTION ===
-            // Summary on last page only
-            if (itemIndex >= items.size) {
-                yPosition += 20
+            // Summary once all items are out; spills to a fresh page when it
+            // would land in the footer band
+            if (itemIndex >= items.size && !totalRowDrawn && totalRowFits(rowCount, currentPage == 1)) {
+                yPosition += TOTAL_ROW_SPACING
 
                 // Draw total row
                 canvas.drawRect( qtyColStart, yPosition, PAGE_WIDTH - MARGIN, yPosition + ROW_HEIGHT, tableHeaderBgPaint )
@@ -185,6 +212,7 @@ class PdfRepository(private val context: Context) {
                 val totalItems = items.sumOf { it.quantity }
                 val totalTextY = yPosition + (ROW_HEIGHT / 2) + 5
                 canvas.drawText( "Total Items: $totalItems", qtyColStart + CELL_PADDING, totalTextY, headerPaint )
+                totalRowDrawn = true
             }
 
             canvas.drawText( "Page $currentPage of $totalPages", PAGE_WIDTH - MARGIN - 80, PAGE_HEIGHT - MARGIN + 20, smallPaint )
@@ -267,11 +295,11 @@ class PdfRepository(private val context: Context) {
         val valueColStart = priceColStart + priceColWidth
         val tableEnd = PAGE_WIDTH - MARGIN
 
-        val maxItemsPerPage = ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-        val totalPages = maxOf(1, kotlin.math.ceil(items.size.toDouble() / maxItemsPerPage).toInt())
+        val totalPages = countPages(items.size)
 
         var currentPage = 1
         var itemIndex = 0
+        var totalRowDrawn = false
 
         do {
             val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, currentPage).create()
@@ -308,11 +336,7 @@ class PdfRepository(private val context: Context) {
 
             yPosition = tableHeaderY + ROW_HEIGHT
 
-            val pageItemLimit = if (currentPage == 1) {
-                ((PAGE_HEIGHT - HEADER_HEIGHT - FOOTER_HEIGHT - 60f) / ROW_HEIGHT).toInt()
-            } else {
-                ((PAGE_HEIGHT - FOOTER_HEIGHT - 80f) / ROW_HEIGHT).toInt()
-            }
+            val pageItemLimit = maxRowsPerPage(firstPage = currentPage == 1)
 
             var rowCount = 0
             while (itemIndex < items.size && rowCount < pageItemLimit) {
@@ -341,20 +365,22 @@ class PdfRepository(private val context: Context) {
                 itemIndex++
             }
 
-            // grand total on the last page
-            if (itemIndex >= items.size) {
-                yPosition += 20
+            // grand total once all items are out; spills to a fresh page when it
+            // would land in the footer band
+            if (itemIndex >= items.size && !totalRowDrawn && totalRowFits(rowCount, currentPage == 1)) {
+                yPosition += TOTAL_ROW_SPACING
                 canvas.drawRect(nameColStart, yPosition, tableEnd, yPosition + ROW_HEIGHT, tableHeaderBgPaint)
                 canvas.drawRect(nameColStart, yPosition, tableEnd, yPosition + ROW_HEIGHT, tableBorderPaint)
                 val totalTextY = yPosition + (ROW_HEIGHT / 2) + 5
                 canvas.drawText("Total: $totalText", nameColStart + CELL_PADDING, totalTextY, headerPaint)
+                totalRowDrawn = true
             }
 
             canvas.drawText("Page $currentPage of $totalPages", PAGE_WIDTH - MARGIN - 80, PAGE_HEIGHT - MARGIN + 20, smallPaint)
             canvas.drawText("Generated by List Manager App", MARGIN, PAGE_HEIGHT - MARGIN + 20, smallPaint)
             pdfDocument.finishPage(page)
             currentPage++
-        } while (itemIndex < items.size)
+        } while (itemIndex < items.size || !totalRowDrawn)
 
         val fileName = "Inventar_${System.currentTimeMillis()}.pdf"
         val file = File(getPdfDirectory(), fileName)

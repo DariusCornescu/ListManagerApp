@@ -118,3 +118,50 @@ class ImportResultDTO(BaseModel):
     unchanged: int
     committed: bool
     errors: list[ImportRowErrorDTO]
+
+
+# ===== Crash Reporting Schemas =====
+class CrashReportCreate(BaseModel):
+    app_version: Optional[str] = Field(default=None, max_length=50)
+    android_version: Optional[str] = Field(default=None, max_length=50)
+    device: Optional[str] = Field(default=None, max_length=100)
+    username: Optional[str] = Field(default=None, max_length=50)
+    stacktrace: str = Field(min_length=1, max_length=20000)
+
+
+class CrashReportDTO(CrashReportCreate):
+    id: int
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ===== Presence Schemas =====
+class PresenceUserDTO(BaseModel):
+    user_id: int
+    username: str
+
+
+# ===== Admin Dashboard Schemas =====
+class StoreDTO(BaseModel):
+    """A 'store' on the admin dashboard = a Team (workspace) with headcount."""
+    id: int
+    name: str
+    member_count: int
+
+
+class ActivityDayDTO(BaseModel):
+    date: str  # ISO YYYY-MM-DD
+    lists_completed: int
+    items_added: int
+
+
+class AdminDashboardDTO(BaseModel):
+    stores: list[StoreDTO]
+    users_count: int
+    products_count: int
+    distributors_count: int
+    lists_completed_count: int
+    crashes_count: int
+    devices_count: int
+    activity: list[ActivityDayDTO]

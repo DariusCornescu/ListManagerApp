@@ -21,6 +21,13 @@
     .err { color:#C4553F; }
     .muted { color:#6E6A60; font-size:13px; }
     #preview { white-space:pre-wrap; }
+    .stats { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0; }
+    .stat { background:var(--cream); border:1px solid #DAD3C4; border-radius:10px; padding:8px 14px; min-width:110px; }
+    .stat b { display:block; font-size:22px; }
+    .stat span { font-size:12px; color:#6E6A60; }
+    .chip { display:inline-block; background:var(--cream); border:1px solid #DAD3C4; border-radius:999px; padding:3px 10px; margin:2px 4px 2px 0; font-size:13px; }
+    .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 12px; }
+    #chartBox { overflow-x:auto; }
   </style>
 </head>
 <body>
@@ -36,6 +43,18 @@
 
     <div id="appCard" class="hidden">
       <div class="card">
+        <h3>Privire de ansamblu</h3>
+        <div id="statRow" class="stats"></div>
+        <div id="storeList"></div>
+        <p class="muted legend" style="margin-bottom:4px">
+          Activitate pe zi (ultimele 30 de zile) —
+          <i style="background:var(--gold)"></i>produse înregistrate
+          <i style="background:var(--sage)"></i>liste finalizate
+        </p>
+        <div id="chartBox" class="muted">Se încarcă…</div>
+        <button onclick="loadDashboard()">Refresh</button>
+      </div>
+      <div class="card">
         <h3>Import CSV</h3>
         <p class="muted">Columns: <code>distributor, product_name, aliases, price</code>. First two required. Re-upload is an upsert (updates + adds, never deletes).</p>
         <input type="file" id="csvFile" accept=".csv" />
@@ -49,6 +68,12 @@
         <button onclick="loadProducts()">Refresh</button>
         <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th></tr></thead>
           <tbody id="rows"></tbody></table>
+      </div>
+      <div class="card">
+        <h3>Crashes</h3>
+        <p class="muted">Rapoarte de crash trimise automat de telefoane la repornirea aplicației.</p>
+        <button onclick="loadCrashes()">Refresh</button>
+        <div id="crashList" class="muted">Se încarcă…</div>
       </div>
     </div>
   </main>
@@ -78,7 +103,7 @@
       if (!r.ok) { document.getElementById("loginErr").textContent = "Login failed"; return; }
       token = (await r.json()).access_token;
       localStorage.setItem("lm_token", token);
-      showApp(true); loadProducts();
+      showApp(true); loadDashboard(); loadProducts(); loadCrashes();
     }
 
     async function importCsv(dryRun, file) {
@@ -163,7 +188,169 @@
 
     document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
 
-    if (token) { showApp(true); loadProducts(); } else { showApp(false); }
+    // ===== Overview dashboard (stat cards + activity chart) =====
+    function statEl(value, label) {
+      const div = document.createElement("div");
+      div.className = "stat";
+      const b = document.createElement("b");
+      b.textContent = value;
+      const span = document.createElement("span");
+      span.textContent = label;
+      div.appendChild(b); div.appendChild(span);
+      return div;
+    }
+
+    function renderChart(activity) {
+      const box = document.getElementById("chartBox");
+      box.textContent = "";
+      const n = activity.length;
+      if (!n) { box.textContent = "Fără date încă."; return; }
+      const W = 860, H = 180, PAD_L = 30, PAD_B = 22, PAD_T = 10;
+      const plotW = W - PAD_L - 8, plotH = H - PAD_B - PAD_T;
+      const step = plotW / n;
+      const maxItems = Math.max(1, ...activity.map(a => a.items_added));
+      const maxLists = Math.max(1, ...activity.map(a => a.lists_completed));
+      const NS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("width", "100%");
+      svg.style.minWidth = "600px";
+
+      // Bars: products registered per day (own scale).
+      activity.forEach((a, i) => {
+        const h = (a.items_added / maxItems) * plotH;
+        const rect = document.createElementNS(NS, "rect");
+        rect.setAttribute("x", PAD_L + i * step + 1);
+        rect.setAttribute("y", PAD_T + plotH - h);
+        rect.setAttribute("width", Math.max(2, step - 2));
+        rect.setAttribute("height", h);
+        rect.setAttribute("fill", "#DDA92B");
+        const title = document.createElementNS(NS, "title");
+        title.textContent = `${a.date}: ${a.items_added} produse, ${a.lists_completed} liste`;
+        rect.appendChild(title);
+        svg.appendChild(rect);
+      });
+
+      // Line: lists completed per day (own scale, so 1 list is still visible).
+      const points = activity.map((a, i) => {
+        const x = PAD_L + i * step + step / 2;
+        const y = PAD_T + plotH - (a.lists_completed / maxLists) * plotH;
+        return `${x},${y}`;
+      }).join(" ");
+      const line = document.createElementNS(NS, "polyline");
+      line.setAttribute("points", points);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", "#71805C");
+      line.setAttribute("stroke-width", "2");
+      svg.appendChild(line);
+      activity.forEach((a, i) => {
+        if (!a.lists_completed) return;
+        const dot = document.createElementNS(NS, "circle");
+        dot.setAttribute("cx", PAD_L + i * step + step / 2);
+        dot.setAttribute("cy", PAD_T + plotH - (a.lists_completed / maxLists) * plotH);
+        dot.setAttribute("r", "3");
+        dot.setAttribute("fill", "#71805C");
+        svg.appendChild(dot);
+      });
+
+      // Axis: max value on the left, a date label every ~week.
+      const axisMax = document.createElementNS(NS, "text");
+      axisMax.setAttribute("x", 2); axisMax.setAttribute("y", PAD_T + 10);
+      axisMax.setAttribute("font-size", "11"); axisMax.setAttribute("fill", "#6E6A60");
+      axisMax.textContent = maxItems;
+      svg.appendChild(axisMax);
+      activity.forEach((a, i) => {
+        if (i % 7 !== 0 && i !== n - 1) return;
+        const t = document.createElementNS(NS, "text");
+        t.setAttribute("x", PAD_L + i * step);
+        t.setAttribute("y", H - 6);
+        t.setAttribute("font-size", "10");
+        t.setAttribute("fill", "#6E6A60");
+        t.textContent = a.date.slice(5); // MM-DD
+        svg.appendChild(t);
+      });
+      box.appendChild(svg);
+    }
+
+    async function loadDashboard() {
+      let r;
+      try {
+        r = await fetch("/api/admin/dashboard", { headers: authHeaders() });
+      } catch (e) { document.getElementById("chartBox").textContent = "Network error"; return; }
+      if (r.status === 401 || r.status === 403) { showApp(false); return; }
+      const d = await r.json();
+
+      const row = document.getElementById("statRow");
+      row.textContent = "";
+      row.appendChild(statEl(d.stores.length, "Magazine"));
+      row.appendChild(statEl(d.users_count, "Angajați"));
+      row.appendChild(statEl(d.products_count, "Produse"));
+      row.appendChild(statEl(d.distributors_count, "Distribuitori"));
+      row.appendChild(statEl(d.lists_completed_count, "Liste finalizate"));
+      row.appendChild(statEl(d.crashes_count, "Bug reports"));
+
+      const storeBox = document.getElementById("storeList");
+      storeBox.textContent = "";
+      if (d.stores.length) {
+        d.stores.forEach(s => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = `${s.name} · ${s.member_count} angajați`;
+          storeBox.appendChild(chip);
+        });
+      } else {
+        storeBox.textContent = "Niciun magazin (echipă) creat încă.";
+        storeBox.className = "muted";
+      }
+
+      renderChart(d.activity);
+    }
+
+    async function loadCrashes() {
+      const box = document.getElementById("crashList");
+      let r;
+      try {
+        r = await fetch("/api/admin/crashes", { headers: authHeaders() });
+      } catch (e) { box.textContent = "Network error"; return; }
+      if (r.status === 401 || r.status === 403) { showApp(false); return; }
+      const crashes = await r.json();
+      box.textContent = "";
+      if (!crashes.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
+      // Per-phone summary: which devices are sending reports, and how many.
+      const byDevice = {};
+      crashes.forEach(c => {
+        const key = c.device || "necunoscut";
+        byDevice[key] = (byDevice[key] || 0) + 1;
+      });
+      const summary = document.createElement("div");
+      summary.style.marginBottom = "8px";
+      Object.entries(byDevice)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([device, count]) => {
+          const chip = document.createElement("span");
+          chip.className = "chip";
+          chip.textContent = `${device} · ${count} ${count === 1 ? "raport" : "rapoarte"}`;
+          summary.appendChild(chip);
+        });
+      box.appendChild(summary);
+      crashes.forEach(c => {
+        const det = document.createElement("details");
+        det.style.marginBottom = "8px";
+        const sum = document.createElement("summary");
+        const firstLine = (c.stacktrace || "").split("\n")[0];
+        sum.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
+          `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"} — ${firstLine.slice(0, 80)}`;
+        const pre = document.createElement("pre");
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.fontSize = "12px";
+        pre.textContent = c.stacktrace;
+        det.appendChild(sum);
+        det.appendChild(pre);
+        box.appendChild(det);
+      });
+    }
+
+    if (token) { showApp(true); loadDashboard(); loadProducts(); loadCrashes(); } else { showApp(false); }
   </script>
 </body>
 </html>

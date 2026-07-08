@@ -58,7 +58,6 @@ fun NavGraph(
                 onNavigateToSession = { navController.navigate("session") },
                 onNavigateToUnknown = { navController.navigate("unknown") },
                 onNavigateToReview = { navController.navigate("review") },
-                onNavigateToInventory = { navController.navigate("inventory") },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToAccount = { 
                     // Navigate to account if logged in, login if not

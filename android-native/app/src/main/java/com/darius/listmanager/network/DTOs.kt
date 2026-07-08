@@ -28,3 +28,15 @@ data class TeamMemberDTO( val id: Long, val team_id: Long, val user_id: Long, va
 data class TeamCreateRequest( val name: String )
 data class InviteCreateRequest( val role: String = "member" )
 data class InviteDTO( val code: String, val expires_at: String, val role: String )
+
+// ===== Crash reporting =====
+data class CrashReportRequest(
+    val app_version: String?,
+    val android_version: String?,
+    val device: String?,
+    val username: String?,
+    val stacktrace: String
+)
+
+// ===== Presence =====
+data class PresenceUserDTO( val user_id: Long, val username: String )

@@ -24,6 +24,12 @@ data class ParsedInventoryLine(
  * Number WORDS ("cinci") are out of scope: they break the trailing region and
  * can misattribute a later digit (e.g. "lapte cinci lei 50" -> qty 50) — the
  * row stays editable, so the operator corrects it; this is pinned by tests.
+ *
+ * With a [nameScorer] (catalog match score in 0..1), the split becomes
+ * catalog-aware: the name may swallow leading tokens of the numeric region
+ * when a longer candidate matches the catalog with high confidence, so names
+ * ending in a bare number ("cuie de 5") keep it instead of losing it to the
+ * quantity. Without a scorer (or no confident match) behavior is unchanged.
  */
 object InventoryLineParser {
 
@@ -34,9 +40,12 @@ object InventoryLineParser {
 
     private val NUMBER = Regex("^\\d+([.,]\\d+)?$")
 
+    /** Minimum catalog score for a longer name candidate to override the default split. */
+    private const val CATALOG_OVERRIDE_THRESHOLD = 0.82
+
     private data class Amount(val value: Double, val money: Boolean)
 
-    fun parse(text: String): ParsedInventoryLine? {
+    fun parse(text: String, nameScorer: ((String) -> Double)? = null): ParsedInventoryLine? {
         val tokens = text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
         if (tokens.isEmpty()) return null
 
@@ -49,12 +58,38 @@ object InventoryLineParser {
                 start = i
             } else break
         }
-        val region = tokens.subList(start, tokens.size)
-        if (region.none { isNumber(it) }) {
+        if (tokens.subList(start, tokens.size).none { isNumber(it) }) {
             // no numbers at the end -> the whole line is a product name
             return ParsedInventoryLine(tokens.joinToString(" "), quantity = null, priceBani = null)
         }
-        val nameText = tokens.subList(0, start).joinToString(" ")
+
+        // 1b. Catalog-aware override: let the name grow into the numeric region
+        //     ("cuie" -> "cuie de 5") when a candidate matches the catalog with
+        //     high confidence. Ties prefer the longer name.
+        var splitAt = start
+        if (nameScorer != null && start < tokens.size) {
+            var bestScore = 0.0
+            var bestAt = -1
+            for (i in start..tokens.size) {
+                val candidate = tokens.subList(0, i).joinToString(" ")
+                if (candidate.isBlank()) continue
+                val score = nameScorer(candidate)
+                if (score >= bestScore) {
+                    bestScore = score
+                    bestAt = i
+                }
+            }
+            if (bestScore >= CATALOG_OVERRIDE_THRESHOLD && bestAt > start) {
+                splitAt = bestAt
+            }
+        }
+
+        val region = tokens.subList(splitAt, tokens.size)
+        val nameText = tokens.subList(0, splitAt).joinToString(" ")
+        if (region.none { isNumber(it) }) {
+            // the catalog consumed every trailing number ("cuie de 5" alone)
+            return ParsedInventoryLine(nameText, quantity = null, priceBani = null)
+        }
 
         // 2. Collapse the region into amounts (left to right).
         val amounts = mutableListOf<Amount>()
@@ -106,6 +141,50 @@ object InventoryLineParser {
             priceBani = priceLei?.let { (it * 100).roundToLong() }
         )
     }
+
+    /**
+     * Split one fluently-spoken utterance into raw line segments, so dictation
+     * needs NO forced pauses: a new line starts where, after the numeric region
+     * of the previous line, a plain word appears again ("lapte 2 6 lei pâine 3"
+     * -> ["lapte 2 6 lei", "pâine 3"]). Money/filler words count as region only
+     * AFTER a number was seen, so fillers inside names ("lapte de vacă") don't
+     * split. The last segment may still be incomplete (mid-speech).
+     */
+    fun segmentLines(text: String): List<String> {
+        val tokens = text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        if (tokens.isEmpty()) return emptyList()
+
+        val segments = mutableListOf<String>()
+        var segStart = 0
+        var inRegion = false
+        for (i in tokens.indices) {
+            val t = tokens[i]
+            when {
+                isNumber(t) -> inRegion = true
+                inRegion && (t in FILLER || t in CURRENCY || t in SUBUNIT || t in COMMA_WORD) -> {
+                    // still part of the current line's numeric region
+                }
+                else -> {
+                    // a plain word: starts/continues a name; if numbers already
+                    // ended a line, this word begins the NEXT line
+                    if (inRegion) {
+                        segments.add(tokens.subList(segStart, i).joinToString(" "))
+                        segStart = i
+                        inRegion = false
+                    }
+                }
+            }
+        }
+        segments.add(tokens.subList(segStart, tokens.size).joinToString(" "))
+        return segments
+    }
+
+    /** [segmentLines] + [parse] per segment: one fluent breath -> many lines. */
+    fun parseMultiple(
+        text: String,
+        nameScorer: ((String) -> Double)? = null
+    ): List<ParsedInventoryLine> =
+        segmentLines(text).mapNotNull { parse(it, nameScorer) }
 
     private fun isNumber(t: String) = NUMBER.matches(t)
 

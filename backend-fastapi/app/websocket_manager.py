@@ -10,27 +10,47 @@ class ConnectionManager:
     def __init__(self):
         # Store active connections: {user_id: [websocket1, websocket2, ...]}
         self.active_connections: Dict[int, List[WebSocket]] = {}
-    
-    async def connect(self, websocket: WebSocket, user_id: int):
+        # Last known username per connected user (for presence display)
+        self.usernames: Dict[int, str] = {}
+
+    async def connect(self, websocket: WebSocket, user_id: int, username: str = None):
         """Accept WebSocket connection"""
         await websocket.accept()
-        
+
         if user_id not in self.active_connections:
             self.active_connections[user_id] = []
-        
+
         self.active_connections[user_id].append(websocket)
+        if username:
+            self.usernames[user_id] = username
         logger.info(f"User {user_id} connected. Total connections: {self.get_total_connections()}")
-    
+
     def disconnect(self, websocket: WebSocket, user_id: int):
         """Remove WebSocket connection"""
         if user_id in self.active_connections:
             self.active_connections[user_id].remove(websocket)
-            
+
             # Remove user entry if no more connections
             if not self.active_connections[user_id]:
                 del self.active_connections[user_id]
-        
+                self.usernames.pop(user_id, None)
+
         logger.info(f"User {user_id} disconnected. Total connections: {self.get_total_connections()}")
+
+    def online_users(self) -> List[dict]:
+        """Currently connected users (deduplicated), sorted by username."""
+        users = [
+            {"user_id": user_id, "username": self.usernames.get(user_id, "")}
+            for user_id in self.active_connections
+        ]
+        return sorted(users, key=lambda u: u["username"].lower())
+
+    async def broadcast_presence(self):
+        """Tell every connected client who is online right now."""
+        await self.broadcast({
+            "type": "presence",
+            "data": {"online": self.online_users()}
+        })
     
     async def send_personal_message(self, message: dict, user_id: int):
         """Send message to specific user (all their connections)"""

@@ -161,3 +161,39 @@ tap Export PDF → PdfRepository (inventory layout) → share intent
 
 Additive Room table + new screen/route; no backend changes; no effect on the order-list flow.
 Ships as its own PR off `development`.
+
+---
+
+# v1.1 addendum (2026-07-08) — approved scope
+
+Driven by real usage: "cuie de 5" (a product name ending in a bare number) was parsed as
+name="cuie", quantity=5. Three features approved; catalog-price autofill explicitly
+deferred (needs the Android `price` field + Room migration).
+
+## 1. Catalog-aware split (fixes "cuie de 5")
+
+`InventoryLineParser.parse` gains an optional `nameScorer: ((String) -> Double)?`.
+With a scorer, the parser generates candidate splits by letting the name swallow leading
+tokens of the trailing numeric region ("cuie" → "cuie de" → "cuie de 5" → …), scores each
+candidate name, and **overrides the default split only when the best candidate scores
+≥ 0.82** (tie → longest name). The remaining tail parses with the existing amount rules.
+No scorer (or no confident match) → behavior identical to v1.0 (pinned tests unchanged).
+The ViewModel supplies the scorer from `ProductRanker.rank` over the local catalog and
+reuses the same product list for the subsequent canonical-name resolution.
+Consequences: "cuie de 5 10 4 lei" → (cuie de 5, 10, 4.00); "cuie de 5" alone →
+name-only row (both fields highlighted) instead of a bogus quantity.
+
+## 2. Live transcript + draft row ("chatbot" feel)
+
+`AndroidSpeechProvider` already emits `SpeechState.Partial`; the screen now uses it:
+while listening, a card shows the raw partial text plus a ghost row (Produs | Cant | Preț)
+filled from a plain `InventoryLineParser.parse` of the partial (no catalog scoring on
+partials — they fire several times a second; the catalog-aware parse runs once, on Final).
+Cleared on Final/Idle/Error.
+
+## 3. Continuous dictation mode
+
+A toggle ("Dictare continuă", default OFF) next to the mic. When ON, the ViewModel does
+NOT call `stopListening()` on `Final` — the provider's existing loop policy restarts
+recognition automatically, so each utterance (separated by a natural pause) becomes one
+row; tapping the mic stops. When OFF, v1.0 tap-per-line behavior is unchanged.

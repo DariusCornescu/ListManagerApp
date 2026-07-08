@@ -1,5 +1,13 @@
 package com.darius.listmanager.data.websocket
+
+/** One user currently connected over WebSocket (drawer "Online acum"). */
+data class OnlineUser( val userId: Long, val username: String )
+
 sealed class WebSocketMessage {
+
+    // ==================== PRESENCE ====================
+
+    data class PresenceUpdate( val online: List<OnlineUser> ) : WebSocketMessage()
     
     // ==================== CATALOG UPDATES ====================
     

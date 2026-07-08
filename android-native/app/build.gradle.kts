@@ -46,6 +46,10 @@ android {
 
         // Expose base URL to app code without committing IPs
         buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
+
+        // App label; the "preview" build type overrides it so side-by-side
+        // installs are distinguishable on the launcher.
+        manifestPlaceholders["appLabel"] = "List Manager"
     }
 
     buildTypes {
@@ -55,6 +59,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        // Side-by-side trial build: installs as a SEPARATE app next to the
+        // normal one (different applicationId), so a new UI/feature can be
+        // tried and uninstalled without touching the daily app.
+        create("preview") {
+            initWith(getByName("debug"))
+            applicationIdSuffix = ".preview"
+            versionNameSuffix = "-preview"
+            manifestPlaceholders["appLabel"] = "ListManager NOU"
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += "debug"
         }
     }
     compileOptions {
