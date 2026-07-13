@@ -5,33 +5,47 @@ Newest entries on top.
 
 ---
 
-## 2026-07-08 — Crash-loop counter no longer accumulates across healthy sessions (fix/crash-loop-stale-streak)
+## 2026-07-13 — Offline: remember the last account's role (fix/offline-role-persistence)
 
-Closes the drill's open question: `rapid_crash_count` only ever went up (or to 1 on a
-slow crash), so three rapid crashes spread over weeks would eventually hit the heal
-threshold and wipe the local Room DB with no actual crash loop happening.
+Reported from real use: offline, catalog edits refused with "doar administratorii pot
+modifica catalogul" even for the admin account, and nothing got saved.
+
+**Root cause**
+
+The account *is* remembered offline (token in encrypted `sync_prefs`, username in
+`auth` prefs) — but the **role** lived only in memory (`AuthState._role`) and was
+populated exclusively from server responses (`GET /me` on startup/login). Offline cold
+start → role stays `null` → `isAdmin == false` → CatalogScreen hides the add FAB and
+selection mode, EditProductScreen goes read-only. The repositories themselves already
+queue catalog writes offline (`RepoResult.QueuedOffline` + pending operations) and
+never check the role locally — only the role-blind UI was in the way.
 
 **What changed**
 
-- `CrashLoopPolicy` (pure, JVM-tested): new `STREAK_TTL_MS` (24h) + `isStreakStale()`;
-  `nextCount()` now takes an optional `msSinceLastCrash` and starts a fresh streak
-  (count = 1) when the previous crash is at least the TTL old. Negative age (wall
-  clock moved backwards) deliberately counts as *fresh* — errors favor not wiping.
-- `CrashLoopGuard`: `onCrash` stores `last_crash_at` (wall clock) and feeds the age
-  into the policy; `onAppStart` posts a main-thread reset at `RAPID_WINDOW_MS` that
-  zeroes the counter once the session provably survives the window (`onCrash` cancels
-  it so the dying process can't race the reset).
-- Both streak-breakers are needed: the survival reset handles "crashes around healthy
-  long sessions", the TTL handles usage patterns where sessions never last 60s.
-- TDD: 7 new `CrashLoopPolicyTest` cases written first (watched red), including the
-  exact bug scenario (three rapid crashes a week apart → no heal) and the live-loop
-  counter-case (relaunch within seconds → still heals). Full `testDebug` green.
+- `AuthViewModel`: persists `saved_role` in the `auth` prefs whenever the server
+  confirms the identity (`loadCurrentUser`, `updateProfile`); restores it in
+  `checkLoginStatus` (only into an empty in-memory role, so live state is never
+  downgraded by disk); clears it on `logout()` and on `login()` success (a different
+  account must not inherit the previous one's role — `/me` re-persists it right after).
+- `MainActivity`: same guarded restore next to the existing login-state restore, since
+  no `AuthViewModel` may exist yet on the home screen at cold start.
+- Security unchanged: this is UX-gating only — every API call is still authorized
+  server-side, so a stale/tampered `saved_role` can't grant anything. Worst case
+  (admin demoted, then offline): ops queue locally and the server rejects them with
+  403 on replay.
+- Nice side effect: the Account screen now shows the correct role offline too.
+
+**Verification:** `assembleDebug` + full `testDebug` suite green. No new JVM tests —
+the change is SharedPreferences/ViewModel wiring with no pure logic seam, and the
+project has no Robolectric; flagged in the PR (same status as the crash-guard Handler
+glue).
 
 **What's next / open**
 
-- The `Handler`-based survival reset is Android glue with no JVM coverage (no
-  Robolectric in the project); the induced-crash drill on a device is the way to
-  verify it end-to-end if needed.
+- On-device check when convenient: airplane mode → force stop → reopen → catalog edit
+  should queue ("pending") instead of the admin refusal, and sync after reconnect.
+- If more Android glue keeps landing untested, consider adding Robolectric as a
+  deliberate (pinned) test dependency in its own PR.
 
 ---
 
