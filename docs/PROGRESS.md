@@ -82,6 +82,7 @@ auto-initializes. Evidence trail: crash left no `files/crashes/` and no
 `CrashLoopGuard` counts rapid crashes but never resets on a healthy session — three
 rapid crashes weeks apart could accumulate and trigger an unwanted local-cache wipe.
 Consider resetting the counter after the process survives the rapid window.
+*Resolved 2026-07-08 — see the fix/crash-loop-stale-streak entry above.*
 
 ---
 
