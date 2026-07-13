@@ -46,10 +46,19 @@ class MainActivity : ComponentActivity() {
 
         // Restore observable login state from persisted token
         if (syncService.isLoggedIn()) {
+            val authPrefs = getSharedPreferences("auth", 0)
             com.darius.listmanager.data.repository.AuthState.setLoggedIn(
                 true,
-                getSharedPreferences("auth", 0).getString("saved_username", null)
+                authPrefs.getString("saved_username", null)
             )
+            // Last-known role so role-gated UI (catalog editing) works offline
+            // too; the server refresh overwrites it as soon as we're reachable.
+            // Guarded so a live in-memory role is never downgraded by disk.
+            if (com.darius.listmanager.data.repository.AuthState.role.value == null) {
+                com.darius.listmanager.data.repository.AuthState.setRole(
+                    authPrefs.getString("saved_role", null)
+                )
+            }
         }
 
         // Handle token expiry (HTTP 401 on an authenticated request): clear session,
