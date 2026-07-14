@@ -5,6 +5,40 @@ Newest entries on top.
 
 ---
 
+## 2026-07-14 — Nav drawer wasn't scrollable (fix/drawer-scroll)
+
+Reported: the navigation drawer (Home / Current Session / …) didn't move up and down — static.
+
+**Root cause**
+
+`DrawerContent`'s `ModalDrawerSheet` laid its children in a plain ColumnScope with **no**
+`Modifier.verticalScroll`, and used `Spacer(Modifier.weight(1f))` to pin Settings/About to
+the bottom. A weight spacer forces the column to exactly the sheet height and is incompatible
+with scrolling, so once the content (workspace switcher + connection status + the variable
+"Online acum" presence list + 7 nav items) exceeded the screen, the bottom got clipped with
+no way to scroll.
+
+**Fix**
+
+Standard "scrollable body + pinned footer": an outer `Column(fillMaxHeight)`, a
+`Column(weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()))` holding the header
+through the primary nav items, and Settings/About pinned **outside** the scroll (replacing the
+old weight spacer). Matches the app's existing verticalScroll idiom (AccountScreen /
+LoginScreen). The weight+verticalScroll nesting is correct because the sheet content scope is
+height-bounded (Surface `fillMaxHeight`) — the crash case is the reverse (a weight child
+*inside* a scroll). Verified: builds; whitespace-only-vs-content diff confirms nothing else
+changed; adversarial Compose review (high confidence, no blockers).
+
+**Same bug elsewhere (found by a sweep — NOT fixed here)**
+
+The identical `Column + Spacer(weight(1f)) footer + no scroll` idiom clips on small screens /
+long content in `HomeScreen` (data-driven content) and `EditProductScreen` (Save button pushed
+under the soft keyboard); non-scrolling forms `EditProductBottomSheet` and `SettingsScreen` are
+latent. Aside: `AccountScreen` has a `weight(1f)` *inside* its verticalScroll column — a no-op
+that doesn't actually pin the logout button. Each deserves its own fix + verification.
+
+---
+
 ## 2026-07-13 — Offline: remember the last account's role (fix/offline-role-persistence)
 
 Reported from real use: offline, catalog edits refused with "doar administratorii pot
