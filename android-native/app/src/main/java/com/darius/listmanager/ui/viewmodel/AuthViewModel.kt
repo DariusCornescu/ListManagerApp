@@ -41,6 +41,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val TAG = "AuthViewModel"
         private const val PREF_USERNAME = "saved_username"
+        private const val PREF_ROLE = "saved_role"
     }
 
     init {
@@ -53,6 +54,11 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             RetrofitClient.setAuthToken(token)
             val savedUsername = getSavedUsername()
             AuthState.setLoggedIn(true, savedUsername)
+            // Last-known role so role-gated UI works offline; guarded so a role
+            // already loaded from the server this process is never overwritten.
+            if (AuthState.role.value == null) {
+                AuthState.setRole(getSavedRole())
+            }
             _uiState.value = _uiState.value.copy(
                 isLoggedIn = true,
                 username = savedUsername
@@ -84,6 +90,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     // Save token
                     syncService.saveAuthToken(loginResponse.access_token)
                     saveUsername(username)
+                    // A different account may be logging in — drop the previous
+                    // account's role until loadCurrentUser() confirms the new one.
+                    clearSavedRole()
                     
                     Log.d(TAG, "Login successful for: $username")
 
@@ -175,6 +184,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     
     fun logout() {
         syncService.clearAuthToken()
+        clearSavedRole()
         AuthState.clear()
         // Persisted workspace must not survive a user switch on a shared device:
         // the next login always starts in the Personal workspace.
@@ -200,6 +210,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
                     saveUsername(user.username)
+                    saveRole(user.role)
                     _uiState.value = _uiState.value.copy(
                         isProfileLoading = false,
                         username = user.username,
@@ -234,6 +245,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     val user = response.body()!!
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
+                    saveRole(user.role)
                     _uiState.value = _uiState.value.copy(
                         isSavingProfile = false,
                         username = user.username,
@@ -275,5 +287,27 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private fun getSavedUsername(): String? {
         return getApplication<Application>().getSharedPreferences("auth", 0)
             .getString(PREF_USERNAME, null)
+    }
+
+    // Role persistence is UX-gating only (offline catalog editing); the server
+    // still enforces authorization on every API call, so a stale or tampered
+    // value can never grant real access.
+    private fun saveRole(role: String) {
+        getApplication<Application>().getSharedPreferences("auth", 0)
+            .edit()
+            .putString(PREF_ROLE, role)
+            .apply()
+    }
+
+    private fun getSavedRole(): String? {
+        return getApplication<Application>().getSharedPreferences("auth", 0)
+            .getString(PREF_ROLE, null)
+    }
+
+    private fun clearSavedRole() {
+        getApplication<Application>().getSharedPreferences("auth", 0)
+            .edit()
+            .remove(PREF_ROLE)
+            .apply()
     }
 }

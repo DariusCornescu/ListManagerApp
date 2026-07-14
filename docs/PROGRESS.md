@@ -55,6 +55,50 @@ a 218 MB APK with the model; installed and launches cleanly on the S25.
 
 ---
 
+## 2026-07-13 — Offline: remember the last account's role (fix/offline-role-persistence)
+
+Reported from real use: offline, catalog edits refused with "doar administratorii pot
+modifica catalogul" even for the admin account, and nothing got saved.
+
+**Root cause**
+
+The account *is* remembered offline (token in encrypted `sync_prefs`, username in
+`auth` prefs) — but the **role** lived only in memory (`AuthState._role`) and was
+populated exclusively from server responses (`GET /me` on startup/login). Offline cold
+start → role stays `null` → `isAdmin == false` → CatalogScreen hides the add FAB and
+selection mode, EditProductScreen goes read-only. The repositories themselves already
+queue catalog writes offline (`RepoResult.QueuedOffline` + pending operations) and
+never check the role locally — only the role-blind UI was in the way.
+
+**What changed**
+
+- `AuthViewModel`: persists `saved_role` in the `auth` prefs whenever the server
+  confirms the identity (`loadCurrentUser`, `updateProfile`); restores it in
+  `checkLoginStatus` (only into an empty in-memory role, so live state is never
+  downgraded by disk); clears it on `logout()` and on `login()` success (a different
+  account must not inherit the previous one's role — `/me` re-persists it right after).
+- `MainActivity`: same guarded restore next to the existing login-state restore, since
+  no `AuthViewModel` may exist yet on the home screen at cold start.
+- Security unchanged: this is UX-gating only — every API call is still authorized
+  server-side, so a stale/tampered `saved_role` can't grant anything. Worst case
+  (admin demoted, then offline): ops queue locally and the server rejects them with
+  403 on replay.
+- Nice side effect: the Account screen now shows the correct role offline too.
+
+**Verification:** `assembleDebug` + full `testDebug` suite green. No new JVM tests —
+the change is SharedPreferences/ViewModel wiring with no pure logic seam, and the
+project has no Robolectric; flagged in the PR (same status as the crash-guard Handler
+glue).
+
+**What's next / open**
+
+- On-device check when convenient: airplane mode → force stop → reopen → catalog edit
+  should queue ("pending") instead of the admin refusal, and sync after reconnect.
+- If more Android glue keeps landing untested, consider adding Robolectric as a
+  deliberate (pinned) test dependency in its own PR.
+
+---
+
 ## 2026-07-08 — Induced-crash drill found the Application class was never registered (fix/register-application-class)
 
 Deliberate end-to-end test of the crash pipeline (`adb shell am crash` on the preview
@@ -88,6 +132,7 @@ auto-initializes. Evidence trail: crash left no `files/crashes/` and no
 `CrashLoopGuard` counts rapid crashes but never resets on a healthy session — three
 rapid crashes weeks apart could accumulate and trigger an unwanted local-cache wipe.
 Consider resetting the counter after the process survives the rapid window.
+*Resolved 2026-07-08 — see the fix/crash-loop-stale-streak entry above.*
 
 ---
 
