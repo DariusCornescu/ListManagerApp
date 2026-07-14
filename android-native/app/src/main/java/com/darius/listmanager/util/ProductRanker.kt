@@ -37,6 +37,31 @@ object ProductRanker {
     }
 
     /**
+     * Rank the catalog against SEVERAL transcript hypotheses (recognizer N-best)
+     * and keep each product's best score across them, so a garbled top guess
+     * can't hide a correct lower-ranked one. With a single hypothesis this is
+     * exactly [rank]; blank hypotheses are ignored.
+     */
+    fun rankAcross(
+        hypotheses: List<String>,
+        products: List<ProductEntity>,
+        embeddingScores: Map<Long, Double> = emptyMap(),
+        weights: ScoringWeights = ScoringWeights()
+    ): List<RankedProduct> {
+        val bestByProduct = LinkedHashMap<Long, RankedProduct>()
+        for (hypothesis in hypotheses) {
+            if (hypothesis.isBlank()) continue
+            for (ranked in rank(hypothesis, products, embeddingScores, weights)) {
+                val current = bestByProduct[ranked.product.id]
+                if (current == null || ranked.score > current.score) {
+                    bestByProduct[ranked.product.id] = ranked
+                }
+            }
+        }
+        return bestByProduct.values.sortedByDescending { it.score }
+    }
+
+    /**
      * Calculate comprehensive similarity score for a product
      */
     private fun calculateScore(
