@@ -33,11 +33,17 @@ class EmbeddingModel private constructor(private val appContext: Context) {
                     }
                 }
                 val tokenizerBytes = appContext.assets.open(TOKENIZER_ASSET).use { it.readBytes() }
+                // Model I/O (paraphrase-multilingual-MiniLM-L12-v2, int8 ONNX):
+                //   inputs  = input_ids, attention_mask, token_type_ids (all required)
+                //   output0 = last_hidden_state [batch, seq, 384] (token-level)
+                // The library reads output 0 as a 3D tensor and mean-pools it with the
+                // attention mask internally, so outputTensorName is ignored (kept accurate
+                // for readers). We L2-normalize the pooled vector ourselves in embed().
                 embedder.init(
                     modelFilepath = modelFile.absolutePath,
                     tokenizerBytes = tokenizerBytes,
-                    useTokenTypeIds = false,
-                    outputTensorName = "sentence_embedding",
+                    useTokenTypeIds = true,
+                    outputTensorName = "last_hidden_state",
                     useFP16 = false,
                     useXNNPack = true,
                     normalizeEmbeddings = false
