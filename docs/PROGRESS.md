@@ -5,6 +5,56 @@ Newest entries on top.
 
 ---
 
+## 2026-07-14 — Transcript quality: N-best matching + semantic model enabled (feat/nbest-semantic-matching)
+
+Two independent transcript-quality upgrades, both driven by the voice→catalog flow.
+
+**N-best matching (TDD)**
+
+The recognizer returned several hypotheses per utterance but the app kept only the top
+one (`matches.firstOrNull()`), so a garbled best-guess buried a correct alternate.
+- New pure `ProductRanker.rankAcross(hypotheses, products, …)` ranks the catalog against
+  every hypothesis and keeps each product's best score. Written test-first
+  (`ProductRankerNBestTest`, 5 cases incl. "garbled top guess + good alternative → correct
+  product wins"); single-hypothesis reproduces `rank()` exactly (regression-safe).
+- Glue (verified by build, no JVM seam): `AndroidSpeechProvider` sets `EXTRA_MAX_RESULTS=5`
+  and carries `matches.drop(1)` as `SpeechState.Final.alternatives`; `HomeViewModel` passes
+  them into `ResolveSpokenProductUseCase`, which now unions FTS candidates across
+  hypotheses and ranks via `rankAcross`. Alternatives apply to single-product utterances;
+  multi-item segmented phrases resolve per-segment as before.
+
+**Semantic model enabled**
+
+The ONNX embedding matcher was fully coded but dormant — the model was never fetched into
+`assets/`, so every build silently ran fuzzy-only. Enabled it:
+- Bundled the **int8-quantized** paraphrase-multilingual-MiniLM-L12-v2 (~118 MB, from the
+  Xenova mirror) instead of the 470 MB fp32 — far better fit for a phone. Both `model.onnx`
+  and `tokenizer.json` stay gitignored (fixed `app/.gitignore`, which was missing the
+  tokenizer).
+- The int8 model outputs token-level `last_hidden_state` and requires `token_type_ids`;
+  the `shubham0204:sentence-embeddings` library (v0.0.x) reads output 0 as a 3D tensor and
+  mean-pools internally, so the only loader change was `useTokenTypeIds = true`
+  (`outputTensorName` is ignored by the lib; set to `last_hidden_state` for accuracy).
+- Verified device-independently with onnxruntime, replicating the library's math: sane
+  semantic ordering — "suc de portocale"↔"oranjada" 0.50 and "pâine albă"↔"chiflă albă"
+  0.70 (matches fuzzy scoring misses) vs ~0.30 for unrelated pairs. Fail-safe: if ORT
+  can't load on device, `EmbeddingModel` degrades to fuzzy-only.
+
+**Verification:** full `testDebug` green (incl. new N-best tests); `assembleDebug` builds
+a 218 MB APK with the model; installed and launches cleanly on the S25.
+
+**What's next / open**
+
+- On-device confirmation of the ONNX load is still pending — the phone's saved token had
+  expired (login screen, 401), so the Home-screen embedding backfill never ran. Once
+  logged in, `adb logcat` should show `EmbeddingBackfill: Backfilling N product
+  embeddings` / `Backfill complete` and no `Embedding model init failed`. Voice input with
+  a slightly-misheard product name is the end-to-end N-best check.
+- Only the Home flow uses embeddings; NeedsReview re-resolution and Inventory matching are
+  still fuzzy-only (candidate follow-up).
+
+---
+
 ## 2026-07-08 — Induced-crash drill found the Application class was never registered (fix/register-application-class)
 
 Deliberate end-to-end test of the crash pipeline (`adb shell am crash` on the preview
