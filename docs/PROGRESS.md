@@ -5,11 +5,9 @@ Newest entries on top.
 
 ---
 
-## 2026-07-14 — Transcript quality: N-best matching + semantic model enabled (feat/nbest-semantic-matching)
+## 2026-07-14 — Transcript quality: N-best matching shipped; semantic model reverted (native crash) (feat/nbest-semantic-matching)
 
-Two independent transcript-quality upgrades, both driven by the voice→catalog flow.
-
-**N-best matching (TDD)**
+**N-best matching (TDD) — shipped**
 
 The recognizer returned several hypotheses per utterance but the app kept only the top
 one (`matches.firstOrNull()`), so a garbled best-guess buried a correct alternate.
@@ -23,35 +21,39 @@ one (`matches.firstOrNull()`), so a garbled best-guess buried a correct alternat
   hypotheses and ranks via `rankAcross`. Alternatives apply to single-product utterances;
   multi-item segmented phrases resolve per-segment as before.
 
-**Semantic model enabled**
+**Semantic model — enabled, then REVERTED (crashed the app)**
 
-The ONNX embedding matcher was fully coded but dormant — the model was never fetched into
-`assets/`, so every build silently ran fuzzy-only. Enabled it:
-- Bundled the **int8-quantized** paraphrase-multilingual-MiniLM-L12-v2 (~118 MB, from the
-  Xenova mirror) instead of the 470 MB fp32 — far better fit for a phone. Both `model.onnx`
-  and `tokenizer.json` stay gitignored (fixed `app/.gitignore`, which was missing the
-  tokenizer).
-- The int8 model outputs token-level `last_hidden_state` and requires `token_type_ids`;
-  the `shubham0204:sentence-embeddings` library (v0.0.x) reads output 0 as a 3D tensor and
-  mean-pools internally, so the only loader change was `useTokenTypeIds = true`
-  (`outputTensorName` is ignored by the lib; set to `last_hidden_state` for accuracy).
-- Verified device-independently with onnxruntime, replicating the library's math: sane
-  semantic ordering — "suc de portocale"↔"oranjada" 0.50 and "pâine albă"↔"chiflă albă"
-  0.70 (matches fuzzy scoring misses) vs ~0.30 for unrelated pairs. Fail-safe: if ORT
-  can't load on device, `EmbeddingModel` degrades to fuzzy-only.
+Enabling the on-device ONNX matcher (bundled the int8-quantized MiniLM, set
+`useTokenTypeIds=true`) crashed the app **hard on device**: `signal 11 (SIGSEGV)` deep
+inside `libonnxruntime.so`, reached via `OrtSession.run` ← `SentenceEmbedding.encode` ←
+`EmbeddingModel.embed`, on a background dispatch thread. Reproduced twice on the S25.
+- It's a **native** crash, so the `try/catch (Throwable)` in `EmbeddingModel` can't catch
+  it — the whole process dies. The "fail-safe degrades to fuzzy" design only covers *init*
+  failures, not a segfault during *inference*. Fires the moment embeddings run (Home-screen
+  backfill after login, or voice input).
+- The model itself is fine — verified sane semantic similarities in desktop onnxruntime
+  (x86). The fault is device/runtime-specific (ARM64 + the library's bundled onnxruntime +
+  int8 kernels, `useXNNPack=true` a prime suspect). Couldn't verify a runtime tweak
+  on-device without logging into the phone, so shipping an unverified crash-fix was off the
+  table.
+- **Reverted** the enablement (EmbeddingModel config, `app/.gitignore`, `assets/README.md`)
+  to development's dormant state and removed the bundled model → `ensureReady()` fails at
+  the missing asset → fuzzy-only, no ONNX call, no crash. Rebuilt (141 MB APK, no model)
+  and reinstalled the stable build.
 
-**Verification:** full `testDebug` green (incl. new N-best tests); `assembleDebug` builds
-a 218 MB APK with the model; installed and launches cleanly on the S25.
+**Verification:** full `testDebug` green; stable APK confirmed to bundle no `model.onnx`
+and reinstalled on the S25.
 
 **What's next / open**
 
-- On-device confirmation of the ONNX load is still pending — the phone's saved token had
-  expired (login screen, 401), so the Home-screen embedding backfill never ran. Once
-  logged in, `adb logcat` should show `EmbeddingBackfill: Backfilling N product
-  embeddings` / `Backfill complete` and no `Embedding model init failed`. Voice input with
-  a slightly-misheard product name is the end-to-end N-best check.
-- Only the Home flow uses embeddings; NeedsReview re-resolution and Inventory matching are
-  still fuzzy-only (candidate follow-up).
+- Semantic matching is deferred, NOT abandoned. To re-enable safely: (1) try
+  `useXNNPack=false` (and/or a non-quantized/uint8 export) and test on-device with a
+  logged-in session — the crash only reproduces once embeddings actually run; (2) add an
+  embedding **crash-guard** (persist a "trying embed" flag before the first inference; if
+  the process died last launch, disable embeddings permanently) so a native segfault can
+  never brick the app again — mirror of `CrashLoopGuard`. Only enable by default once it
+  survives the drill.
+- N-best is unaffected by all of this and stays.
 
 ---
 

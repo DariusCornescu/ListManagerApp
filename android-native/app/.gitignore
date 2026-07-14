@@ -2,4 +2,3 @@
 
 # Bundled ML model (downloaded at setup, not committed — see src/main/assets/README.md)
 /src/main/assets/model.onnx
-/src/main/assets/tokenizer.json
