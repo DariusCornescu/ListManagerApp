@@ -5,55 +5,37 @@ Newest entries on top.
 
 ---
 
-## 2026-07-14 — Transcript quality: N-best matching shipped; semantic model reverted (native crash) (feat/nbest-semantic-matching)
+## 2026-07-14 — Nav drawer wasn't scrollable (fix/drawer-scroll)
 
-**N-best matching (TDD) — shipped**
+Reported: the navigation drawer (Home / Current Session / …) didn't move up and down — static.
 
-The recognizer returned several hypotheses per utterance but the app kept only the top
-one (`matches.firstOrNull()`), so a garbled best-guess buried a correct alternate.
-- New pure `ProductRanker.rankAcross(hypotheses, products, …)` ranks the catalog against
-  every hypothesis and keeps each product's best score. Written test-first
-  (`ProductRankerNBestTest`, 5 cases incl. "garbled top guess + good alternative → correct
-  product wins"); single-hypothesis reproduces `rank()` exactly (regression-safe).
-- Glue (verified by build, no JVM seam): `AndroidSpeechProvider` sets `EXTRA_MAX_RESULTS=5`
-  and carries `matches.drop(1)` as `SpeechState.Final.alternatives`; `HomeViewModel` passes
-  them into `ResolveSpokenProductUseCase`, which now unions FTS candidates across
-  hypotheses and ranks via `rankAcross`. Alternatives apply to single-product utterances;
-  multi-item segmented phrases resolve per-segment as before.
+**Root cause**
 
-**Semantic model — enabled, then REVERTED (crashed the app)**
+`DrawerContent`'s `ModalDrawerSheet` laid its children in a plain ColumnScope with **no**
+`Modifier.verticalScroll`, and used `Spacer(Modifier.weight(1f))` to pin Settings/About to
+the bottom. A weight spacer forces the column to exactly the sheet height and is incompatible
+with scrolling, so once the content (workspace switcher + connection status + the variable
+"Online acum" presence list + 7 nav items) exceeded the screen, the bottom got clipped with
+no way to scroll.
 
-Enabling the on-device ONNX matcher (bundled the int8-quantized MiniLM, set
-`useTokenTypeIds=true`) crashed the app **hard on device**: `signal 11 (SIGSEGV)` deep
-inside `libonnxruntime.so`, reached via `OrtSession.run` ← `SentenceEmbedding.encode` ←
-`EmbeddingModel.embed`, on a background dispatch thread. Reproduced twice on the S25.
-- It's a **native** crash, so the `try/catch (Throwable)` in `EmbeddingModel` can't catch
-  it — the whole process dies. The "fail-safe degrades to fuzzy" design only covers *init*
-  failures, not a segfault during *inference*. Fires the moment embeddings run (Home-screen
-  backfill after login, or voice input).
-- The model itself is fine — verified sane semantic similarities in desktop onnxruntime
-  (x86). The fault is device/runtime-specific (ARM64 + the library's bundled onnxruntime +
-  int8 kernels, `useXNNPack=true` a prime suspect). Couldn't verify a runtime tweak
-  on-device without logging into the phone, so shipping an unverified crash-fix was off the
-  table.
-- **Reverted** the enablement (EmbeddingModel config, `app/.gitignore`, `assets/README.md`)
-  to development's dormant state and removed the bundled model → `ensureReady()` fails at
-  the missing asset → fuzzy-only, no ONNX call, no crash. Rebuilt (141 MB APK, no model)
-  and reinstalled the stable build.
+**Fix**
 
-**Verification:** full `testDebug` green; stable APK confirmed to bundle no `model.onnx`
-and reinstalled on the S25.
+Standard "scrollable body + pinned footer": an outer `Column(fillMaxHeight)`, a
+`Column(weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()))` holding the header
+through the primary nav items, and Settings/About pinned **outside** the scroll (replacing the
+old weight spacer). Matches the app's existing verticalScroll idiom (AccountScreen /
+LoginScreen). The weight+verticalScroll nesting is correct because the sheet content scope is
+height-bounded (Surface `fillMaxHeight`) — the crash case is the reverse (a weight child
+*inside* a scroll). Verified: builds; whitespace-only-vs-content diff confirms nothing else
+changed; adversarial Compose review (high confidence, no blockers).
 
-**What's next / open**
+**Same bug elsewhere (found by a sweep — NOT fixed here)**
 
-- Semantic matching is deferred, NOT abandoned. To re-enable safely: (1) try
-  `useXNNPack=false` (and/or a non-quantized/uint8 export) and test on-device with a
-  logged-in session — the crash only reproduces once embeddings actually run; (2) add an
-  embedding **crash-guard** (persist a "trying embed" flag before the first inference; if
-  the process died last launch, disable embeddings permanently) so a native segfault can
-  never brick the app again — mirror of `CrashLoopGuard`. Only enable by default once it
-  survives the drill.
-- N-best is unaffected by all of this and stays.
+The identical `Column + Spacer(weight(1f)) footer + no scroll` idiom clips on small screens /
+long content in `HomeScreen` (data-driven content) and `EditProductScreen` (Save button pushed
+under the soft keyboard); non-scrolling forms `EditProductBottomSheet` and `SettingsScreen` are
+latent. Aside: `AccountScreen` has a `weight(1f)` *inside* its verticalScroll column — a no-op
+that doesn't actually pin the logout button. Each deserves its own fix + verification.
 
 ---
 
