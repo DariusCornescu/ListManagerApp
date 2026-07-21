@@ -59,7 +59,10 @@ class ResolveSpokenProductUseCase(
      * result) pairs. A single-product phrase yields a one-element list, so this
      * is a safe superset of [execute].
      */
-    suspend fun resolveMultiple(spokenText: String): List<Pair<String, ResolveResult>> {
+    suspend fun resolveMultiple(
+        spokenText: String,
+        alternatives: List<String> = emptyList()
+    ): List<Pair<String, ResolveResult>> {
         if (spokenText.isBlank()) {
             return listOf(spokenText to ResolveResult.Unknown(spokenText))
         }
@@ -84,33 +87,45 @@ class ResolveSpokenProductUseCase(
         }
 
         android.util.Log.d("ResolveUseCase", "Segmented '$spokenText' -> $segments")
-        return segments.map { segment -> segment to execute(segment) }
+        // N-best alternatives are alternate transcripts of the WHOLE utterance, so
+        // they only align with a single-product utterance. When the phrase splits
+        // into several products, resolve each segment on its own.
+        return if (segments.size == 1) {
+            listOf(segments.first() to execute(segments.first(), alternatives))
+        } else {
+            segments.map { segment -> segment to execute(segment) }
+        }
     }
 
-    suspend fun execute(spokenText: String): ResolveResult {
+    suspend fun execute(spokenText: String, alternatives: List<String> = emptyList()): ResolveResult {
         if (spokenText.isBlank()) {
             return ResolveResult.Unknown(spokenText)
         }
 
+        // Recognizer N-best: the primary transcript plus any alternate hypotheses.
+        // Blank/duplicate guesses are dropped; a single hypothesis reproduces the
+        // old single-transcript behavior exactly.
+        val hypotheses = (listOf(spokenText) + alternatives)
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+
         android.util.Log.d("ResolveUseCase", "=== Starting Resolution ===")
-        android.util.Log.d("ResolveUseCase", "Spoken text: '$spokenText'")
+        android.util.Log.d("ResolveUseCase", "Hypotheses: $hypotheses")
 
-        // Step 1: Generate query variants
-        val variants = QueryVariants.generate(spokenText)
-        android.util.Log.d("ResolveUseCase", "Generated ${variants.size} variants: $variants")
+        // Step 1+2: gather FTS candidates for EVERY hypothesis (union), so the
+        // right product can still be found when the top guess is garbled.
+        val ftsResults = hypotheses.flatMap { hypothesis ->
+            val ftsQuery = QueryVariants.toFtsQuery(QueryVariants.generate(hypothesis))
+            try {
+                productRepository.searchFtsRaw(ftsQuery)
+            } catch (e: Exception) {
+                android.util.Log.e("ResolveUseCase", "FTS query failed for '$hypothesis': ${e.message}", e)
+                emptyList()
+            }
+        }.distinctBy { it.id }
 
-        // Step 2: Search FTS with variants
-        val ftsQuery = QueryVariants.toFtsQuery(variants)
-        android.util.Log.d("ResolveUseCase", "FTS Query: $ftsQuery")
-
-        val ftsResults = try {
-            productRepository.searchFtsRaw(ftsQuery)
-        } catch (e: Exception) {
-            android.util.Log.e("ResolveUseCase", "FTS query failed: ${e.message}", e)
-            productRepository.getAll()
-        }
-
-        android.util.Log.d("ResolveUseCase", "FTS returned ${ftsResults.size} products")
+        android.util.Log.d("ResolveUseCase", "FTS returned ${ftsResults.size} products across ${hypotheses.size} hypotheses")
 
         // Step 3: If FTS returns nothing, try with all products (expensive fallback)
         val candidateProducts = if (ftsResults.isEmpty()) {
@@ -147,8 +162,9 @@ class ResolveSpokenProductUseCase(
             return ResolveResult.Unknown(spokenText)
         }
 
-        // Step 4: Rank products by similarity (fuzzy + embedding)
-        val rankedProducts = ProductRanker.rank(spokenText, allCandidates, embeddingScores)
+        // Step 4: Rank products across all hypotheses (fuzzy + embedding), keeping
+        // each product's best score so a bad top guess can't bury a good match.
+        val rankedProducts = ProductRanker.rankAcross(hypotheses, allCandidates, embeddingScores)
         android.util.Log.d("ResolveUseCase", "Ranked ${rankedProducts.size} products")
 
         rankedProducts.take(5).forEach {

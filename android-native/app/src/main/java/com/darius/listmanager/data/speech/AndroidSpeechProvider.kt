@@ -30,6 +30,9 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ro-RO") // Romanian
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+        // Ask for several hypotheses so the matcher can rank the catalog against
+        // all of them (N-best), not just the recognizer's top guess.
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
     }
 
     override fun startListening() {
@@ -129,9 +132,10 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                 override fun onResults(results: Bundle?) {
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull() ?: ""
-                    Log.d("Speech", "Final result: $text")
+                    Log.d("Speech", "Final result: '$text' (${matches?.size ?: 0} hypotheses)")
                     if (text.isNotBlank()) {
-                        _speechState.value = SpeechState.Final(text)
+                        val alternatives = matches?.drop(1)?.filter { it.isNotBlank() } ?: emptyList()
+                        _speechState.value = SpeechState.Final(text, alternatives)
                     }
                     applyPolicy(RecognizerEvent.RESULTS)
                 }

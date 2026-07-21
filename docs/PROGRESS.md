@@ -5,6 +5,58 @@ Newest entries on top.
 
 ---
 
+## 2026-07-14 — Transcript quality: N-best matching shipped; semantic model reverted (native crash) (feat/nbest-semantic-matching)
+
+**N-best matching (TDD) — shipped**
+
+The recognizer returned several hypotheses per utterance but the app kept only the top
+one (`matches.firstOrNull()`), so a garbled best-guess buried a correct alternate.
+- New pure `ProductRanker.rankAcross(hypotheses, products, …)` ranks the catalog against
+  every hypothesis and keeps each product's best score. Written test-first
+  (`ProductRankerNBestTest`, 5 cases incl. "garbled top guess + good alternative → correct
+  product wins"); single-hypothesis reproduces `rank()` exactly (regression-safe).
+- Glue (verified by build, no JVM seam): `AndroidSpeechProvider` sets `EXTRA_MAX_RESULTS=5`
+  and carries `matches.drop(1)` as `SpeechState.Final.alternatives`; `HomeViewModel` passes
+  them into `ResolveSpokenProductUseCase`, which now unions FTS candidates across
+  hypotheses and ranks via `rankAcross`. Alternatives apply to single-product utterances;
+  multi-item segmented phrases resolve per-segment as before.
+
+**Semantic model — enabled, then REVERTED (crashed the app)**
+
+Enabling the on-device ONNX matcher (bundled the int8-quantized MiniLM, set
+`useTokenTypeIds=true`) crashed the app **hard on device**: `signal 11 (SIGSEGV)` deep
+inside `libonnxruntime.so`, reached via `OrtSession.run` ← `SentenceEmbedding.encode` ←
+`EmbeddingModel.embed`, on a background dispatch thread. Reproduced twice on the S25.
+- It's a **native** crash, so the `try/catch (Throwable)` in `EmbeddingModel` can't catch
+  it — the whole process dies. The "fail-safe degrades to fuzzy" design only covers *init*
+  failures, not a segfault during *inference*. Fires the moment embeddings run (Home-screen
+  backfill after login, or voice input).
+- The model itself is fine — verified sane semantic similarities in desktop onnxruntime
+  (x86). The fault is device/runtime-specific (ARM64 + the library's bundled onnxruntime +
+  int8 kernels, `useXNNPack=true` a prime suspect). Couldn't verify a runtime tweak
+  on-device without logging into the phone, so shipping an unverified crash-fix was off the
+  table.
+- **Reverted** the enablement (EmbeddingModel config, `app/.gitignore`, `assets/README.md`)
+  to development's dormant state and removed the bundled model → `ensureReady()` fails at
+  the missing asset → fuzzy-only, no ONNX call, no crash. Rebuilt (141 MB APK, no model)
+  and reinstalled the stable build.
+
+**Verification:** full `testDebug` green; stable APK confirmed to bundle no `model.onnx`
+and reinstalled on the S25.
+
+**What's next / open**
+
+- Semantic matching is deferred, NOT abandoned. To re-enable safely: (1) try
+  `useXNNPack=false` (and/or a non-quantized/uint8 export) and test on-device with a
+  logged-in session — the crash only reproduces once embeddings actually run; (2) add an
+  embedding **crash-guard** (persist a "trying embed" flag before the first inference; if
+  the process died last launch, disable embeddings permanently) so a native segfault can
+  never brick the app again — mirror of `CrashLoopGuard`. Only enable by default once it
+  survives the drill.
+- N-best is unaffected by all of this and stays.
+
+---
+
 ## 2026-07-13 — Offline: remember the last account's role (fix/offline-role-persistence)
 
 Reported from real use: offline, catalog edits refused with "doar administratorii pot
