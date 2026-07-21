@@ -58,7 +58,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Process final speech result
                 if (state is SpeechState.Final) {
-                    processSpokenText(state.text)
+                    processSpokenText(state.text, state.alternatives)
                 }
             }
         }
@@ -99,16 +99,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun stopListening() { speechRepository.stopListening() }
 
-    private fun processSpokenText(spokenText: String) {
+    private fun processSpokenText(spokenText: String, alternatives: List<String> = emptyList()) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isProcessing = true)
 
             try {
-                Log.d(TAG, "Processing spoken text: '$spokenText'")
+                Log.d(TAG, "Processing spoken text: '$spokenText' (+${alternatives.size} alternatives)")
 
                 // Segment the utterance so several products said in one breath
-                // ("lalele pâine albă ouă") are each matched and added.
-                val results = resolveSpokenProductUseCase.resolveMultiple(spokenText)
+                // ("lalele pâine albă ouă") are each matched and added. Recognizer
+                // N-best alternatives sharpen matching on single-product utterances.
+                val results = resolveSpokenProductUseCase.resolveMultiple(spokenText, alternatives)
 
                 val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
                 val session = sessionRepository.getOrCreateActiveSession(
