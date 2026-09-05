@@ -702,7 +702,8 @@ async def complete_session(
             created_at=item.created_at,
             updated_at=item.updated_at,
             product_name=item.product.name,
-            distributor_name=distributor_name
+            distributor_name=distributor_name,
+            item_uuid=item.item_uuid,
         )
 
         items_by_distributor[distributor_name].append(item_dto)
@@ -801,6 +802,7 @@ def get_session_items(
             "version": item.version,
             "created_at": item.created_at,
             "updated_at": item.updated_at,
+            "item_uuid": item.item_uuid,
             "product_name": item.product.name,
             "distributor_name": item.product.distributor.distributor_name
         }
@@ -835,18 +837,27 @@ async def add_session_item(
     """Add item to session (or increment if exists) with real-time notification"""
     # Validate session exists and the caller has access (404 otherwise).
     session = authz.require_session_access(session_id, current_user, db, write=True)
+    key = item_data.idempotency_key
+    # Idempotency: a retried add with the same key returns the stored result
+    # without re-applying, even if the session has since completed. Access is
+    # still checked first; a replay must never bypass authorization.
+    stored = sync_ops.check_idempotent(db, key, session_id)
+    if stored is not None:
+        return stored
+
     if not session.is_active:
         raise HTTPException(
             status_code=400,
             detail="Session is no longer active.",
         )
 
-    key = item_data.idempotency_key
-    # Idempotency: a retried add with the same key returns the stored result
-    # without re-applying (no double-counting).
-    stored = sync_ops.check_idempotent(db, key, session_id)
-    if stored is not None:
-        return stored
+    # Validate before writing: SQLite may accept an orphan without FK checks,
+    # while PostgreSQL would fail at flush with an unhandled IntegrityError.
+    product = db.query(models.Product).filter(
+        models.Product.id == item_data.product_id
+    ).first()
+    if product is None:
+        raise HTTPException(status_code=404, detail="Product not found")
 
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
@@ -876,11 +887,6 @@ async def add_session_item(
 
     db.flush()
     db.refresh(result_item)
-
-    # Get product name for notification / response
-    product = db.query(models.Product).filter(
-        models.Product.id == item_data.product_id
-    ).first()
 
     # Record the op in the per-session op-log.
     sync_ops.record_op(
@@ -932,7 +938,7 @@ async def add_session_item(
         }
     }, session_id, db)
 
-    return result_item
+    return response_dto
 
 
 @app.put("/api/session/items/{item_id}", response_model=schemas.GlobalSessionItemDTO)
@@ -1047,7 +1053,7 @@ async def update_session_item(
         }
     }, session_id, db)
 
-    return item
+    return response_dto
 
 
 @app.delete("/api/session/items/{item_id}")

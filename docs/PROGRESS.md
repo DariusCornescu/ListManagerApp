@@ -5,6 +5,40 @@ Newest entries on top.
 
 ---
 
+## Milestone implementation — M1
+
+- Branch: `codex/reliability-milestones`.
+- Added `docs/IMPLEMENTATION-MILESTONES.md` with explicit regression, full-suite,
+  build, and migration gates for each milestone. Missing tools block commits.
+- M1 session integrity changes passed the full backend suite again immediately
+  before committing: **227 passed**, 176 warnings, 149.01s; diff check clean.
+- Next: M2 quantity/key validation; Android milestones require Java/SDK setup.
+
+---
+
+## 2026-09-05 — Current-code audit and session integrity fixes
+
+- Added `docs/ISSUES-2026-09-05.md`: 12 prioritized findings with evidence,
+  implementation steps, acceptance criteria, and explicit verification limits.
+  Linear comparison is pending project URL/authentication; no tickets were changed.
+- Reject nonexistent products before writing session items or sync records.
+- Return the enriched item DTO consistently on initial writes and retries, and
+  preserve `item_uuid` on snapshot and completion responses.
+- Acknowledge successful add retries after completion, while still authorizing
+  the caller first and rejecting new mutations to inactive sessions.
+- Added 4 regression tests: 3 reproduced failures before the fixes; full backend
+  suite now **227 passed** (SQLite, Python 3.12; 176 existing/dependency warnings).
+  Direct dependency versions and database schema were unchanged. Tests used an
+  isolated in-memory application database and temporary migration databases.
+- Android tests cannot start without Java/JAVA_HOME; Android findings remain
+  implementation proposals. No commit, push, deployment, or Linear mutation.
+
+Next: obtain Linear access, reconcile duplicates, and implement the Android
+outbox/account-isolation work with Android test tooling. Open product questions:
+completed-list editing policy and device-shared vs. account/store-owned inventory.
+
+---
+
 ## 2026-07-14 — Nav drawer wasn't scrollable (fix/drawer-scroll)
 
 Reported: the navigation drawer (Home / Current Session / …) didn't move up and down — static.
