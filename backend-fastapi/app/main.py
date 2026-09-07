@@ -865,6 +865,12 @@ async def add_session_item(
     ).first()
 
     if existing:
+        # Valid increments can overflow the stored total. Reject before changing
+        # the item or reserving the idempotency key.
+        if existing.quantity + item_data.quantity > schemas.SESSION_INT_MAX:
+            raise HTTPException(status_code=422, detail="Quantity exceeds the supported maximum")
+        if existing.version >= schemas.SESSION_INT_MAX:
+            raise HTTPException(status_code=409, detail="Item version limit reached")
         # Item exists - increment quantity
         existing.quantity += item_data.quantity
         existing.version += 1
@@ -986,6 +992,9 @@ async def update_session_item(
                 "your_version": update_data.version
             }
         )
+
+    if item.version >= schemas.SESSION_INT_MAX:
+        raise HTTPException(status_code=409, detail="Item version limit reached")
 
     # Update item
     old_quantity = item.quantity

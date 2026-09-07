@@ -3,6 +3,9 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
+# Match PostgreSQL INTEGER and Android's signed 32-bit quantity/version fields.
+SESSION_INT_MAX = 2**31 - 1
+
 # ===== Distributor Schemas =====
 class DistributorBase(BaseModel):
     distributor_name: str
@@ -59,13 +62,14 @@ class GlobalSessionItemBase(BaseModel):
 
 class GlobalSessionItemCreate(BaseModel):
     product_id: int
-    quantity: int = 1
-    idempotency_key: Optional[str] = None
+    quantity: int = Field(default=1, ge=1, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
 
 class GlobalSessionItemUpdate(BaseModel):
-    quantity: int
-    version: int
-    idempotency_key: Optional[str] = None
+    # Preserve legacy zero PUT behavior; Android removes rows using DELETE.
+    quantity: int = Field(ge=0, le=SESSION_INT_MAX)
+    version: int = Field(ge=0, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
 
 class GlobalSessionItemDTO(GlobalSessionItemBase):
     id: int

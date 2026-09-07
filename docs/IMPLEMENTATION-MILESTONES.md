@@ -49,7 +49,13 @@ unavailable test with a passing test.
 
 - M1: regression baseline was 3 failures/1 pass; the full pre-commit backend
   rerun passed **227 tests**, 176 warnings, in 149.01s. `git diff --check` passed.
-- M2–M7: not complete.
-- Android setup: no Java installation or SDK found in the standard local paths;
-  test/build gates cannot yet run. SDK license acceptance is required for setup.
+- M1 commit: `72d70df`.
+- M2: 13 new regression cases (12 failed/1 passed before the fix). Full backend
+  gate on 2026-09-07: **240 passed**, 195 warnings, 137.87s. No schema change.
+  Invalid requests do not write items or operation history; boundary values,
+  replay after a rejected increment, and legacy zero PUT behavior are covered.
+- M3–M7: not complete.
+- Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
+  ignored `android-native/.tooling/jdk` folder, without system configuration
+  changes. Android SDK license acceptance has been requested before SDK setup.
 - Pending product decisions: completed-list edit policy and inventory ownership.

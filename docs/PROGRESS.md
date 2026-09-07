@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-09-07 — M2: session input and arithmetic limits
+
+- Added 13 regression cases in `tests/test_session_validation.py`; the pre-fix
+  run reproduced 12 failures. Full post-fix gate: **240 passed**, 195 warnings,
+  137.87s, using the isolated SQLite application database.
+- Add quantities must be 1..2147483647; PUT quantities retain zero compatibility
+  and must be 0..2147483647. Versions must be 0..2147483647 and operation keys
+  at most 64 characters. Existing response fields and DB schema are unchanged.
+- Reject increments that overflow the stored total before mutating the item or
+  consuming its idempotency key; reject exhausted version counters with 409.
+- Compatibility note: negative/overflow quantities, zero additions, invalid
+  versions, and overlong keys now return 422. Android already removes items via
+  DELETE and sends positive additions. Zero PUT semantics remain unchanged.
+  No historical rows are removed or rewritten by this change.
+- M1 is committed as `72d70df`; M2 will be committed only after the staged diff
+  check. M3 still needs a working Android test/build environment.
+- Prepared a checksum-verified JDK in ignored local tooling; SDK license
+  acceptance is pending. Nothing has been pushed or deployed.
+
+---
+
 ## Milestone implementation — M1
 
 - Branch: `codex/reliability-milestones`.
