@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — Linear implementation audit
+
+- Compared all 43 ex-dario List-Manager App issues with the current local code.
+  Report: `LINEAR-IMPLEMENTATION-AUDIT-2026-09-11.md`.
+- Six issues have local implementation evidence: EX-5, EX-6, EX-26, EX-27,
+  EX-30 and EX-31. All 43 issues still read Backlog in Linear. No statuses changed.
+- Fresh targeted backend verification: 54 tests passed plus 3 stats tests.
+  Existing last full gates remain 240 backend / 141 Android plus debug build.
+- Project is incomplete: original M0/M1 exit gates, crash grouping/field proof,
+  voice benchmark, remaining sync convergence/device checks, UX/profile and
+  parked roadmap work are not all done. Local reliability M1–M4 are a subset.
+- No device/production rollout or visual user-study claim. Stored branch refs
+  only were inspected. Next: reconcile the report with the original roadmap.
+
+---
+
 ## 2026-09-11 — M4: recover interrupted work and protect pending edits
 
 - Full Android gate: **141 passed**, zero failures/errors/skips; debug build
