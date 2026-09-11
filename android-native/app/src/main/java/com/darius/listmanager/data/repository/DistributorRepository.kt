@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 import java.io.IOException
 
-class DistributorRepository ( private val dao: DistributorDao, private val api: ListManagerApi, private val pendingOperationRepository: PendingOperationRepository, private val context: Context )   
+class DistributorRepository ( private val dao: DistributorDao, private val api: ListManagerApi, private val pendingOperationRepository: PendingOperationRepository, private val context: Context, private val isOnline: () -> Boolean = { NetworkHelper.isNetworkAvailable(context) } )
 { 
     companion object { const val TAG = "DistributorRepository" }
 
@@ -26,7 +26,7 @@ class DistributorRepository ( private val dao: DistributorDao, private val api: 
     suspend fun getAll(): List<DistributorEntity> = withContext(Dispatchers.IO) {
         // withContext(Dispatchers.IO) mută operația pe thread de background
         
-        if (NetworkHelper.isNetworkAvailable(context)) {
+        if (isOnline()) {
             try {
                 Log.d(TAG, "ONLINE: Fetching distributors from server...")
                 val response = api.getDistributors()
@@ -35,7 +35,6 @@ class DistributorRepository ( private val dao: DistributorDao, private val api: 
                     val distributors = response.body()!!.map { it.toEntity() }
                     
                     // Salvează în cache local pentru offline
-                    dao.deleteAll()
                     dao.insertAll(distributors)
                     
                     Log.d(TAG, "Fetched ${distributors.size} distributors from server")
