@@ -7,6 +7,14 @@ Newest entries on top.
 
 ## 2026-09-11 — M0 trunk integration candidate
 
+- Development now includes both admin branch histories at 7a5edc7; local tag
+  m0-candidate-2026-09-11 identifies the device candidate. Fresh preview build
+  and all 141 preview unit tests pass (zero failures/errors).
+- User connected the S25, but ADB and Windows device detection still show no
+  Samsung/Android device. Preview APK is ready; installation and real-device
+  acceptance are pending. USB localhost endpoint is configured only locally.
+- GitHub publication is blocked by missing Git credentials; the device login
+  attempt returned no code and was stopped. No remote cleanup or tag push occurred.
 - Reapplied admin CRUD commits 733b807, 45c46cc, 4f0a1d6 onto the reliability
   branch; resolved the progress-log conflict by retaining both histories.
 - Full backend suite: 241 passed (197 warnings, 313.61s). Android test/build
@@ -14,7 +22,7 @@ Newest entries on top.
 - Verified local Git history backup before branch cleanup. N-best and drawer
   fixes already belong to development; reliability M1–M4 stay included.
 - Device gate remains pending: user identified Samsung S25, Android version
-  unknown; no USB device connected. Backend environment choice is pending.
+  unknown; USB debugging connection is not detected. Local USB testing is provisional.
   See `M0-ONE-TRUNK.md` for the exact acceptance script. M0 is not yet done.
 
 ---

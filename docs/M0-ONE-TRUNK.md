@@ -13,6 +13,17 @@ M0 is not complete until the device acceptance section is filled with observed r
 - Backend full suite: 241 passed, 197 warnings, 313.61s.
 - Android testDebugUnitTest + assembleDebug: successful; existing 141-test result
   reused by Gradle because Android inputs were unchanged.
+- Fresh preview gate: testPreviewUnitTest + assemblePreview passed (141 tests,
+  zero failures/errors; 46 tasks executed, 1m 55s).
+- Local development is now 7a5edc7. Both admin branch histories are integrated;
+  ancestry-only merges introduced no additional code changes.
+- Local tag: `m0-candidate-2026-09-11` at 7a5edc7. Device acceptance is pending.
+- Preview APK: `android-native/app/build/outputs/apk/preview/app-preview.apk`;
+  SHA-256 `B70ED58A75D6149C76B8094246720294E220B7057D3EAF19AC40EBD716D7EBA9`.
+  Package `com.darius.listmanager.v2.preview`, label ListManager NOU. The ignored
+  local ApiConfig uses `http://127.0.0.1:8000/`; USB testing requires a local
+  backend and `adb reverse tcp:8000 tcp:8000`. Neither installation nor phone
+  smoke testing has happened.
 
 ## Branch cleanup safety
 
@@ -22,11 +33,19 @@ verify every candidate is integrated, fast-forward development, and publish it.
 Use expected-tip leases for deletion so another contributor's new commits cannot
 be removed. Do not delete development. Keep at most one local WIP branch.
 
+Publishing is blocked by missing GitHub credentials. Remote development remains
+3f61f1c; no remote branches were deleted and the candidate tag is local only.
+The device-authentication attempt produced no code and was stopped. Local
+branches are development plus one reliability branch.
+
 ## Device acceptance — EX-9 (pending)
 
 Known phone: Samsung S25. Android version must be read from the connected device.
-No authorized USB device was available at the initial check. Backend destination
-is awaiting the user's choice. Do not install an emulator-configured APK as a
+After the user reported connecting the phone, ADB still listed no devices and
+Windows reported no Samsung/Android/ADB device. USB detection and debugging
+authorization need to be established before reading the Android version.
+A local USB backend is the provisional test environment; it has not been started.
+Do not install an emulator-configured APK as a
 working phone build; 10.0.2.2 is not the PC address on a physical phone.
 
 Run on each supported real phone and record device model, Android version,
