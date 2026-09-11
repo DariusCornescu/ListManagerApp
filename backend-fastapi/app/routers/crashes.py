@@ -1,7 +1,7 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, Request
-from sqlalchemy import func
+from sqlalchemy import String, cast, func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -60,17 +60,28 @@ def get_crash_groups(
 
     group_limit = min(max(limit, 1), 100)
     report_limit = min(max(instance_limit, 1), 100)
+    report_count = func.count(models.CrashReport.id)
+    affected_identity = func.coalesce(
+        models.CrashReport.username,
+        models.CrashReport.device,
+        cast(models.CrashReport.id, String),
+    )
+    affected_users = func.count(func.distinct(affected_identity))
+    triage_score = report_count * affected_users
     aggregate_rows = (
         db.query(
             models.CrashReport.signature,
-            func.count(models.CrashReport.id).label("count"),
+            report_count.label("count"),
+            affected_users.label("affected_users"),
+            triage_score.label("triage_score"),
             func.min(models.CrashReport.created_at).label("first_seen"),
             func.max(models.CrashReport.created_at).label("last_seen"),
         )
         .filter(models.CrashReport.signature.isnot(None))
         .group_by(models.CrashReport.signature)
         .order_by(
-            func.count(models.CrashReport.id).desc(),
+            triage_score.desc(),
+            report_count.desc(),
             func.max(models.CrashReport.created_at).desc(),
         )
         .limit(group_limit)
@@ -102,6 +113,8 @@ def get_crash_groups(
         schemas.CrashGroupDTO(
             signature=row.signature,
             count=row.count,
+            affected_users=row.affected_users,
+            triage_score=row.triage_score,
             first_seen=row.first_seen,
             last_seen=row.last_seen,
             app_versions=sorted(versions_by_signature[row.signature]),

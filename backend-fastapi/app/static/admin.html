@@ -505,7 +505,8 @@
         det.style.marginBottom = "8px";
         const sum = document.createElement("summary");
         const firstLine = (group.reports[0]?.stacktrace || "").split("\n")[0];
-        sum.textContent = `${group.count}× · ${firstLine.slice(0, 90)} · ${group.signature.slice(0, 10)}`;
+        sum.textContent = `impact ${group.triage_score} · ${group.count}× · ` +
+          `${group.affected_users} utilizatori · ${firstLine.slice(0, 80)} · ${group.signature.slice(0, 10)}`;
         det.appendChild(sum);
         const meta = document.createElement("p");
         meta.className = "muted";

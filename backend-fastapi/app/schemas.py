@@ -144,6 +144,8 @@ class CrashReportDTO(CrashReportCreate):
 class CrashGroupDTO(BaseModel):
     signature: str
     count: int
+    affected_users: int
+    triage_score: int
     first_seen: datetime
     last_seen: datetime
     app_versions: list[str]

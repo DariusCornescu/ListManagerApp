@@ -140,7 +140,31 @@ def test_grouped_crashes_return_aggregate_and_instances(client, admin_headers):
     assert [group["count"] for group in groups] == [2, 1]
     repeated = groups[0]
     assert repeated["signature"] == repeated["reports"][0]["signature"]
+    assert repeated["affected_users"] == 1
+    assert repeated["triage_score"] == 2
     assert repeated["app_versions"] == ["2.0", "2.1"]
     assert repeated["devices"] == ["Samsung S25"]
     assert len(repeated["reports"]) == 2
     assert repeated["first_seen"] <= repeated["last_seen"]
+
+
+def test_grouped_crashes_rank_by_count_times_affected_users(client, admin_headers):
+    frequent = "java.lang.RuntimeException: frequent\n\tat app.Frequent.run(F.kt:1)"
+    widespread = "java.lang.IllegalStateException: widespread\n\tat app.Wide.run(W.kt:1)"
+    for _ in range(3):
+        client.post(
+            "/api/crashes",
+            json={"stacktrace": frequent, "username": "same-user"},
+        )
+    for username in ("user-a", "user-b"):
+        client.post(
+            "/api/crashes",
+            json={"stacktrace": widespread, "username": username},
+        )
+
+    groups = client.get("/api/admin/crashes/groups", headers=admin_headers).json()
+
+    assert [(group["count"], group["affected_users"], group["triage_score"]) for group in groups] == [
+        (2, 2, 4),
+        (3, 1, 3),
+    ]
