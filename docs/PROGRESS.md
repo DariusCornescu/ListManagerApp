@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 - T1 crash instrumentation and recovery gate
+
+- Added stable server-generated crash signatures from exception type and the
+  top eight normalized Android frames. Alembic revision `c4d5e6f7a801` adds the
+  indexed nullable field and backfills old reports with the same algorithm.
+- Added the admin-only `/api/admin/crashes/groups` endpoint and grouped admin
+  view. Groups expose count, first/last seen, affected versions/devices, recent
+  instances, affected-user estimate, and `count × affected users` impact score.
+- Added backend coverage for signature stability/separation, authorization,
+  grouping, impact ordering, migration drift/round-trip/backfill, admin page,
+  and the additive route contract. Final backend gate: 251 passed, zero
+  failures/errors, 200 warnings, 90.78 seconds; admin JavaScript parses.
+- Added a Robolectric forced-crash test that drives three rapid startups and
+  crashes through the real `CrashLoopGuard`, then proves the Room database is
+  deleted and the streak resets. Final Android gate: 152 tests, zero failures
+  or errors. Native Room tests required an unsandboxed runner because Windows
+  blocked Robolectric's native DLL only inside the sandbox.
+- Commits: `6b3125b` crash grouping and UI, `91103d4` crash-loop recovery test,
+  and `a65b9ab` impact ranking. Linear EX-12, EX-13, EX-14, and EX-17 are Done.
+- No crash reports exist in either local backend database, either S25 app's
+  pending directory, or the S25 crash buffer. Production was not inspected
+  because this checkout has no admin credentials. See `T1-CRASH-TRIAGE.md`.
+  EX-15, EX-16, and the required seven-day real-shop observation remain open.
+
+---
+
 ## 2026-09-12 - Linear M1: Cut the seams
 
 - Split the former 1,464-line FastAPI module into domain routers for auth,
