@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 - M0 catalog regression correction
+
+- Real S25 dictation correctly transcribed the milk request but returned Unknown.
+  Products fetched successfully, then Room rejected them because distributor
+  parents were absent on first use.
+- Product refresh now fetches both catalog halves and upserts parents before
+  products in one transaction. Distributor refresh no longer clears parents.
+- Four native Room regressions failed before the product fix. Full preview
+  suite passed afterwards: 145 tests, zero failures/errors, APK build successful.
+  Tests cover first-run search, preserved session/local rows, parent-fetch failure,
+  and transaction rollback for invalid parent references.
+- Commit bf9736b; local tag m0-candidate-2026-09-11.2. APK SHA-256:
+  CD48CAE8C5833423B2E628B26281B09930E26E87F69774B91C168CFE6B3677A2.
+- No schema/API changes. Server-removed rows stay cached until explicit deletion
+  or reconciliation. Drawer bottom entries are reachable at S25 display settings.
+- Device voice retest, completion/PDF, and native 16 KB warning remain open.
+
+---
+
 ## 2026-09-11 — M0 first real-device run
 
 - Samsung S25 SM-S931B connected and authorized, Android 16 / API 36.

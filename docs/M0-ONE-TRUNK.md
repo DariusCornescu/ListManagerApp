@@ -85,3 +85,12 @@ Evidence table (do not pre-fill Pass):
 | Samsung S25 / Android 16 (API 36) | m0-candidate-2026-09-11 / USB local | Login passed; restart pending | Not run | Awaiting real dictation | Not run | Open: 16 KB warning and remaining flow |
 
 M0's tagged-device gate cannot be replaced by unit tests or merely producing an APK.
+
+## Corrective candidate
+
+Real dictation transcribed correctly but returned Unknown: Room rejected products
+because their distributor parents had not been cached. Fixed in bf9736b, local
+tag m0-candidate-2026-09-11.2. Four new native Room tests failed before the fix;
+all 145 preview tests pass afterwards. APK SHA-256:
+CD48CAE8C5833423B2E628B26281B09930E26E87F69774B91C168CFE6B3677A2.
+Device retest remains pending; 16 KB warning is still unresolved.
