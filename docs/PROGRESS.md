@@ -5,6 +5,28 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 - Linear M1: Cut the seams
+
+- Split the former 1,464-line FastAPI module into domain routers for auth,
+  catalog, sessions, admin, crashes, presence, speech, and stats; the existing
+  teams router remains part of the composition. `app/main.py` is now 159 lines
+  and contains app construction, middleware/limiter setup, startup work, router
+  registration, and the WebSocket endpoint.
+- Added an exact public-route contract covering 47 HTTP method/path pairs and
+  `/ws`. Added an architecture guard requiring the domain router modules and a
+  sub-200-line composition root with no HTTP route decorators.
+- Added `docs/TRACK-OWNERSHIP.md` for EX-11. It assigns exclusive paths to T1
+  crash work, T2 voice matching, T3 sync, and T4 experience work, and records
+  the shared-file, append-only schema/entity, Alembic-slot, worktree,
+  `ApiConfig.kt`, and path-compatibility rules.
+- Backend gates passed after extraction and again at the final M1 boundary:
+  245 tests, zero failures/errors, 196 warnings, 96.04 seconds. Route extraction
+  is `7e33f3b`; route contract is `1537ebd`; architecture guard is `b63c9a2`.
+- Linear M1 implementation is complete locally. M0 remains open on its separate
+  real-device, Android 16 native-library, and remote-publication gates.
+
+---
+
 ## 2026-09-12 - M0 spoken quantity and segmentation corrections
 
 - The corrected catalog build recognized "două lapte Zuzu", but segmented it
