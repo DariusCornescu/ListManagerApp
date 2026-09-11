@@ -5,6 +5,25 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 - T2 benchmark foundation
+
+- Added a versioned JSON voice corpus with product fixtures and labelled cases
+  carrying utterance, expected product ID, locale, noise condition, and privacy
+  mode. Strict validation rejects schema drift and invalid references.
+- Added a reusable ProductRanker evaluator for top-1, top-3, and MRR plus a
+  17-candidate one-at-a-time sweep covering all eight `ScoringWeights` fields.
+  Sweep results rank by top-1, MRR, then top-3.
+- The five synthetic smoke cases report top-1 1.0000, top-3 1.0000, MRR 1.0000.
+  These values validate the harness and are explicitly not a representative
+  baseline or a production tuning signal.
+- Android full gates passed before each commit: 154 tests for `0dae865` (corpus,
+  loader, metrics) and 156 tests for `c7fc250` (weight sweep), with zero failures
+  or errors. Linear EX-18, EX-20, and EX-22 are Done.
+- EX-19 remains blocked on the corpus privacy policy. EX-21 and EX-23 depend on
+  a meaningful real corpus and remain open. See `VOICE-BENCHMARK.md`.
+
+---
+
 ## 2026-09-12 - T1 crash instrumentation and recovery gate
 
 - Added stable server-generated crash signatures from exception type and the
