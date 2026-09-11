@@ -32,4 +32,9 @@ object SpokenQuantity {
             ?: return 1
         return numeric.takeIf { it in 1..Int.MAX_VALUE }?.toInt() ?: 1
     }
+
+    fun isQuantityToken(token: String): Boolean {
+        val normalized = TextNorm.normalize(token)
+        return normalized in wordValues || normalized.toLongOrNull()?.let { it > 0 } == true
+    }
 }

@@ -28,8 +28,19 @@ object PhraseSegmenter {
 
         val segments = mutableListOf<String>()
         val leftover = mutableListOf<String>()
+        var quantityPrefix: String? = null
         var i = 0
         while (i < tokens.size) {
+            if (quantityPrefix == null && SpokenQuantity.isQuantityToken(tokens[i])) {
+                if (leftover.isNotEmpty()) {
+                    segments.add(leftover.joinToString(" "))
+                    leftover.clear()
+                }
+                quantityPrefix = tokens[i]
+                i++
+                continue
+            }
+
             var bestLen = 0
             var bestScore = Double.NEGATIVE_INFINITY
             val maxLen = minOf(maxWindow, tokens.size - i)
@@ -46,13 +57,20 @@ object PhraseSegmenter {
                     segments.add(leftover.joinToString(" "))
                     leftover.clear()
                 }
-                segments.add(tokens.subList(i, i + bestLen).joinToString(" "))
+                val matched = tokens.subList(i, i + bestLen).joinToString(" ")
+                segments.add(listOfNotNull(quantityPrefix, matched).joinToString(" "))
+                quantityPrefix = null
                 i += bestLen
             } else {
+                quantityPrefix?.let {
+                    leftover.add(it)
+                    quantityPrefix = null
+                }
                 leftover.add(tokens[i])
                 i++
             }
         }
+        quantityPrefix?.let { leftover.add(it) }
         if (leftover.isNotEmpty()) segments.add(leftover.joinToString(" "))
         return segments
     }

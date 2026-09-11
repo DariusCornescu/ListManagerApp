@@ -38,6 +38,26 @@ class PhraseSegmenterTest {
     }
 
     @Test
+    fun leadingQuantityStaysWithTheFollowingProductName() {
+        val out = PhraseSegmenter.segment(
+            "două lapte Zuzu",
+            threshold = 0.6,
+            scoreOf = scorer("lapte", "lapte Zuzu", "Zuzu")
+        )
+        assertEquals(listOf("două lapte Zuzu"), out)
+    }
+
+    @Test
+    fun eachLeadingQuantityStaysWithItsProduct() {
+        val out = PhraseSegmenter.segment(
+            "două lapte trei ouă",
+            threshold = 0.6,
+            scoreOf = scorer("lapte", "ouă")
+        )
+        assertEquals(listOf("două lapte", "trei ouă"), out)
+    }
+
+    @Test
     fun unmatchedWordsBetweenProductsGroupedAsLeftover() {
         val out = PhraseSegmenter.segment(
             "lapte xyz abc",
