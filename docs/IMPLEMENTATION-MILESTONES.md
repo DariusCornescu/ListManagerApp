@@ -34,8 +34,11 @@ From `android-native`, with Java and the licensed Android SDK configured:
 .\gradlew.bat testDebugUnitTest assembleDebug
 ```
 
-Room migration/transaction instrumentation must also pass for milestones that
-change Room schema or persistence:
+M3 keeps Room schema version 7 unchanged. Its persistence gate uses generated
+Room DAOs and native SQLite under Robolectric (file reopen and transaction
+rollback), in the local Android suite. This verifies storage behavior without
+a device; it does not claim device instrumentation coverage. Milestones that
+change Room schema still require migration instrumentation:
 
 ```powershell
 .\gradlew.bat connectedDebugAndroidTest
@@ -54,8 +57,13 @@ unavailable test with a passing test.
   gate on 2026-09-07: **240 passed**, 195 warnings, 137.87s. No schema change.
   Invalid requests do not write items or operation history; boundary values,
   replay after a rejected increment, and legacy zero PUT behavior are covered.
-- M3–M7: not complete.
+- M2 commit: `e54800b`.
+- M3: **120 tests passed**, zero failures/skips; `testDebugUnitTest assembleDebug`
+  succeeded on 2026-09-11 in 32s. Includes 12 new regression/persistence tests.
+  No device instrumentation run. `git diff --check` passed.
+- M4–M7: not complete.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
-  changes. Android SDK license acceptance has been requested before SDK setup.
+  changes. The user accepted the Android SDK license; platform 36, build tools
+  35.0.0 and platform tools are installed in ignored local tooling.
 - Pending product decisions: completed-list edit policy and inventory ownership.

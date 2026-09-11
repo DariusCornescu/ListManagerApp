@@ -14,8 +14,8 @@ data class UserDTO( val id: Long, val username: String, val email: String, val r
 data class StatsDTO( val distributors_count: Int, val products_count: Int, val sessions_count: Int, val active_sessions_count: Int, val total_session_items: Int, val active_session: ActiveSessionInfo? )
 
 data class CreateSessionRequest( val name: String, val team_id: Long? = null )
-data class AddItemRequest( val product_id: Long, val quantity: Int )
-data class UpdateItemRequest( val quantity: Int, val version: Int )
+data class AddItemRequest( val product_id: Long, val quantity: Int, val idempotency_key: String? = null )
+data class UpdateItemRequest( val quantity: Int, val version: Int, val idempotency_key: String? = null )
 data class CompleteSessionResponse( val session: GlobalSessionDTO, val items_by_distributor: Map<String, List<GlobalSessionItemDTO>>, val distributor_count: Int, val total_items: Int )
 
 data class ActiveSessionInfo( val id: Long, val name: String, val items_count: Int, val created_at: String )

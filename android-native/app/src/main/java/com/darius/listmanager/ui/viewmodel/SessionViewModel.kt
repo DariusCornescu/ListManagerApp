@@ -35,7 +35,10 @@ data class SessionUiState(
 class SessionViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepo = PendingOperationRepository(database.pendingOperationDao())
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepo )
+    private val sessionRepository = SessionRepository(
+        database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepo,
+        transaction = com.darius.listmanager.data.repository.SessionTransaction.room(database),
+    )
     private val pdfRepository = PdfRepository(application)
     private val generatePdfsUseCase = GeneratePdfsUseCase(sessionRepository, pdfRepository)
     private val workspaceManager = WorkspaceManager.getInstance(application)

@@ -59,9 +59,11 @@ sealed class OperationData {
     
 
     @Serializable  
-    data class AddSessionItem( val sessionId: Long, val productId: Long, val quantity: Int ) : OperationData()
+    data class AddSessionItem( val sessionId: Long, val productId: Long, val quantity: Int,
+        val idempotencyKey: String? = null ) : OperationData()
     @Serializable 
-    data class UpdateSessionItem( val itemId: Long, val quantity: Int, val version: Int ) : OperationData()
+    data class UpdateSessionItem( val itemId: Long, val quantity: Int, val version: Int,
+        val idempotencyKey: String? = null ) : OperationData()
     @Serializable 
     data class DeleteSessionItem( val itemId: Long ) : OperationData()  
     @Serializable  

@@ -31,7 +31,7 @@ class PendingOperationRepository(private val dao: PendingOperationDao) {
         userId: Long? = null 
         ): Long {
         val json = Json { encodeDefaults = true }
-        val dataJson = json.encodeToString(operationData)
+        val dataJson = json.encodeToString(operationData.withOperationIdentity())
 
         val operation = PendingOperationEntity(
             operationType = operationType.name,
@@ -44,6 +44,16 @@ class PendingOperationRepository(private val dao: PendingOperationDao) {
         )
 
         return dao.insert(operation)
+    }
+
+    /** Caller holds SessionWriteCoordinator.mutex; upgrade old JSON before sending. */
+    suspend fun prepareForReplay(operation: PendingOperationEntity): PendingOperationEntity {
+        val current = dao.getById(operation.id) ?: error("Operation no longer exists")
+        val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val data = json.decodeFromString<OperationData>(current.operationData)
+        val identified = data.withOperationIdentity()
+        if (identified == data) return current
+        return current.copy(operationData = json.encodeToString(identified)).also { dao.update(it) }
     }
 
     suspend fun markAsInProgress(id: Long) = dao.markAsInProgress(id)

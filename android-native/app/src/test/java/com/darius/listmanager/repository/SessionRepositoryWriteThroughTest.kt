@@ -11,6 +11,7 @@ import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.model.OperationType
 import com.darius.listmanager.data.repository.PendingOperationRepository
 import com.darius.listmanager.data.repository.SessionRepository
+import com.darius.listmanager.data.repository.SessionTransaction
 import com.darius.listmanager.network.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.runBlocking
@@ -25,6 +26,17 @@ import java.io.IOException
  * Hand-rolled fakes; no Android framework (paths under test avoid Log).
  */
 class SessionRepositoryWriteThroughTest {
+
+    @Test fun requestSerialization_preservesBackendIdempotencyField() {
+        val gson = com.google.gson.Gson()
+        val add = gson.toJsonTree(AddItemRequest(7, 3, "add-key")).asJsonObject
+        val update = gson.toJsonTree(UpdateItemRequest(4, 2, "update-key")).asJsonObject
+        assertEquals("add-key", add.get("idempotency_key").asString)
+        assertEquals("update-key", update.get("idempotency_key").asString)
+        assertEquals(7, add.get("product_id").asInt)
+        assertEquals(2, update.get("version").asInt)
+        assertFalse(add.has("idempotencyKey"))
+    }
 
     // ---------- Fakes ----------
 
@@ -96,24 +108,25 @@ class SessionRepositoryWriteThroughTest {
         val inserted = mutableListOf<PendingOperationEntity>()
 
         override suspend fun insert(operation: PendingOperationEntity): Long {
-            inserted.add(operation)
-            return inserted.size.toLong()
+            val id = (inserted.maxOfOrNull { it.id } ?: 0L) + 1
+            inserted.add(operation.copy(id = id))
+            return id
         }
 
         override suspend fun getAllPending(): List<PendingOperationEntity> = throw NotImplementedError()
         override fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> = throw NotImplementedError()
         override suspend fun getAllFailed(): List<PendingOperationEntity> = throw NotImplementedError()
-        override suspend fun getById(id: Long): PendingOperationEntity? = throw NotImplementedError()
+        override suspend fun getById(id: Long): PendingOperationEntity? = inserted.firstOrNull { it.id == id }
         override suspend fun getReadyForSync(currentTime: Long): List<PendingOperationEntity> = throw NotImplementedError()
         override fun getPendingCountFlow(): Flow<Int> = throw NotImplementedError()
         override fun getFailedCountFlow(): Flow<Int> = throw NotImplementedError()
         override suspend fun insertAll(operations: List<PendingOperationEntity>) = throw NotImplementedError()
-        override suspend fun update(operation: PendingOperationEntity) = throw NotImplementedError()
+        override suspend fun update(operation: PendingOperationEntity) { inserted[inserted.indexOfFirst { it.id == operation.id }] = operation }
         override suspend fun markAsFailed(id: Long, status: String, error: String?, updatedAt: Long, scheduledFor: Long) = throw NotImplementedError()
         override suspend fun markAsInProgress(id: Long, updatedAt: Long) = throw NotImplementedError()
         override suspend fun markAsCompleted(id: Long, updatedAt: Long) = throw NotImplementedError()
         override suspend fun delete(operation: PendingOperationEntity) = throw NotImplementedError()
-        override suspend fun deleteById(id: Long) = throw NotImplementedError()
+        override suspend fun deleteById(id: Long) { inserted.removeAll { it.id == id } }
         override suspend fun deleteAllCompleted() = throw NotImplementedError()
         override suspend fun deleteOldCompleted(olderThan: Long) = throw NotImplementedError()
         override suspend fun deleteAll() = throw NotImplementedError()
@@ -213,6 +226,7 @@ class SessionRepositoryWriteThroughTest {
         sessionItemDao = itemDao,
         api = api,
         pendingOps = PendingOperationRepository(pendingDao),
+        transaction = SessionTransaction { it() },
     )
 
     private fun dto(id: Long, sessionId: Long, productId: Long, quantity: Int, version: Int) =
@@ -229,6 +243,99 @@ class SessionRepositoryWriteThroughTest {
     // ---------- Tests ----------
 
     @Test
+    fun `add persists its operation before the first network request`() = runBlocking {
+        api.addResult = {
+            assertEquals("The operation must survive a crash during the request", 1, pendingDao.inserted.size)
+            Response.success(dto(id = 500, sessionId = 10, productId = 7, quantity = 1, version = 1))
+        }
+        repo.addOrIncrementItem(sessionId = 10, productId = 7)
+    }
+
+    @Test
+    fun `cancellation during the first add retains the durable operation`() = runBlocking {
+        api.addResult = { throw kotlinx.coroutines.CancellationException("worker stopped") }
+        try {
+            repo.addOrIncrementItem(sessionId = 10, productId = 7)
+            fail("Cancellation must propagate")
+        } catch (_: kotlinx.coroutines.CancellationException) {
+            assertEquals(1, pendingDao.inserted.size)
+            assertEquals(OperationType.ADD_SESSION_ITEM.name, pendingDao.inserted.single().operationType)
+        }
+    }
+
+    @Test
+    fun `lost response is replayed with the original identity and quantity applies once`() = runBlocking {
+        val seen = mutableSetOf<String>()
+        var serverQuantity = 0
+        var loseResponse = true
+        api.addResult = {
+            val request = api.addCalls.last().second
+            val key = requireNotNull(request.idempotency_key)
+            if (seen.add(key)) serverQuantity += request.quantity
+            if (loseResponse) {
+                loseResponse = false
+                throw IOException("response lost after commit")
+            }
+            Response.success(dto(500, 10, 7, serverQuantity, 1))
+        }
+        repo.addOrIncrementItem(10, 7, 3)
+        val restoredRepository = PendingOperationRepository(pendingDao)
+        val restored = restoredRepository.prepareForReplay(pendingDao.inserted.single())
+        val operation = decodeOp(restored) as OperationData.AddSessionItem
+        assertEquals(api.addCalls.single().second.idempotency_key, operation.idempotencyKey)
+        assertTrue(SessionItemOperationSender(api).send(operation).isSuccessful)
+        assertEquals(3, serverQuantity)
+        assertEquals(api.addCalls[0].second.idempotency_key, api.addCalls[1].second.idempotency_key)
+    }
+
+    @Test
+    fun `legacy queued add receives a durable key before its first replay`() = runBlocking {
+        val legacy = OperationData.AddSessionItem(10, 7, 3)
+        val legacyJson = kotlinx.serialization.json.Json.encodeToString(OperationData.serializer(), legacy)
+        pendingDao.insert(PendingOperationEntity(
+            operationType = OperationType.ADD_SESSION_ITEM.name, resourceType = "SESSION_ITEM",
+            resourceId = null, operationData = legacyJson, status = "PENDING",
+        ))
+        val first = PendingOperationRepository(pendingDao).prepareForReplay(pendingDao.inserted.single())
+        val second = PendingOperationRepository(pendingDao).prepareForReplay(pendingDao.inserted.single())
+        val key = (decodeOp(first) as OperationData.AddSessionItem).idempotencyKey
+        assertNotNull(key)
+        assertEquals(key, (decodeOp(second) as OperationData.AddSessionItem).idempotencyKey)
+        assertEquals(first.operationData, pendingDao.inserted.single().operationData)
+    }
+
+    @Test
+    fun `two distinct adds receive different identities`() = runBlocking {
+        api.addResult = { throw IOException("offline") }
+        repo.addOrIncrementItem(10, 7)
+        repo.addOrIncrementItem(10, 7)
+        val keys = pendingDao.inserted.map { (decodeOp(it) as OperationData.AddSessionItem).idempotencyKey }
+        assertTrue(keys.all { !it.isNullOrBlank() })
+        assertEquals(2, keys.toSet().size)
+    }
+
+    @Test
+    fun `server error retains the queued local edit`() = runBlocking {
+        api.addResult = { Response.error(503, okhttp3.ResponseBody.create(null, "unavailable")) }
+        repo.addOrIncrementItem(10, 7, 3)
+        assertEquals(3, itemDao.rows.single().quantity)
+        assertEquals(1, pendingDao.inserted.size)
+    }
+
+    @Test
+    fun `update persists the same identity that its request sends`() = runBlocking {
+        itemDao.rows.add(SessionItemEntity(id = 300, sessionId = 10, productId = 7, quantity = 2, version = 4))
+        api.updateResult = {
+            val stored = decodeOp(pendingDao.inserted.single()) as OperationData.UpdateSessionItem
+            assertNotNull(stored.idempotencyKey)
+            assertEquals(stored.idempotencyKey, api.updateCalls.last().second.idempotency_key)
+            throw IOException("lost acknowledgement")
+        }
+        repo.setItemQuantity(10, 7, 5)
+        assertEquals(1, pendingDao.inserted.size)
+    }
+
+    @Test
     fun `online add upserts server row and rekeys local row to server id`() = runBlocking {
         api.addResult = { Response.success(dto(id = 500, sessionId = 10, productId = 7, quantity = 1, version = 1)) }
 
@@ -236,7 +343,7 @@ class SessionRepositoryWriteThroughTest {
 
         assertEquals(1, api.addCalls.size)
         assertEquals(10L, api.addCalls[0].first)
-        assertEquals(AddItemRequest(product_id = 7, quantity = 1), api.addCalls[0].second)
+        assertEquals(AddItemRequest(product_id = 7, quantity = 1), api.addCalls[0].second.copy(idempotency_key = null))
         // Exactly one local row, re-keyed to the server id/version.
         assertEquals(1, itemDao.rows.size)
         val row = itemDao.rows[0]
@@ -365,7 +472,7 @@ class SessionRepositoryWriteThroughTest {
 
         assertEquals(1, api.updateCalls.size)
         assertEquals(300L, api.updateCalls[0].first)
-        assertEquals(UpdateItemRequest(quantity = 5, version = 4), api.updateCalls[0].second)
+        assertEquals(UpdateItemRequest(quantity = 5, version = 4), api.updateCalls[0].second.copy(idempotency_key = null))
         // Server response mirrored back into Room (new version).
         assertEquals(1, itemDao.rows.size)
         assertEquals(5, itemDao.rows[0].quantity)

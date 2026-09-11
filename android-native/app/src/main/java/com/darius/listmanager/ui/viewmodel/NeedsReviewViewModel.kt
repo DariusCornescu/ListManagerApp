@@ -34,7 +34,10 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
     private val productRepository = ProductRepository(
         database.productDao(), pendingOperationRepo, application.applicationContext, RetrofitClient.api
     )
-    private val sessionRepository = SessionRepository(database.sessionDao(), database.sessionItemDao())
+    private val sessionRepository = SessionRepository(
+        database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepo,
+        transaction = com.darius.listmanager.data.repository.SessionTransaction.room(database),
+    )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)

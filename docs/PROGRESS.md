@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — M3: durable Android item operation identity
+
+- Adds and quantity updates now save a stable UUID and the local edit in one
+  Room transaction before sending. Initial sends and background replay use
+  the same request builder and key; legacy queued JSON gains a persisted key
+  before replay. This cannot deduplicate legacy requests already sent without keys.
+- Server acknowledgements and the local server mirror commit together. Network
+  errors, cancellation, empty responses and HTTP failures retain the initial
+  operation. Repository instances and replay share a process-level write lock.
+- Added 12 tests covering serialization, persistence before send, cancellation,
+  distinct identities, lost responses, legacy JSON, HTTP failure, real Room
+  rollback and database close/reopen. Initial regressions reproduced two failures.
+- Added test-only Robolectric 4.14.1, pinned for native SQLite/Room verification.
+  Tests target Android 35: the Android 34 compatibility runtime failed native
+  SQLite linkage on this Windows host. No production dependency/schema change.
+- Final gate: **120 tests passed**, debug build passed (32s), diff check passed.
+  No device instrumentation was run; the M3 persistence
+  gate explicitly uses actual generated Room DAOs and native SQLite locally.
+- SDK license accepted by user; SDK/JDK and local API configuration are ignored.
+  M2 was committed as `e54800b`. No push or deployment.
+- Next: M4 worker recovery, ordering/conflicts and snapshot reconciliation.
+  Interrupted IN_PROGRESS operations and destructive refresh remain unresolved;
+  M3 establishes durable identity, not complete offline synchronization.
+- Open product questions remain: completed-list editing and inventory ownership.
+  Linear comparison still needs access to the project.
+
+---
+
 ## 2026-09-07 — M2: session input and arithmetic limits
 
 - Added 13 regression cases in `tests/test_session_validation.py`; the pre-fix

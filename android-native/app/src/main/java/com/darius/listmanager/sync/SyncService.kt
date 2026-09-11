@@ -13,6 +13,9 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.*
+import com.darius.listmanager.data.repository.SessionWriteCoordinator
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -112,6 +115,14 @@ class SyncService(private val context: Context) {
     // ===== PENDING OPERATIONS SYNC (Upload to Server) =====
 
     suspend fun syncPendingOperations(): SyncResult = withContext(Dispatchers.IO) {
+        SessionWriteCoordinator.mutex.withLock {
+            try { syncPendingOperationsLocked() } finally {
+                _syncStatus.value = _syncStatus.value.copy(isSyncing = false, currentOperation = null)
+            }
+        }
+    }
+
+    private suspend fun syncPendingOperationsLocked(): SyncResult {
         Log.d(TAG, "syncPendingOperations() started")
         try {
             _syncStatus.value = _syncStatus.value.copy(isSyncing = true)
@@ -129,7 +140,7 @@ class SyncService(private val context: Context) {
                 Log.d(TAG, "No pending operations found - nothing to sync")
                 _syncStatus.value = _syncStatus.value.copy( isSyncing = false, lastSyncTime = System.currentTimeMillis() )
                 Log.d(TAG, "════════════════════════════════════════════════")
-                return@withContext SyncResult.Success()
+                return SyncResult.Success()
             }
 
             var successCount = 0
@@ -176,24 +187,29 @@ class SyncService(private val context: Context) {
             Log.d(TAG, "Sync completed: $successCount success, $failCount failed")
             Log.d(TAG, "════════════════════════════════════════════════")
 
-            return@withContext if (failCount == 0) {
+            return if (failCount == 0) {
                 SyncResult.Success()
             } else {
                 SyncResult.Error("$failCount operations failed", retryable = true)
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Sync exception: ${e.javaClass.simpleName}", e)
             Log.e(TAG, "Message: ${e.message}")
             _syncStatus.value = _syncStatus.value.copy(isSyncing = false, lastError = e.message, currentOperation = null )
             Log.d(TAG, "════════════════════════════════════════════════")
-            return@withContext SyncResult.Error(e.message ?: "Unknown error", retryable = true)
+            return SyncResult.Error(e.message ?: "Unknown error", retryable = true)
         }
     }
 
     // ===== PROCESS INDIVIDUAL OPERATION =====
 
-    private suspend fun processOperation(operation: PendingOperationEntity): SyncResult {
+    private suspend fun processOperation(queuedOperation: PendingOperationEntity): SyncResult {
+        val operation = if (queuedOperation.operationType in setOf(
+                OperationType.ADD_SESSION_ITEM.name, OperationType.UPDATE_SESSION_ITEM.name
+            )) pendingOperationRepo.prepareForReplay(queuedOperation) else queuedOperation
         try {
             pendingOperationRepo.markAsInProgress(operation.id)
 
@@ -250,6 +266,8 @@ class SyncService(private val context: Context) {
                 else -> SyncResult.Error("Unsupported operation type: $operationType", retryable = false)
             }
 
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error processing operation ${operation.id}", e)
             return SyncResult.Error(e.message ?: "Unknown error", retryable = true)
@@ -376,14 +394,15 @@ class SyncService(private val context: Context) {
 
     private suspend fun addSessionItem(data: OperationData.AddSessionItem): SyncResult {
         return try {
-            val request = AddItemRequest( product_id = data.productId, quantity = data.quantity )
-            val response = api.addSessionItem(data.sessionId, request)
+            val response = SessionItemOperationSender(api).send(data)
 
             if (response.isSuccessful) {
                 SyncResult.Success()
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -391,8 +410,7 @@ class SyncService(private val context: Context) {
 
     private suspend fun updateSessionItem(data: OperationData.UpdateSessionItem): SyncResult {
         return try {
-            val request = UpdateItemRequest( quantity = data.quantity, version = data.version)
-            val response = api.updateSessionItem(data.itemId, request)
+            val response = SessionItemOperationSender(api).send(data)
 
             if (response.isSuccessful) {
                 SyncResult.Success()
@@ -406,6 +424,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }

@@ -9,14 +9,13 @@ import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.model.OperationType
 import com.darius.listmanager.data.model.ResourceType
-import com.darius.listmanager.network.AddItemRequest
+import com.darius.listmanager.data.model.withOperationIdentity
+import com.darius.listmanager.network.SessionItemOperationSender
 import com.darius.listmanager.network.GlobalSessionItemDTO
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
-import com.darius.listmanager.network.UpdateItemRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
 
@@ -26,8 +25,10 @@ import java.io.IOException
  *
  * - Sessions/items with POSITIVE ids are server-mirrored → write through.
  * - NEGATIVE ids are local offline fallbacks → local-only (no network, no queue).
- * - Offline (IOException) → enqueue a pending op for SyncService replay.
- * - Other failures (409/404/5xx/parse) → log and rely on WS/pull self-heal.
+ * - Adds/updates persist an operation together with the local edit BEFORE sending.
+ * - A successful response atomically updates Room and acknowledges the operation.
+ * - Failed/interrupted adds/updates remain durable for replay. Delete/clear and
+ *   offline session completion retain their existing behavior for later milestones.
  *
  * Item mutations are serialized through [mutex] so two rapid taps can't both
  * capture the same optimistic-lock version (the second would silently 409).
@@ -36,9 +37,11 @@ class SessionRepository(
     private val sessionDao: SessionDao,
     private val sessionItemDao: SessionItemDao,
     private val api: ListManagerApi = RetrofitClient.api,
-    private val pendingOps: PendingOperationRepository? = null,
+    private val pendingOps: PendingOperationRepository,
+    private val transaction: SessionTransaction,
 ) {
-    private val mutex = Mutex()
+    private val mutex = SessionWriteCoordinator.mutex
+    private val itemSender = SessionItemOperationSender(api)
 
     fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow(teamId)
 
@@ -87,88 +90,83 @@ class SessionRepository(
     }
 
     suspend fun addOrIncrementItem(sessionId: Long, productId: Long, quantity: Int = 1) = mutex.withLock {
-        sessionItemDao.addOrIncrement(sessionId, productId, quantity)
-        if (sessionId <= 0) return@withLock
-        try {
-            val response = api.addSessionItem(sessionId, AddItemRequest(product_id = productId, quantity = quantity))
-            val dto = response.body()
-            if (response.isSuccessful && dto != null) {
-                upsertFromServer(dto)
-            } else if (!response.isSuccessful) {
-                Log.w(TAG, "addSessionItem HTTP ${response.code()}; relying on next pull")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            pendingOps?.queueOperation(
-                OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM, null,
-                OperationData.AddSessionItem(sessionId, productId, quantity)
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "addSessionItem failed", e)
+        if (sessionId <= 0) {
+            sessionItemDao.addOrIncrement(sessionId, productId, quantity)
+            return@withLock
         }
+        val operation = OperationData.AddSessionItem(sessionId, productId, quantity).withOperationIdentity()
+        persistAndSend(operation) { sessionItemDao.addOrIncrement(sessionId, productId, quantity) }
     }
 
     suspend fun setItemQuantity(sessionId: Long, productId: Long, quantity: Int) = mutex.withLock {
-        // Capture pre-state BEFORE the local write: we need the server item id
-        // and optimistic-lock version of the row being changed.
         val existing = sessionItemDao.getItem(sessionId, productId)
+        if (sessionId <= 0) {
+            sessionItemDao.setQuantity(sessionId, productId, quantity)
+            return@withLock
+        }
+        if (quantity > 0) {
+            val operation = if (existing == null) {
+                OperationData.AddSessionItem(sessionId, productId, quantity)
+            } else {
+                OperationData.UpdateSessionItem(existing.id, quantity, existing.version)
+            }.withOperationIdentity()
+            persistAndSend(operation) { sessionItemDao.setQuantity(sessionId, productId, quantity) }
+            return@withLock
+        }
+        // Zero/negative quantities use the existing DELETE workflow.
         sessionItemDao.setQuantity(sessionId, productId, quantity)
-        if (sessionId <= 0) return@withLock
+        if (existing == null) return@withLock
         try {
-            when {
-                quantity <= 0 && existing != null -> {
-                    val response = api.deleteSessionItem(existing.id)
-                    // 404 = already gone on the server: that's the state we want.
-                    if (!response.isSuccessful && response.code() != 404) {
-                        Log.w(TAG, "deleteSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                quantity > 0 && existing != null -> {
-                    val response = api.updateSessionItem(
-                        existing.id,
-                        UpdateItemRequest(quantity = quantity, version = existing.version)
-                    )
-                    val dto = response.body()
-                    if (response.isSuccessful && dto != null) {
-                        upsertFromServer(dto)
-                    } else if (!response.isSuccessful) {
-                        // 409 stale version / 404 gone — WS event or next pull self-heals.
-                        Log.w(TAG, "updateSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                existing == null && quantity > 0 -> {
-                    val response = api.addSessionItem(
-                        sessionId, AddItemRequest(product_id = productId, quantity = quantity)
-                    )
-                    val dto = response.body()
-                    if (response.isSuccessful && dto != null) {
-                        upsertFromServer(dto)
-                    } else if (!response.isSuccessful) {
-                        Log.w(TAG, "addSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                // existing == null && quantity <= 0 → nothing to do anywhere.
+            val response = api.deleteSessionItem(existing.id)
+            if (!response.isSuccessful && response.code() != 404) {
+                Log.w(TAG, "deleteSessionItem HTTP ${response.code()}; relying on next pull")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            when {
-                quantity <= 0 && existing != null -> pendingOps?.queueOperation(
-                    OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, existing.id,
-                    OperationData.DeleteSessionItem(existing.id)
-                )
-                quantity > 0 && existing != null -> pendingOps?.queueOperation(
-                    OperationType.UPDATE_SESSION_ITEM, ResourceType.SESSION_ITEM, existing.id,
-                    OperationData.UpdateSessionItem(existing.id, quantity, existing.version)
-                )
-                existing == null && quantity > 0 -> pendingOps?.queueOperation(
-                    OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM, null,
-                    OperationData.AddSessionItem(sessionId, productId, quantity)
-                )
-            }
+            pendingOps.queueOperation(
+                OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, existing.id,
+                OperationData.DeleteSessionItem(existing.id)
+            )
         } catch (e: Exception) {
             Log.w(TAG, "setItemQuantity failed", e)
+        }
+    }
+
+    private suspend fun persistAndSend(operation: OperationData, localWrite: suspend () -> Unit) {
+        var operationId = 0L
+        transaction.run {
+            localWrite()
+            operationId = when (operation) {
+                is OperationData.AddSessionItem -> pendingOps.queueOperation(
+                    OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM, null, operation
+                )
+                is OperationData.UpdateSessionItem -> pendingOps.queueOperation(
+                    OperationType.UPDATE_SESSION_ITEM, ResourceType.SESSION_ITEM, operation.itemId, operation
+                )
+                else -> error("Not an item write")
+            }
+        }
+        // The transaction has committed before network I/O. A process death or
+        // cancellation cannot leave a local edit without its replayable intent.
+        try {
+            val response = itemSender.send(operation)
+            val dto = response.body()
+            if (response.isSuccessful && dto != null) {
+                transaction.run {
+                    upsertFromServer(dto)
+                    pendingOps.deleteById(operationId)
+                }
+            }
+            // Non-success (including 5xx), or an empty body: retain the outbox
+            // entry. Conflict/backoff policy is handled by the replay worker.
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: IOException) {
+            // Includes a response lost AFTER server commit. Replay uses the
+            // already-persisted key, so it does not apply the mutation twice.
+        } catch (e: Exception) {
+            Log.w(TAG, "Item write remains queued", e)
         }
     }
 
@@ -187,7 +185,7 @@ class SessionRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            pendingOps?.queueOperation(
+            pendingOps.queueOperation(
                 OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, itemId,
                 OperationData.DeleteSessionItem(itemId)
             )
@@ -207,7 +205,7 @@ class SessionRepository(
         } catch (e: CancellationException) {
             throw e
         } catch (e: IOException) {
-            pendingOps?.queueOperation(
+            pendingOps.queueOperation(
                 OperationType.CLEAR_SESSION, ResourceType.SESSION, sessionId,
                 OperationData.ClearSession(sessionId)
             )

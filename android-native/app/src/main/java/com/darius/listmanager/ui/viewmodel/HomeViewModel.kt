@@ -36,7 +36,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
+    private val sessionRepository = SessionRepository(
+        database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository,
+        transaction = com.darius.listmanager.data.repository.SessionTransaction.room(database),
+    )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val embeddingModel = EmbeddingModel.getInstance(application)
