@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "privacy_mode": "synthetic-text-only",
+  "products": [
+    { "id": 1, "name": "Lapte Zuzu 1L", "aliases": "lapte zuzu,zuzu" },
+    { "id": 2, "name": "Lapte Fulga 1L", "aliases": "lapte fulga,fulga" },
+    { "id": 3, "name": "Ouă M 10 buc", "aliases": "oua zece,oua 10" },
+    { "id": 4, "name": "Pâine albă 500g", "aliases": "paine alba" }
+  ],
+  "cases": [
+    {
+      "id": "synthetic-ro-clean-001",
+      "utterance": "lapte zuzu",
+      "expected_product_id": 1,
+      "locale": "ro-RO",
+      "noise_condition": "clean"
+    },
+    {
+      "id": "synthetic-ro-background-001",
+      "utterance": "zuzu",
+      "expected_product_id": 1,
+      "locale": "ro-RO",
+      "noise_condition": "background"
+    },
+    {
+      "id": "synthetic-ro-clean-002",
+      "utterance": "lapte fulga",
+      "expected_product_id": 2,
+      "locale": "ro-RO",
+      "noise_condition": "clean"
+    },
+    {
+      "id": "synthetic-ro-background-002",
+      "utterance": "oua zece",
+      "expected_product_id": 3,
+      "locale": "ro-RO",
+      "noise_condition": "background"
+    },
+    {
+      "id": "synthetic-ro-clean-003",
+      "utterance": "paine alba",
+      "expected_product_id": 4,
+      "locale": "ro-RO",
+      "noise_condition": "clean"
+    }
+  ]
+}
