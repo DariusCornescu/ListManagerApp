@@ -94,3 +94,19 @@ tag m0-candidate-2026-09-11.2. Four new native Room tests failed before the fix;
 all 145 preview tests pass afterwards. APK SHA-256:
 CD48CAE8C5833423B2E628B26281B09930E26E87F69774B91C168CFE6B3677A2.
 Device retest remains pending; 16 KB warning is still unresolved.
+
+## Spoken quantity corrective candidate
+
+The first catalog-fixed retest transcribed "două lapte Zuzu" correctly, but the
+segmenter split it into "două lapte" and "Zuzu". This produced one review entry
+and one automatic addition with quantity 1. The test exposed two missing pieces:
+the add paths ignored spoken quantities, and quantity prefixes could be separated
+from their product name.
+
+Commits c7e8a49 and ef8b3cf preserve a leading spoken quantity through automatic
+and reviewed additions and keep it with the matching product segment. Added tests
+cover Romanian words, numeric prefixes, product measurements, and multiple
+quantity/product pairs. Full preview gate: 151 tests, zero failures/errors;
+assemblePreview passed. Local tag `m0-candidate-2026-09-12.4`; APK SHA-256
+`F3D304FD0D8949C14F335BB60AEFBF6C89DEAB5E0B5CB873710EFD11BDDC36B8`.
+The build is installed on the S25. A clean device retest remains pending.

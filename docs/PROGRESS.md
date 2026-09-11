@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-09-12 - M0 spoken quantity and segmentation corrections
+
+- The corrected catalog build recognized "două lapte Zuzu", but segmented it
+  into "două lapte" plus "Zuzu". That created one review item and auto-added
+  the same product with quantity 1.
+- Spoken quantities are now parsed conservatively from a phrase prefix and used
+  by both automatic additions and confirmed review suggestions (c7e8a49).
+- Quantity prefixes now stay attached to the following product segment, including
+  multi-product phrases such as "două lapte trei ouă" (ef8b3cf).
+- New quantity and segmentation tests failed before their fixes. Full preview
+  gate now passes: 151 tests, zero failures/errors, and APK assembly succeeds.
+- Current local candidate: `m0-candidate-2026-09-12.4`; APK SHA-256
+  `F3D304FD0D8949C14F335BB60AEFBF6C89DEAB5E0B5CB873710EFD11BDDC36B8`.
+  It is installed on the S25. Clean voice/quantity retest awaits phone unlock.
+- The isolated server session contains no items. No cleanup deletion was applied.
+  Completion/PDF, restart persistence, GitHub publication, and the Android 16
+  native 16 KB compatibility warning remain open.
+
+---
+
 ## 2026-09-11 - M0 catalog regression correction
 
 - Real S25 dictation correctly transcribed the milk request but returned Unknown.
