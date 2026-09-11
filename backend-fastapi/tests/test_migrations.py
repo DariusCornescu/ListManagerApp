@@ -12,8 +12,9 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
+from app.crash_signatures import crash_signature
 from app.database import Base
 import app.models  # noqa: F401  (register all models on Base.metadata)
 
@@ -53,3 +54,30 @@ def test_migrations_downgrade_upgrade_roundtrip(tmp_path):
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
+
+
+def test_crash_signature_migration_backfills_existing_reports(tmp_path):
+    url = f"sqlite:///{tmp_path / 'crash-backfill.db'}"
+    cfg = _config_for(url)
+    command.upgrade(cfg, "9819cacf8390")
+    stacktrace = (
+        "java.lang.RuntimeException: old report\n"
+        "\tat com.darius.listmanager.MainActivity.onCreate(MainActivity.kt:42)"
+    )
+
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO crash_reports (stacktrace) VALUES (:stacktrace)"),
+                {"stacktrace": stacktrace},
+            )
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            signature = conn.execute(
+                text("SELECT signature FROM crash_reports")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    assert signature == crash_signature(stacktrace)

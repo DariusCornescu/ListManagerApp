@@ -10,3 +10,5 @@ def test_admin_page_served(client):
     assert "Import CSV" in body
     assert "Distributors" in body
     assert "Add / edit product" in body
+    assert "/api/admin/crashes/groups" in body
+    assert "Semnături de crash" in body

@@ -135,9 +135,20 @@ class CrashReportCreate(BaseModel):
 
 class CrashReportDTO(CrashReportCreate):
     id: int
+    signature: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CrashGroupDTO(BaseModel):
+    signature: str
+    count: int
+    first_seen: datetime
+    last_seen: datetime
+    app_versions: list[str]
+    devices: list[str]
+    reports: list[CrashReportDTO]
 
 
 # ===== Presence Schemas =====

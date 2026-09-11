@@ -88,8 +88,8 @@
           <tbody id="rows"></tbody></table>
       </div>
       <div class="card">
-        <h3>Crashes</h3>
-        <p class="muted">Rapoarte de crash trimise automat de telefoane la repornirea aplicației.</p>
+        <h3>Semnături de crash</h3>
+        <p class="muted">Probleme grupate după excepție și cadrele stabile din stack trace.</p>
         <button onclick="loadCrashes()">Refresh</button>
         <div id="crashList" class="muted">Se încarcă…</div>
       </div>
@@ -494,42 +494,38 @@
       const box = document.getElementById("crashList");
       let r;
       try {
-        r = await fetch("/api/admin/crashes", { headers: authHeaders() });
+        r = await fetch("/api/admin/crashes/groups", { headers: authHeaders() });
       } catch (e) { box.textContent = "Network error"; return; }
       if (r.status === 401 || r.status === 403) { showApp(false); return; }
-      const crashes = await r.json();
+      const groups = await r.json();
       box.textContent = "";
-      if (!crashes.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
-      // Per-phone summary: which devices are sending reports, and how many.
-      const byDevice = {};
-      crashes.forEach(c => {
-        const key = c.device || "necunoscut";
-        byDevice[key] = (byDevice[key] || 0) + 1;
-      });
-      const summary = document.createElement("div");
-      summary.style.marginBottom = "8px";
-      Object.entries(byDevice)
-        .sort((a, b) => b[1] - a[1])
-        .forEach(([device, count]) => {
-          const chip = document.createElement("span");
-          chip.className = "chip";
-          chip.textContent = `${device} · ${count} ${count === 1 ? "raport" : "rapoarte"}`;
-          summary.appendChild(chip);
-        });
-      box.appendChild(summary);
-      crashes.forEach(c => {
+      if (!groups.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
+      groups.forEach(group => {
         const det = document.createElement("details");
         det.style.marginBottom = "8px";
         const sum = document.createElement("summary");
-        const firstLine = (c.stacktrace || "").split("\n")[0];
-        sum.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
-          `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"} — ${firstLine.slice(0, 80)}`;
-        const pre = document.createElement("pre");
-        pre.style.whiteSpace = "pre-wrap";
-        pre.style.fontSize = "12px";
-        pre.textContent = c.stacktrace;
+        const firstLine = (group.reports[0]?.stacktrace || "").split("\n")[0];
+        sum.textContent = `${group.count}× · ${firstLine.slice(0, 90)} · ${group.signature.slice(0, 10)}`;
         det.appendChild(sum);
-        det.appendChild(pre);
+        const meta = document.createElement("p");
+        meta.className = "muted";
+        meta.textContent = `Prima: ${(group.first_seen || "").replace("T", " ").slice(0, 16)} · ` +
+          `Ultima: ${(group.last_seen || "").replace("T", " ").slice(0, 16)} · ` +
+          `Versiuni: ${group.app_versions.join(", ") || "?"} · Dispozitive: ${group.devices.join(", ") || "?"}`;
+        det.appendChild(meta);
+        group.reports.forEach(c => {
+          const instance = document.createElement("details");
+          const instanceSummary = document.createElement("summary");
+          instanceSummary.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
+            `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"}`;
+          const pre = document.createElement("pre");
+          pre.style.whiteSpace = "pre-wrap";
+          pre.style.fontSize = "12px";
+          pre.textContent = c.stacktrace;
+          instance.appendChild(instanceSummary);
+          instance.appendChild(pre);
+          det.appendChild(instance);
+        });
         box.appendChild(det);
       });
     }

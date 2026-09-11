@@ -171,4 +171,5 @@ class CrashReport(Base):
     device = Column(String(100), nullable=True)
     username = Column(String(50), nullable=True)
     stacktrace = Column(Text, nullable=False)
+    signature = Column(String(64), nullable=True, index=True)
     created_at = Column(DateTime, default=func.now())
