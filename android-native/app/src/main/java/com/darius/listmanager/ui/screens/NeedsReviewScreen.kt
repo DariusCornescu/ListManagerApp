@@ -103,6 +103,7 @@ fun NeedsReviewScreen(
                                             onClick = {
                                                 viewModel.addCandidate(
                                                     item.id,
+                                                    item.spokenText,
                                                     candidate.product.id,
                                                     candidate.product.name
                                                 )

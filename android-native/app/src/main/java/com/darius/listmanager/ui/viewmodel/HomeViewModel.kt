@@ -15,6 +15,7 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SpokenQuantity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -126,7 +127,11 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     when (result) {
                         is ResolveResult.AutoAdd -> {
                             Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
-                            addProductUseCase.execute(session.id, result.product.id, 1)
+                            addProductUseCase.execute(
+                                session.id,
+                                result.product.id,
+                                SpokenQuantity.from(segment)
+                            )
                             added++
                         }
                         is ResolveResult.Suggestions -> {
