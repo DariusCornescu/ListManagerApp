@@ -27,7 +27,8 @@ enum class ResourceType {
 }
 
 enum class OperationStatus {
-    PENDING,      // Waiting to be synced
+    PENDING,      // May already have been sent; payload is immutable
+    WAITING,      // Persisted behind an earlier operation; never sent
     IN_PROGRESS,  // Currently being synced
     FAILED,       // Failed to sync (will retry)
     COMPLETED     // Successfully synced

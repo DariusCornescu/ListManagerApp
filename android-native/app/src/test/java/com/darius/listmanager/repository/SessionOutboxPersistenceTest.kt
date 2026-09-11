@@ -127,4 +127,23 @@ class SessionOutboxPersistenceTest {
         assertEquals(1, local.version)
         assertEquals(1, database.pendingOperationDao().getAllPending().size)
     }
+    @Test fun failedOperation_becomesReadyWhenBackoffExpires() = runBlocking {
+        loseResponse = true
+        repository().addOrIncrementItem(10, 7, 3)
+        val dao = database.pendingOperationDao()
+        val op = dao.getAllPending().single()
+        dao.markAsFailed(op.id, error = "offline", scheduledFor = 100)
+        assertTrue(dao.getReadyForSync(99).isEmpty())
+        assertEquals(op.id, dao.getReadyForSync(100).single().id)
+    }
+
+    @Test fun interruptedOperation_isAvailableForRecovery() = runBlocking {
+        loseResponse = true
+        repository().addOrIncrementItem(10, 7, 3)
+        val dao = database.pendingOperationDao()
+        val op = dao.getAllPending().single()
+        dao.markAsInProgress(op.id)
+        assertEquals(op.id, dao.getReadyForSync(Long.MAX_VALUE).single().id)
+    }
+
 }

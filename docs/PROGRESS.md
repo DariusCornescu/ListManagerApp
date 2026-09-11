@@ -5,6 +5,39 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — M4: recover interrupted work and protect pending edits
+
+- Full Android gate: **141 passed**, zero failures/errors/skips; debug build
+  succeeded in 65s. 21 new tests. Initial recovery tests failed twice; both
+  catalog-refresh regression tests also failed before the fixes.
+- Worker processes unfinished operations in insertion order, observes retry
+  backoff, and recovers interrupted keyed requests under the shared process lock.
+  Immediate work uses KEEP instead of canceling a possibly committed request.
+- Permanent rejection, malformed saved data, conflicts and ambiguous clears are
+  retained for review. Temporary failures/expired authentication retry; later
+  edits cannot overtake unresolved work. Review items remain visible in the dialog.
+- WAITING identifies operations that have never been sent. Only these dependent
+  updates/deletes can have IDs/versions rebased after an acknowledgement; old
+  possibly-sent payloads remain immutable. Acknowledgement and rebase are atomic.
+- Snapshots and socket-triggered refreshes share the edit lock and defer while
+  session work is unresolved. Null/invalid snapshots preserve cached rows.
+  Catalog upserts update parents in place rather than cascade-deleting children.
+- No Room schema change or production dependency change. Native SQLite/Room
+  tests cover competing workers, cancellation, backoff, replay, dependent edits,
+  snapshot races, rollback, rejected operations and catalog refresh. No real
+  device instrumentation or two-phone test was run.
+- Tradeoffs: queue ordering and snapshot deferral are conservative across all
+  session work. Conflicts require review; automatic conflict convergence and
+  a dedicated resolution UI remain follow-up work. Legacy ambiguous non-keyed
+  requests are held rather than blindly retried.
+- Linear is now accessible in ex-dario / List-Manager App. Our reliability M1–M4
+  map into T3, not the unrelated Linear M1 router-splitting milestone. No issue
+  status changes were applied: automatic review rejected EX-26/EX-27 mutations.
+- Next: M5 account/workspace isolation. M6 still needs completed-list policy;
+  inventory is currently device-local per Linear EX-44, shared sync is v2.
+
+---
+
 ## 2026-09-11 — M3: durable Android item operation identity
 
 - Adds and quantity updates now save a stable UUID and the local edit in one

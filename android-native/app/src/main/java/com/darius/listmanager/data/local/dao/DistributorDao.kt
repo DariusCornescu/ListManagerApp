@@ -24,7 +24,8 @@ interface DistributorDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(distributor: DistributorEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Update existing parents in place; REPLACE cascades into session items.
+    @Upsert
     suspend fun upsert(distributor: DistributorEntity): Long
 
     @Update
@@ -39,7 +40,8 @@ interface DistributorDao {
     @Query("DELETE FROM distributors")
     suspend fun deleteAll()
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Update existing parents in place; REPLACE cascades into session items.
+    @Upsert
     suspend fun insertAll(distributors: List<DistributorEntity>)
 
     @Transaction

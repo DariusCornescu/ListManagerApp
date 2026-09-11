@@ -10,6 +10,17 @@ import kotlinx.serialization.json.Json
 
 class PendingOperationRepository(private val dao: PendingOperationDao) {
 
+    suspend fun getUnfinished() = dao.getUnfinished()
+
+    suspend fun markAsWaiting(id: Long) {
+        val operation = dao.getById(id) ?: error("Missing queued operation")
+        dao.update(operation.copy(status = OperationStatus.WAITING.name))
+    }
+
+    suspend fun holdForReview(id: Long, message: String) {
+        dao.markAsFailed(id, error = message, scheduledFor = Long.MAX_VALUE)
+    }
+
     fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> = dao.getAllPendingFlow()
 
     suspend fun getAllPending(): List<PendingOperationEntity> = dao.getAllPending()

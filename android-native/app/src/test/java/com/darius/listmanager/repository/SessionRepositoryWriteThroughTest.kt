@@ -105,6 +105,7 @@ class SessionRepositoryWriteThroughTest {
     }
 
     private class FakePendingOperationDao : PendingOperationDao {
+        override suspend fun getUnfinished() = inserted.filter { it.status != "COMPLETED" }
         val inserted = mutableListOf<PendingOperationEntity>()
 
         override suspend fun insert(operation: PendingOperationEntity): Long {
@@ -122,8 +123,10 @@ class SessionRepositoryWriteThroughTest {
         override fun getFailedCountFlow(): Flow<Int> = throw NotImplementedError()
         override suspend fun insertAll(operations: List<PendingOperationEntity>) = throw NotImplementedError()
         override suspend fun update(operation: PendingOperationEntity) { inserted[inserted.indexOfFirst { it.id == operation.id }] = operation }
-        override suspend fun markAsFailed(id: Long, status: String, error: String?, updatedAt: Long, scheduledFor: Long) = throw NotImplementedError()
-        override suspend fun markAsInProgress(id: Long, updatedAt: Long) = throw NotImplementedError()
+        override suspend fun markAsFailed(id: Long, status: String, error: String?, updatedAt: Long, scheduledFor: Long) {
+            update(getById(id)!!.copy(status = status, lastError = error, scheduledFor = scheduledFor))
+        }
+        override suspend fun markAsInProgress(id: Long, updatedAt: Long) { update(getById(id)!!.copy(status = "IN_PROGRESS")) }
         override suspend fun markAsCompleted(id: Long, updatedAt: Long) = throw NotImplementedError()
         override suspend fun delete(operation: PendingOperationEntity) = throw NotImplementedError()
         override suspend fun deleteById(id: Long) { inserted.removeAll { it.id == id } }

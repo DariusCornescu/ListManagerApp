@@ -26,10 +26,12 @@ import kotlinx.serialization.json.Json
 
 data class SyncStatus( val isSyncing: Boolean = false, val pendingCount: Int = 0, val failedCount: Int = 0, val lastSyncTime: Long? = null, val lastError: String? = null, val currentOperation: String? = null )
 
-class SyncService(private val context: Context) {
-    
-    private val database = AppDatabase.getInstance(context)
-    private val api = RetrofitClient.api
+class SyncService(
+    private val context: Context,
+    private val database: AppDatabase = AppDatabase.getInstance(context),
+    private val api: ListManagerApi = RetrofitClient.api,
+    private val now: () -> Long = System::currentTimeMillis,
+) {
     private val pendingOperationRepo = PendingOperationRepository(database.pendingOperationDao())
 
     private val prefs: SharedPreferences by lazy {
@@ -123,94 +125,72 @@ class SyncService(private val context: Context) {
     }
 
     private suspend fun syncPendingOperationsLocked(): SyncResult {
-        Log.d(TAG, "syncPendingOperations() started")
+        _syncStatus.value = _syncStatus.value.copy(isSyncing = true, lastError = null)
         try {
-            _syncStatus.value = _syncStatus.value.copy(isSyncing = true)
-            Log.d(TAG, "isSyncing = true")
-
-            // Get pending operations
-            val pendingOps = pendingOperationRepo.getReadyForSync()
-            Log.d(TAG, "Found ${pendingOps.size} pending operations to sync")
-            
-            pendingOps.forEachIndexed { index, op ->
-                Log.d(TAG, "  ${index + 1}. ${op.operationType} (ID: ${op.id}, Status: ${op.status})")
-            }
-
-            if (pendingOps.isEmpty()) {
-                Log.d(TAG, "No pending operations found - nothing to sync")
-                _syncStatus.value = _syncStatus.value.copy( isSyncing = false, lastSyncTime = System.currentTimeMillis() )
-                Log.d(TAG, "════════════════════════════════════════════════")
-                return SyncResult.Success()
-            }
-
-            var successCount = 0
-            var failCount = 0
-
-            // Process each operation
-            pendingOps.forEach { operation ->
-                _syncStatus.value = _syncStatus.value.copy(
-                    currentOperation = "${operation.operationType} (${operation.id})"
-                )
-
-                val result = processOperation(operation)
-
-                when (result) {
-                    is SyncResult.Success -> {
-                        pendingOperationRepo.markAsCompleted(operation.id)
-                        successCount++
-                        Log.d(TAG, "Operation ${operation.id} completed successfully")
-                    }
+            // Global FIFO is conservative: do not overtake a delayed or rejected edit.
+            // The shared process lock excludes other workers and foreground writes.
+            for (queued in pendingOperationRepo.getUnfinished()) {
+                val operation = database.pendingOperationDao().getById(queued.id) ?: continue
+                if (operation.status == "COMPLETED") continue
+                if (operation.scheduledFor == Long.MAX_VALUE) {
+                    return SyncResult.Error(operation.lastError ?: "Needs review", retryable = false)
+                }
+                if (operation.status != "IN_PROGRESS" && operation.scheduledFor > now()) {
+                    return SyncResult.Error("Waiting for retry", retryable = true)
+                }
+                if (operation.status == "IN_PROGRESS" && !safeToRecover(operation)) {
+                    pendingOperationRepo.holdForReview(operation.id, "Interrupted request: check server before retrying")
+                    return SyncResult.Error("Interrupted request needs review", retryable = false)
+                }
+                _syncStatus.value = _syncStatus.value.copy(currentOperation = "${operation.operationType} (${operation.id})")
+                when (val result = processOperation(operation)) {
+                    is SyncResult.Success -> pendingOperationRepo.markAsCompleted(operation.id)
                     is SyncResult.Error -> {
-                        if (result.retryable) {
-                            pendingOperationRepo.markAsFailed(operation.id, result.message)
-                            Log.e(TAG, "Operation ${operation.id} failed (retryable): ${result.message}")
-                        } else {
-                            // Non-retryable (401/403/422 etc.) — drop the op so it doesn't loop forever
-                            pendingOperationRepo.deleteById(operation.id)
-                            Log.e(TAG, "Operation ${operation.id} failed (non-retryable, dropped): ${result.message}")
-                        }
-                        failCount++
+                        if (result.retryable) pendingOperationRepo.markAsFailed(operation.id, result.message)
+                        else pendingOperationRepo.holdForReview(operation.id, result.message)
+                        _syncStatus.value = _syncStatus.value.copy(lastError = result.message)
+                        return result
                     }
                     is SyncResult.Conflict -> {
-                        // Handle conflict based on strategy
-                        handleConflict(operation, result)
-                        failCount++
-                        Log.w(TAG, "Operation ${operation.id} conflict: ${result.message}")
+                        // Never retry the same stale version forever or discard local intent.
+                        pendingOperationRepo.holdForReview(operation.id, result.message)
+                        _syncStatus.value = _syncStatus.value.copy(lastError = result.message)
+                        return SyncResult.Error(result.message, retryable = false)
                     }
                 }
             }
-
-            // Clean up old completed operations
-            pendingOperationRepo.deleteOldCompleted(olderThanDays = 7)
-
-            _syncStatus.value = _syncStatus.value.copy( isSyncing = false, lastSyncTime = System.currentTimeMillis(), currentOperation = null )
-            Log.d(TAG, "Sync completed: $successCount success, $failCount failed")
-            Log.d(TAG, "════════════════════════════════════════════════")
-
-            return if (failCount == 0) {
-                SyncResult.Success()
-            } else {
-                SyncResult.Error("$failCount operations failed", retryable = true)
-            }
-
+            pendingOperationRepo.deleteOldCompleted()
+            _syncStatus.value = _syncStatus.value.copy(lastSyncTime = now())
+            com.darius.listmanager.data.workspace.SessionEvents.requestRefresh()
+            return SyncResult.Success()
         } catch (e: CancellationException) {
-            throw e
+            throw e // Durable IN_PROGRESS is recovered by the next lock holder.
         } catch (e: Exception) {
-            Log.e(TAG, "Sync exception: ${e.javaClass.simpleName}", e)
-            Log.e(TAG, "Message: ${e.message}")
-            _syncStatus.value = _syncStatus.value.copy(isSyncing = false, lastError = e.message, currentOperation = null )
-            Log.d(TAG, "════════════════════════════════════════════════")
-            return SyncResult.Error(e.message ?: "Unknown error", retryable = true)
+            _syncStatus.value = _syncStatus.value.copy(lastError = e.message)
+            return SyncResult.Error(e.message ?: "Sync failed", retryable = true)
+        }
+    }
+
+    private fun safeToRecover(operation: PendingOperationEntity): Boolean {
+        val data = runCatching {
+            Json { ignoreUnknownKeys = true }.decodeFromString<OperationData>(operation.operationData)
+        }.getOrNull()
+        return when (data) {
+            is OperationData.AddSessionItem -> data.idempotencyKey != null
+            is OperationData.UpdateSessionItem -> data.idempotencyKey != null
+            is OperationData.DeleteSessionItem, is OperationData.DeleteProduct,
+            is OperationData.DeleteDistributor -> true
+            else -> false // Creation and clear can have ambiguous effects after interruption.
         }
     }
 
     // ===== PROCESS INDIVIDUAL OPERATION =====
 
     private suspend fun processOperation(queuedOperation: PendingOperationEntity): SyncResult {
-        val operation = if (queuedOperation.operationType in setOf(
-                OperationType.ADD_SESSION_ITEM.name, OperationType.UPDATE_SESSION_ITEM.name
-            )) pendingOperationRepo.prepareForReplay(queuedOperation) else queuedOperation
         try {
+            val operation = if (queuedOperation.operationType in setOf(
+                    OperationType.ADD_SESSION_ITEM.name, OperationType.UPDATE_SESSION_ITEM.name
+                )) pendingOperationRepo.prepareForReplay(queuedOperation) else queuedOperation
             pendingOperationRepo.markAsInProgress(operation.id)
 
             val operationType = OperationType.valueOf(operation.operationType)
@@ -248,11 +228,11 @@ class SyncService(private val context: Context) {
                 // SESSION ITEM OPERATIONS
                 OperationType.ADD_SESSION_ITEM -> {
                     val data = json.decodeFromString<OperationData.AddSessionItem>(operation.operationData)
-                    addSessionItem(data)
+                    addSessionItem(data, operation)
                 }
                 OperationType.UPDATE_SESSION_ITEM -> {
                     val data = json.decodeFromString<OperationData.UpdateSessionItem>(operation.operationData)
-                    updateSessionItem(data)
+                    updateSessionItem(data, operation)
                 }
                 OperationType.DELETE_SESSION_ITEM -> {
                     val data = json.decodeFromString<OperationData.DeleteSessionItem>(operation.operationData)
@@ -268,24 +248,19 @@ class SyncService(private val context: Context) {
 
         } catch (e: CancellationException) {
             throw e
+        } catch (e: IllegalArgumentException) {
+            return SyncResult.Error("Invalid saved operation; review required", retryable = false)
         } catch (e: Exception) {
-            Log.e(TAG, "Error processing operation ${operation.id}", e)
+            Log.e(TAG, "Error processing operation ${queuedOperation.id}", e)
             return SyncResult.Error(e.message ?: "Unknown error", retryable = true)
         }
     }
 
-    /**
-     * Maps a non-2xx HTTP status to a non-retryable [SyncResult.Error] when the server has
-     * definitively rejected the operation (400 bad request — e.g. session no longer active,
-     * 401/403 authorization, 422 validation). Such operations will never succeed on retry,
-     * so the caller drops them from the queue.
-     * Returns a retryable error for everything else (transient server/5xx issues).
-     */
-    private fun mapHttpErrorToSyncResult(code: Int): SyncResult {
-        return when (code) {
-            400, 401, 403, 422 -> SyncResult.Error("Rejected by server: $code", retryable = false)
-            else -> SyncResult.Error("Failed: $code", retryable = true)
-        }
+    private fun mapHttpErrorToSyncResult(code: Int): SyncResult = when {
+        code == 409 -> SyncResult.Conflict("Server data changed; review the local edit")
+        code == 401 -> SyncResult.Error("Sign in again to resume synchronization", retryable = true)
+        code == 408 || code == 429 || code >= 500 -> SyncResult.Error("Temporary server failure: $code", retryable = true)
+        else -> SyncResult.Error("Server rejected this edit ($code); review required", retryable = false)
     }
 
     // ===== DISTRIBUTOR OPERATIONS =====
@@ -301,6 +276,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -318,6 +295,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -334,6 +313,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -352,6 +333,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -369,6 +352,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -385,6 +370,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -392,11 +379,14 @@ class SyncService(private val context: Context) {
 
     // ===== SESSION ITEM OPERATIONS =====
 
-    private suspend fun addSessionItem(data: OperationData.AddSessionItem): SyncResult {
+    private suspend fun addSessionItem(data: OperationData.AddSessionItem, operation: PendingOperationEntity): SyncResult {
         return try {
             val response = SessionItemOperationSender(api).send(data)
 
-            if (response.isSuccessful) {
+            if (response.isSuccessful && response.body() == null) {
+                SyncResult.Error("Empty acknowledgement", retryable = true)
+            } else if (response.isSuccessful) {
+                SessionAcknowledgement(database).apply(operation, response.body()!!)
                 SyncResult.Success()
             } else {
                 mapHttpErrorToSyncResult(response.code())
@@ -408,11 +398,14 @@ class SyncService(private val context: Context) {
         }
     }
 
-    private suspend fun updateSessionItem(data: OperationData.UpdateSessionItem): SyncResult {
+    private suspend fun updateSessionItem(data: OperationData.UpdateSessionItem, operation: PendingOperationEntity): SyncResult {
         return try {
             val response = SessionItemOperationSender(api).send(data)
 
-            if (response.isSuccessful) {
+            if (response.isSuccessful && response.body() == null) {
+                SyncResult.Error("Empty acknowledgement", retryable = true)
+            } else if (response.isSuccessful) {
+                SessionAcknowledgement(database).apply(operation, response.body()!!)
                 SyncResult.Success()
             } else if (response.code() == 409) {
                 SyncResult.Conflict(
@@ -442,6 +435,8 @@ class SyncService(private val context: Context) {
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             SyncResult.Error(e.message ?: "Network error", retryable = true)
         }
@@ -453,32 +448,15 @@ class SyncService(private val context: Context) {
 
             if (response.isSuccessful) {
                 SyncResult.Success()
+            } else if (response.code() == 408 || response.code() >= 500) {
+                SyncResult.Error("Clear outcome unknown; review server state", retryable = false)
             } else {
                 mapHttpErrorToSyncResult(response.code())
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
-    }
-
-    // ===== CONFLICT RESOLUTION =====
-
-    private suspend fun handleConflict( operation: PendingOperationEntity, conflict: SyncResult.Conflict ) {
-        val strategy = ConflictStrategy.valueOf(operation.conflictStrategy)
-
-        when (strategy) {
-            ConflictStrategy.LATEST_WINS -> {
-                Log.d(TAG, "Conflict: LATEST_WINS - will retry operation ${operation.id}")
-                pendingOperationRepo.markAsFailed(operation.id, conflict.message)
-            }
-            ConflictStrategy.SERVER_WINS -> {
-                Log.d(TAG, "Conflict: SERVER_WINS - discarding operation ${operation.id}")
-                pendingOperationRepo.markAsCompleted(operation.id)
-            }
-            ConflictStrategy.MANUAL -> {
-                Log.d(TAG, "Conflict: MANUAL - user must resolve operation ${operation.id}")
-                pendingOperationRepo.markAsFailed(operation.id, "Conflict: ${conflict.message}")
-            }
+            SyncResult.Error("Clear outcome unknown; review server state", retryable = false)
         }
     }
 

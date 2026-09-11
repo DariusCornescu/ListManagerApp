@@ -1,10 +1,7 @@
 package com.darius.listmanager.data.workspace
 
-import android.database.sqlite.SQLiteConstraintException
 import android.util.Log
-import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
-import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.network.CreateSessionRequest
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
@@ -70,34 +67,10 @@ class WorkspaceSessionResolver(
         }
     }
 
-    /** Replace local items with the server's (server is source of truth when online). */
+    /** Refresh only when no local session intent would be overwritten. */
     private suspend fun pullItems(sessionId: Long) {
         try {
-            val response = api.getSessionItems(sessionId)
-            if (response.isSuccessful) {
-                val dao = database.sessionItemDao()
-                database.withTransaction {
-                    dao.deleteAllInSession(sessionId)
-                    response.body().orEmpty().forEach { item ->
-                        try {
-                            dao.insert(
-                                SessionItemEntity(
-                                    id = item.id,
-                                    sessionId = sessionId,
-                                    productId = item.product_id,
-                                    quantity = item.quantity,
-                                    version = item.version,
-                                )
-                            )
-                        } catch (e: SQLiteConstraintException) {
-                            // Product not yet in local catalog — skip and keep going.
-                            Log.w(TAG, "skipping item ${item.id}: product ${item.product_id} not in local catalog")
-                        }
-                    }
-                }
-            } else {
-                Log.w(TAG, "getSessionItems returned HTTP ${response.code()}; keeping cached items")
-            }
+            SessionSnapshotStore(database).refresh(sessionId) { api.getSessionItems(sessionId) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: IOException) {

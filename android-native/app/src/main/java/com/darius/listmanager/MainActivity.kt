@@ -242,40 +242,29 @@ class MainActivity : ComponentActivity() {
     // ===== SESSION ITEM UPDATE FUNCTIONS FOR WEBSOCKET =====
     
     private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int, version: Int) {
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    val entity = SessionItemEntity(
-                        id = itemId,
-                        sessionId = sessionId,
-                        productId = productId,
-                        quantity = quantity,
-                        // Preserve the server's optimistic-lock version; REPLACE
-                        // insert would otherwise reset it to the default (1).
-                        version = version
-                    )
-                    database.sessionItemDao().insert(entity)
-                    Log.d(TAG, "Local DB: Upserted session item $itemId (product $productId, qty $quantity)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update local session item: ${e.message}", e)
-                }
-            }
-        }
+        refreshSessionItems(sessionId)
     }
-    
+
     private fun deleteLocalSessionItem(itemId: Long) {
         lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    database.sessionItemDao().deleteById(itemId)
-                    Log.d(TAG, "Local DB: Deleted session item $itemId")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to delete local session item: ${e.message}", e)
+            database.sessionItemDao().getById(itemId)?.let { refreshSessionItems(it.sessionId) }
+        }
+    }
+
+    private fun refreshSessionItems(sessionId: Long) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                com.darius.listmanager.data.workspace.SessionSnapshotStore(database).refresh(sessionId) {
+                    com.darius.listmanager.network.RetrofitClient.api.getSessionItems(sessionId)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Session refresh deferred", e)
             }
         }
     }
-    
+
     private fun completeLocalSession(sessionId: Long) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
@@ -293,18 +282,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearLocalSession(sessionId: Long) {
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    database.sessionItemDao().deleteAllInSession(sessionId)
-                    Log.d(TAG, "Local DB: Cleared all items from session $sessionId")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to clear local session: ${e.message}", e)
-                }
-            }
-        }
+        refreshSessionItems(sessionId)
     }
-    
+
     private fun getAuthToken(): String? {        
         return syncService.getAuthToken()
     }

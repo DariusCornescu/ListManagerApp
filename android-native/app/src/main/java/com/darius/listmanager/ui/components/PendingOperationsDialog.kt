@@ -30,7 +30,7 @@ fun PendingOperationsDialog( onDismiss: () -> Unit, onSyncClick: () -> Unit ) {
     // Load pending operations
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) {
-            operations = database.pendingOperationDao().getAllPending()
+            operations = database.pendingOperationDao().getUnfinished()
             isLoading = false
         }
     }
@@ -113,7 +113,7 @@ private fun PendingOperationItem(operation: PendingOperationEntity) {
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
             containerColor = when (operation.status) {
-                "PENDING" -> MaterialTheme.colorScheme.tertiaryContainer
+                "PENDING", "WAITING" -> MaterialTheme.colorScheme.tertiaryContainer
                 "IN_PROGRESS" -> MaterialTheme.colorScheme.primaryContainer
                 "FAILED" -> MaterialTheme.colorScheme.errorContainer
                 else -> MaterialTheme.colorScheme.surfaceVariant
@@ -144,7 +144,7 @@ private fun PendingOperationItem(operation: PendingOperationEntity) {
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
                         tint = when (operation.status) {
-                            "PENDING" -> MaterialTheme.colorScheme.onTertiaryContainer
+                            "PENDING", "WAITING" -> MaterialTheme.colorScheme.onTertiaryContainer
                             "IN_PROGRESS" -> MaterialTheme.colorScheme.onPrimaryContainer
                             "FAILED" -> MaterialTheme.colorScheme.onErrorContainer
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -160,7 +160,7 @@ private fun PendingOperationItem(operation: PendingOperationEntity) {
                 // Status badge
                 Badge(
                     containerColor = when (operation.status) {
-                        "PENDING" -> MaterialTheme.colorScheme.tertiary
+                        "PENDING", "WAITING" -> MaterialTheme.colorScheme.tertiary
                         "IN_PROGRESS" -> MaterialTheme.colorScheme.primary
                         "FAILED" -> MaterialTheme.colorScheme.error
                         else -> MaterialTheme.colorScheme.secondary
@@ -168,7 +168,7 @@ private fun PendingOperationItem(operation: PendingOperationEntity) {
                 ) {
                     Text(
                         text = when (operation.status) {
-                            "PENDING" -> "În așteptare"
+                            "PENDING", "WAITING" -> "În așteptare"
                             "IN_PROGRESS" -> "În curs"
                             "FAILED" -> "Eșuat"
                             else -> operation.status

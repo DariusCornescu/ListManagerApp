@@ -61,7 +61,12 @@ unavailable test with a passing test.
 - M3: **120 tests passed**, zero failures/skips; `testDebugUnitTest assembleDebug`
   succeeded on 2026-09-11 in 32s. Includes 12 new regression/persistence tests.
   No device instrumentation run. `git diff --check` passed.
-- M4–M7: not complete.
+- M3 commit: `80b82b2`.
+- M4: **141 tests passed**, no failures/skips; Android debug build succeeded
+  in 65s on 2026-09-11. 21 new tests; recovery and catalog regressions were
+  reproduced before fixes. Room schema unchanged; native SQLite tests, not
+  device instrumentation. Diff check passed.
+- M5–M7: not complete.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
   changes. The user accepted the Android SDK license; platform 36, build tools

@@ -54,7 +54,7 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "${WORK_NAME}_immediate",
-                ExistingWorkPolicy.REPLACE, // Replace existing immediate work
+                ExistingWorkPolicy.KEEP, // Do not cancel a request whose outcome may be ambiguous
                 workRequest
             )
 
@@ -114,6 +114,8 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
                 }
             }
 
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Exception during sync: ${e.javaClass.simpleName}", e)
             Log.e(TAG, "Message: ${e.message}")

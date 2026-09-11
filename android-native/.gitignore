@@ -19,3 +19,5 @@ app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
 
 # Build-time secrets (do not commit)
 app/secrets.properties
+# Kotlin compiler session cache
+.kotlin/
