@@ -5,6 +5,19 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — M0 first real-device run
+
+- Samsung S25 SM-S931B connected and authorized, Android 16 / API 36.
+- Installed the tested tagged preview alongside the daily app. Started a separate
+  loopback-only local backend/database and forwarded port 8000 over USB.
+- Backend health and actual preview login pass; main recording screen renders.
+- Device revealed a startup 16 KB compatibility warning for ONNX/tokenizer native
+  libraries and graphics-path. Not fixed or suppressed; M0 remains open.
+- User requested to perform real dictation. Match, drawer, restart persistence,
+  completion/PDF and remote publication remain pending; no full acceptance claim.
+
+---
+
 ## 2026-09-11 — M0 trunk integration candidate
 
 - Development now includes both admin branch histories at 7a5edc7; local tag

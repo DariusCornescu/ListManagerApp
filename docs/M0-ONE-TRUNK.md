@@ -40,13 +40,27 @@ branches are development plus one reliability branch.
 
 ## Device acceptance — EX-9 (pending)
 
-Known phone: Samsung S25. Android version must be read from the connected device.
-After the user reported connecting the phone, ADB still listed no devices and
-Windows reported no Samsung/Android/ADB device. USB detection and debugging
-authorization need to be established before reading the Android version.
-A local USB backend is the provisional test environment; it has not been started.
-Do not install an emulator-configured APK as a
-working phone build; 10.0.2.2 is not the PC address on a physical phone.
+Connected phone verified: Samsung Galaxy S25 (SM-S931B), Android 16 / API 36.
+USB debugging is authorized after the Samsung driver setup.
+
+The tagged preview APK was installed successfully for user 0 alongside the daily
+app. USB reverse forwards port 8000 to a loopback-only local backend with its own
+ignored SQLite database (`android-native/.tooling/m0-phone.sqlite`). The backend
+health endpoint passes. Login with a seeded local test account succeeded and the
+main recording/session screen rendered; the preview process remained running.
+No production backend or daily-app data was used.
+
+**Observed issue:** Android displays an App Compatibility warning at startup:
+`libonnxruntime.so`, `libhftokenizer.so`, and `libonnxruntime4j_jni.so` have LOAD
+segments that are not 16 KB aligned; `libandroidx.graphics.path.so` is also
+reported with an unknown alignment error. Dismissing the warning with OK lets
+the app reach login. The warning has not been suppressed or fixed. The
+sentence-embeddings dependency is still referenced by EmbeddingModel; removing
+it without adapting that implementation would break compilation.
+
+Real dictation requested from the user: "doua lapte Zuzu" against the local
+catalog's "Lapte Zuzu 1L". No pass is recorded until the outcome is observed.
+Restart persistence, drawer scrolling and completion/PDF checks remain pending.
 
 Run on each supported real phone and record device model, Android version,
 app version/tag, backend environment, time and outcome:
@@ -68,6 +82,6 @@ Evidence table (do not pre-fill Pass):
 
 | Device / Android | Candidate tag / environment | Login/restart | Drawer | Dictate/match | Complete/PDF | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samsung S25 / unknown | Pending | Not run | Not run | Not run | Not run | Pending |
+| Samsung S25 / Android 16 (API 36) | m0-candidate-2026-09-11 / USB local | Login passed; restart pending | Not run | Awaiting real dictation | Not run | Open: 16 KB warning and remaining flow |
 
 M0's tagged-device gate cannot be replaced by unit tests or merely producing an APK.
