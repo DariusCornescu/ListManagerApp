@@ -51,7 +51,7 @@ class ResolveSpokenProductUseCase(
         // Minimum fuzzy score for a word-window to be cut out as its own product
         // during multi-product segmentation. Tunable.
         private const val SEGMENT_THRESHOLD = 0.62
-        private const val SEGMENT_MAX_WINDOW = 4
+        private const val SEGMENT_MAX_WINDOW = 7
 
         internal fun mergeAdjacentAutoAdds(
             results: List<Pair<String, ResolveResult>>,

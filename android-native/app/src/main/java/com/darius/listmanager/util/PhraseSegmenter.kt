@@ -9,6 +9,21 @@ package com.darius.listmanager.util
  * database.
  */
 object PhraseSegmenter {
+    private val boundaryTokens = setOf("|", "si", "plus", "apoi", "iar", "dupa", "care")
+    private val fillerTokens = setOf(
+        "adaug", "adauga", "adaugam", "pune", "punem", "vreau", "as", "vrea",
+        "dori", "doresc", "sa", "poti", "pui", "te", "rog", "mai", "inca",
+        "avem", "am", "nevoie", "imi", "trebuie", "da-mi", "noteaza", "trece",
+        "ia", "de", "bucata", "bucati", "cutie", "cutii", "bax", "baxuri",
+        "sticla", "sticle", "kilogram", "kilograme", "kg", "litru", "litri",
+    )
+
+    private fun tokenize(text: String): List<String> = text
+        .replace(Regex("[,;:\\n]+"), " | ")
+        .trim()
+        .split(Regex("\\s+"))
+        .map { it.trim('.', '!', '?') }
+        .filter { it.isNotBlank() }
 
     /**
      * Greedily segment [text]. At each position, evaluate windows of 1..[maxWindow]
@@ -23,7 +38,7 @@ object PhraseSegmenter {
         maxWindow: Int = 4,
         scoreOf: (String) -> Double
     ): List<String> {
-        val tokens = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val tokens = tokenize(text)
         if (tokens.isEmpty()) return emptyList()
 
         val segments = mutableListOf<String>()
@@ -61,6 +76,14 @@ object PhraseSegmenter {
                 segments.add(listOfNotNull(quantityPrefix, matched).joinToString(" "))
                 quantityPrefix = null
                 i += bestLen
+            } else if (TextNorm.normalize(tokens[i]) in boundaryTokens) {
+                if (leftover.isNotEmpty()) {
+                    segments.add(leftover.joinToString(" "))
+                    leftover.clear()
+                }
+                i++
+            } else if (TextNorm.normalize(tokens[i]) in fillerTokens) {
+                i++
             } else {
                 quantityPrefix?.let {
                     leftover.add(it)

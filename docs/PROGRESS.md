@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - Natural multi-product dictation extraction
+
+- Catalog-aware segmentation now treats punctuation and Romanian connectors
+  such as `și`, `plus`, `apoi`, and `iar` as boundaries when they are not part
+  of a matched catalog name.
+- Conversational commands and count units are removed around products, so a
+  phrase such as „aș vrea să adaug două baxuri de apă și trei bucăți de săpun”
+  produces two additions with quantities 2 and 3 instead of unknown fragments.
+- Matching windows support catalog names up to seven words, while a connector
+  inside a real name such as „sare și piper” remains intact.
+- Five regressions cover commands, quantities, connectors, punctuation, and
+  long names. Final gates: 175 Debug and 175 Release tests passed without
+  failures, errors, or skips; Preview assembly succeeded.
+
+---
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server
