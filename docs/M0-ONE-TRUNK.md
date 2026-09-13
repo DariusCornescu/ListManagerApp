@@ -38,7 +38,7 @@ Publishing is blocked by missing GitHub credentials. Remote development remains
 The device-authentication attempt produced no code and was stopped. Local
 branches are development plus one reliability branch.
 
-## Device acceptance — EX-9 (pending)
+## Device acceptance — EX-9 (second phone pending)
 
 Connected phone verified: Samsung Galaxy S25 (SM-S931B), Android 16 / API 36.
 USB debugging is authorized after the Samsung driver setup.
@@ -57,9 +57,9 @@ reported with an unknown alignment error. Dismissing the warning let the app
 reach login. The sentence-embeddings runtime was upgraded rather than removed,
 so the existing fuzzy fallback and semantic integration contract remain intact.
 
-Real dictation requested from the user: "doua lapte Zuzu" against the local
-catalog's "Lapte Zuzu 1L". No pass is recorded until the outcome is observed.
-Restart persistence, drawer scrolling and completion/PDF checks remain pending.
+Real dictation, reinstall/session restoration, drawer scrolling, and
+completion/PDF checks have passed on the S25. A second supported phone is still
+required by the milestone gate.
 
 Run on each supported real phone and record device model, Android version,
 app version/tag, backend environment, time and outcome:
@@ -81,7 +81,7 @@ Evidence table (do not pre-fill Pass):
 
 | Device / Android | Candidate tag / environment | Login/restart | Drawer | Dictate/match | Complete/PDF | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samsung S25 / Android 16 (API 36) | development / USB local | Login and reinstall/restart passed | Not run | Pass: Lapte Zuzu 1L ×2 | Not run | Open: drawer, completion/PDF; device kernel is 4 KB |
+| Samsung S25 / Android 16 (API 36) | development / USB local | Pass: login, reinstall/restart, existing session restored | Pass: bottom entries reached | Pass: Lapte Zuzu 1L ×2 | Pass: METRO PDF, quantity/total 2, session rollover | Pass on this phone; device kernel is 4 KB |
 
 M0's tagged-device gate cannot be replaced by unit tests or merely producing an APK.
 
@@ -151,3 +151,28 @@ a blocker for the static APK gate. The APK SHA-256 is
 The startup log also confirms `model.onnx` is not packaged, as documented by the
 assets README. Semantic matching therefore continues to use the designed
 fuzzy-only fallback; supplying and validating the model is separate work.
+
+## Fresh-install session hydration corrective candidate
+
+A clean reinstall retained the authenticated server session but started with an
+empty Room catalog. The API returned session 1 and its `Lapte Zuzu 1L` ×2 item;
+Room rejected the item because its product and distributor foreign-key parents
+had not been inserted yet, so the UI incorrectly showed an empty session.
+
+Workspace resolution now fetches both catalog halves and inserts distributors
+before products in one Room transaction, then applies the session snapshot. A
+failed or incomplete catalog refresh leaves the last complete local session
+snapshot untouched. Two native Room tests reproduce the empty-database failure
+and the offline preservation case; both failed before the correction. The full
+gate passes 170 Debug tests, 170 Release tests, Preview assembly, all eight
+Python tool tests, the eight-library ELF 16 KB check, and `zipalign -P 16`.
+
+The corrected Preview build passed on the Samsung S25 after reinstall: Current
+Session displayed `Lapte Zuzu 1L` with quantity 2 and METRO as distributor. The
+drawer reached Teams, Generated PDFs, Settings, and About. Completing the session
+generated a one-page METRO PDF with the expected product, quantity 2, total 2,
+and footer. Text extraction and a 160 DPI rendered-page inspection found no
+clipping or overlap. The backend then reported session 1 complete and created
+empty active session 2. M0 remains open for the second-phone and GitHub
+publication gates. The resulting APK SHA-256 is
+`52847B3FF9EE6B342E72348CBAE85350031965067546A3FA7F919C359CDDF35B`.

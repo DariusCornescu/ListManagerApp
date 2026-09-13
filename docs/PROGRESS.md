@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
+
+- A clean Preview reinstall exposed a foreign-key ordering defect: the server
+  returned the active session and its item, but Room rejected that item before
+  its product and distributor parents had been cached. The session screen
+  therefore appeared empty even though the server held `Lapte Zuzu 1L` ×2.
+- Workspace resolution now refreshes distributors and products atomically before
+  applying the session snapshot. If either catalog request fails, it preserves
+  the last complete local snapshot instead of replacing it with partial data.
+- Two native Room regressions cover first-install hydration and preservation on
+  catalog failure. Both failed before the correction and pass afterwards. The
+  full gate passes 170 Debug tests, 170 Release tests, and Preview assembly.
+- On the Samsung S25, the corrected clean install displayed the existing METRO
+  item with quantity 2. The drawer scrolled to Teams, Generated PDFs, Settings,
+  and About.
+- Completing the session generated one METRO PDF with the expected distributor,
+  product, quantity 2, total 2, and page 1 of 1. Text extraction and a 160 DPI
+  rendered-page inspection found no clipping or overlap. The backend marked
+  session 1 complete and created empty active session 2.
+- M0 remains open for the second-phone and GitHub publication gates.
+- The fresh APK passes all eight Python tool tests, the eight-library ELF 16 KB
+  check, and `zipalign -P 16`; SHA-256 is
+  `52847B3FF9EE6B342E72348CBAE85350031965067546A3FA7F919C359CDDF35B`.
+
+---
+
 ## 2026-09-13 - M0 Android 16 KB native-library gate passed
 
 - Upgraded `sentence-embeddings` from `0.0.6` to the NDK-r28-built `v6` artifact

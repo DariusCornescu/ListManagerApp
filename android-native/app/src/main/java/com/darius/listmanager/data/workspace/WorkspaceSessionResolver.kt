@@ -1,7 +1,10 @@
 package com.darius.listmanager.data.workspace
 
 import android.util.Log
+import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
+import com.darius.listmanager.data.local.entity.DistributorEntity
+import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.network.CreateSessionRequest
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
@@ -70,6 +73,10 @@ class WorkspaceSessionResolver(
     /** Refresh only when no local session intent would be overwritten. */
     private suspend fun pullItems(sessionId: Long) {
         try {
+            if (!refreshCatalog()) {
+                Log.w(TAG, "catalog refresh failed; keeping cached session items")
+                return
+            }
             SessionSnapshotStore(database).refresh(sessionId) { api.getSessionItems(sessionId) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -78,6 +85,34 @@ class WorkspaceSessionResolver(
         } catch (e: Exception) {
             Log.e(TAG, "pullItems failed: ${e.javaClass.simpleName}")
         }
+    }
+
+    /** Session items reference products, which reference distributors. A fresh
+     * install must cache those parents before Room can accept the item rows. */
+    private suspend fun refreshCatalog(): Boolean {
+        val distributorResponse = api.getDistributors()
+        val productResponse = api.getProducts()
+        val distributors = distributorResponse.body()
+        val products = productResponse.body()
+        if (!distributorResponse.isSuccessful || distributors == null ||
+            !productResponse.isSuccessful || products == null
+        ) {
+            return false
+        }
+        database.withTransaction {
+            database.distributorDao().insertAll(distributors.map {
+                DistributorEntity(id = it.id, distributorName = it.distributor_name)
+            })
+            database.productDao().insertAll(products.map {
+                ProductEntity(
+                    id = it.id,
+                    name = it.name,
+                    distributorId = it.distributor_id,
+                    aliases = it.aliases,
+                )
+            })
+        }
+        return true
     }
 
     private companion object { const val TAG = "WorkspaceSessionResolver" }
