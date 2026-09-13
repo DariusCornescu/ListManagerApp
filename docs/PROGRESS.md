@@ -5,6 +5,20 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - S25 authentication and active-session verification
+
+- Authenticated the Preview app against the isolated USB-forwarded backend and
+  verified `/api/auth/login` and `/api/auth/me` return 200 for the local test user.
+- Opened the personal active session on the Samsung S25. Both
+  `/api/session/active` and `/api/session/1/items` return 200; the active session
+  exists and currently contains no server items.
+- Corrected the sign-in form so email is shown and required only for account
+  creation. Sign-in now reflects the backend contract: username and password.
+- Added unit coverage for login and registration submission rules. Full Android
+  gate: 165 tests, zero failures/errors, and Preview APK assembly successful.
+
+---
+
 ## 2026-09-13 - T1 real-device crash recovery and retry idempotency
 
 - Added a crash trigger compiled only into the side-by-side Preview build and
