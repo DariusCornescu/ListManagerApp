@@ -43,16 +43,24 @@ class SessionSyncRecoveryTest {
     private fun error(code: Int): Response<GlobalSessionItemDTO> = Response.error(code, "error".toResponseBody())
     private fun api(
         add: suspend (AddItemRequest) -> Response<GlobalSessionItemDTO> = { Response.success(dto(it.quantity)) },
+        addWithSession: (suspend (Long, AddItemRequest) -> Response<GlobalSessionItemDTO>)? = null,
         update: suspend (Long, UpdateItemRequest) -> Response<GlobalSessionItemDTO> = { _, r -> Response.success(dto(r.quantity, r.version + 1)) },
         delete: suspend (Long) -> Response<Unit> = { Response.success(Unit) },
+        createSession: (suspend (CreateSessionRequest) -> Response<GlobalSessionDTO>)? = null,
+        completeSession: (suspend (Long) -> Response<CompleteSessionResponse>)? = null,
     ): ListManagerApi {
         val unused = Proxy.newProxyInstance(ListManagerApi::class.java.classLoader, arrayOf(ListManagerApi::class.java)) { _, m, _ ->
             error("Unexpected API call: ${m.name}")
         } as ListManagerApi
         return object : ListManagerApi by unused {
-            override suspend fun addSessionItem(sessionId: Long, request: AddItemRequest) = add(request)
+            override suspend fun addSessionItem(sessionId: Long, request: AddItemRequest) =
+                addWithSession?.invoke(sessionId, request) ?: add(request)
             override suspend fun updateSessionItem(itemId: Long, request: UpdateItemRequest) = update(itemId, request)
             override suspend fun deleteSessionItem(itemId: Long) = delete(itemId)
+            override suspend fun createSession(request: CreateSessionRequest) =
+                createSession?.invoke(request) ?: error("Unexpected API call: createSession")
+            override suspend fun completeSession(sessionId: Long) =
+                completeSession?.invoke(sessionId) ?: error("Unexpected API call: completeSession")
         }
     }
     private fun repo(api: ListManagerApi) = SessionRepository(db.sessionDao(), db.sessionItemDao(), api,
@@ -66,6 +74,108 @@ class SessionSyncRecoveryTest {
     )
     private suspend fun queuedAdd() {
         repo(api(add = { throw IOException("offline") })).addOrIncrementItem(10, 7, 3)
+    }
+
+    private fun sessionDto(
+        id: Long,
+        clientUuid: String,
+        active: Boolean = true,
+    ) = GlobalSessionDTO(
+        id = id,
+        name = "Current Session",
+        is_active = active,
+        created_at = "2026-09-13T00:00:00",
+        completed_at = if (active) null else "2026-09-13T00:01:00",
+        version = 1,
+        owner_user_id = 0,
+        team_id = null,
+        client_uuid = clientUuid,
+    )
+
+    private fun completeDto(session: GlobalSessionDTO) = CompleteSessionResponse(
+        session = session.copy(is_active = false, completed_at = "2026-09-13T00:01:00"),
+        items_by_distributor = emptyMap(),
+        distributor_count = 1,
+        total_items = 2,
+    )
+
+    @Test fun offlineSession_survivesRestart_promotesAndCompletesInOrder() = runBlocking {
+        db.sessionDao().deleteById(10)
+        db.productDao().insert(ProductEntity(8, "Second product", 1))
+        val localRepository = repo(api())
+        val local = localRepository.getOrCreateActiveSession(null)
+        assertTrue(local.id < 0)
+        localRepository.addOrIncrementItem(local.id, 7, 2)
+        localRepository.addOrIncrementItem(local.id, 8, 1)
+        localRepository.completeSessionWriteThrough(local.id)
+
+        val calls = mutableListOf<String>()
+        var createdRequest: CreateSessionRequest? = null
+        val remote = api(
+            createSession = { request ->
+                calls += "create"
+                createdRequest = request
+                Response.success(sessionDto(50, requireNotNull(request.client_uuid)))
+            },
+            addWithSession = { sessionId, request ->
+                calls += "add:${request.product_id}"
+                assertEquals(50L, sessionId)
+                Response.success(
+                    GlobalSessionItemDTO(
+                        id = 500 + request.product_id,
+                        session_id = sessionId,
+                        product_id = request.product_id,
+                        quantity = request.quantity,
+                        version = 1,
+                        created_at = "2026-09-13T00:00:00",
+                        updated_at = "2026-09-13T00:00:00",
+                        product_name = null,
+                        distributor_name = null,
+                    )
+                )
+            },
+            completeSession = { sessionId ->
+                calls += "complete"
+                assertEquals(50L, sessionId)
+                Response.success(completeDto(sessionDto(50, requireNotNull(createdRequest?.client_uuid))))
+            },
+        )
+
+        // New service/repository instances model a process restart while Room
+        // remains the durable source of truth.
+        assertTrue(worker(remote).syncPendingOperations() is SyncResult.Success)
+
+        assertEquals(listOf("create", "add:7", "add:8", "complete"), calls)
+        assertNull(db.sessionDao().getById(local.id))
+        assertEquals(false, db.sessionDao().getById(50)?.isActive)
+        assertEquals(setOf(7L, 8L), db.sessionItemDao().getItems(50).map { it.productId }.toSet())
+        assertTrue(db.pendingOperationDao().getUnfinishedForUser(0).isEmpty())
+    }
+
+    @Test fun lostCreateResponse_reusesClientUuidAndPromotesOnlyOnce() = runBlocking {
+        db.sessionDao().deleteById(10)
+        val local = repo(api()).getOrCreateActiveSession(null)
+        val requests = mutableListOf<CreateSessionRequest>()
+        var loseResponse = true
+        val remote = api(createSession = { request ->
+            requests += request
+            if (loseResponse) {
+                loseResponse = false
+                throw IOException("response lost after commit")
+            }
+            Response.success(sessionDto(50, requireNotNull(request.client_uuid)))
+        })
+        val service = worker(remote)
+
+        assertTrue(service.syncPendingOperations() is SyncResult.Error)
+        assertEquals("FAILED", db.pendingOperationDao().getUnfinishedForUser(0).single().status)
+        assertTrue(service.syncPendingOperations() is SyncResult.Success)
+
+        assertEquals(2, requests.size)
+        assertEquals(requests[0].client_uuid, requests[1].client_uuid)
+        assertNull(db.sessionDao().getById(local.id))
+        assertEquals(requests[0].client_uuid, db.sessionDao().getById(50)?.clientUuid)
+        assertTrue(db.pendingOperationDao().getUnfinishedForUser(0).isEmpty())
     }
 
     @Test fun unauthorized_retainsIdentity_andRetriesAfterAuthentication() = runBlocking {

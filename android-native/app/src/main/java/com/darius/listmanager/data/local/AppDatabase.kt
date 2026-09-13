@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
         ProductEmbeddingEntity::class,
         InventoryItemEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -52,6 +52,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "list_manager_db"
                 )
                     .addMigrations(MIGRATION_7_8)
+                    .addMigrations(MIGRATION_8_9)
                     .fallbackToDestructiveMigration()
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -77,6 +78,16 @@ abstract class AppDatabase : RoomDatabase() {
                 // next account that signs in.
                 db.execSQL(
                     "ALTER TABLE sessions ADD COLUMN accountUserId INTEGER NOT NULL DEFAULT -1"
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN clientUuid TEXT")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_clientUuid " +
+                        "ON sessions(clientUuid)"
                 )
             }
         }

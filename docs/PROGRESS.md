@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M6 offline session lifecycle complete
+
+- Offline sessions now receive a stable client UUID and a durable create intent.
+  Item edits stay in FIFO order behind creation, and reconnect atomically maps
+  the negative Room id to the server id before replay continues.
+- Completion is durable and idempotent. It waits behind outstanding item writes,
+  survives restart, and cannot be undone by workspace resolution. Completed
+  sessions reject add, update, delete, and clear; corrections use a new session.
+- Room schema 9 adds the nullable unique session identity. Migration retention,
+  resolver deferral, restart/reconnect promotion, two-item replay, completion
+  ordering, and lost create-response recovery have regression coverage.
+- Final gates: 256 backend tests, 177 Android Debug tests, and 177 Android Release
+  tests passed without failures, errors, or skips; Preview assembly succeeded.
+  Installing Preview over the existing S25 data preserved the app and launched
+  without Room, SQLite, or runtime failures.
+- Integration note: M6 is stacked on M5. After the dedicated M7 branch is merged,
+  rebase M6 and point its Alembic revision at M7's revision before opening its PR.
+
+---
+
 ## 2026-09-13 - M5 account/workspace isolation complete
 
 - Room schema 8 adds an account owner to cached sessions. Personal sessions are

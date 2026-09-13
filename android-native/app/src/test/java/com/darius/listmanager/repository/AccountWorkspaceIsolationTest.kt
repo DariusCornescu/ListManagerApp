@@ -133,6 +133,63 @@ class AccountWorkspaceIsolationTest {
     }
 
     @Test
+    fun migration8To9_preservesSessionAndAddsUniqueClientIdentity() {
+        val path = temporary.newFile("session-identity.db").absolutePath
+        val helper = FrameworkSQLiteOpenHelperFactory().create(
+            SupportSQLiteOpenHelper.Configuration.builder(context)
+                .name(path)
+                .callback(object : SupportSQLiteOpenHelper.Callback(8) {
+                    override fun onCreate(db: SupportSQLiteDatabase) {
+                        db.execSQL(
+                            """
+                            CREATE TABLE sessions (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                                name TEXT NOT NULL,
+                                createdAt INTEGER NOT NULL,
+                                isActive INTEGER NOT NULL,
+                                teamId INTEGER,
+                                accountUserId INTEGER NOT NULL DEFAULT -1
+                            )
+                            """.trimIndent()
+                        )
+                    }
+
+                    override fun onUpgrade(
+                        db: SupportSQLiteDatabase,
+                        oldVersion: Int,
+                        newVersion: Int,
+                    ) = Unit
+                })
+                .build()
+        )
+        val sqlite = helper.writableDatabase
+        sqlite.execSQL(
+            "INSERT INTO sessions (id, name, createdAt, isActive, teamId, accountUserId) " +
+                "VALUES (10, 'Offline', 1, 1, NULL, 101)"
+        )
+
+        AppDatabase.MIGRATION_8_9.migrate(sqlite)
+        sqlite.execSQL("UPDATE sessions SET clientUuid = 'stable-one' WHERE id = 10")
+
+        sqlite.query("SELECT name, accountUserId, clientUuid FROM sessions WHERE id = 10").use {
+            it.moveToFirst()
+            assertEquals("Offline", it.getString(0))
+            assertEquals(101L, it.getLong(1))
+            assertEquals("stable-one", it.getString(2))
+        }
+        try {
+            sqlite.execSQL(
+                "INSERT INTO sessions (id, name, createdAt, isActive, accountUserId, clientUuid) " +
+                    "VALUES (11, 'Duplicate', 1, 0, 101, 'stable-one')"
+            )
+            org.junit.Assert.fail("Expected unique clientUuid constraint")
+        } catch (_: android.database.sqlite.SQLiteConstraintException) {
+            // Expected: retries can map to only one local session.
+        }
+        helper.close()
+    }
+
+    @Test
     fun personalSessionReadsAreScopedToTheCurrentAccount() = runBlocking {
         database.sessionDao().insert(
             SessionEntity(id = 10, name = "A", accountUserId = 101)

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import authz, models, schemas, sync_ops
@@ -66,6 +67,22 @@ async def create_session(
     other sessions).
     """
     team_id = getattr(session_data, "team_id", None)
+    client_uuid = getattr(session_data, "client_uuid", None)
+
+    if client_uuid is not None:
+        existing_query = db.query(models.GlobalSession).filter(
+            models.GlobalSession.client_uuid == client_uuid
+        )
+        if team_id is not None:
+            authz.require_team_member(team_id, current_user, db)
+            existing_query = existing_query.filter(models.GlobalSession.team_id == team_id)
+        else:
+            existing_query = existing_query.filter(
+                models.GlobalSession.owner_user_id == current_user.id
+            )
+        existing = existing_query.first()
+        if existing is not None:
+            return existing
 
     if team_id is not None:
         # Caller must be a member of the team (404 otherwise).
@@ -79,6 +96,7 @@ async def create_session(
             is_active=True,
             owner_user_id=None,
             team_id=team_id,
+            client_uuid=client_uuid,
         )
     else:
         # Deactivate only the caller's other personal active sessions.
@@ -90,10 +108,26 @@ async def create_session(
             is_active=True,
             owner_user_id=current_user.id,
             team_id=None,
+            client_uuid=client_uuid,
         )
 
     db.add(new_session)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if client_uuid is None:
+            raise
+        collision = db.query(models.GlobalSession).filter(
+            models.GlobalSession.client_uuid == client_uuid
+        ).first()
+        authorized_collision = collision is not None and (
+            (team_id is None and collision.owner_user_id == current_user.id) or
+            (team_id is not None and collision.team_id == team_id)
+        )
+        if not authorized_collision:
+            raise HTTPException(status_code=409, detail="Session identity already exists")
+        return collision
     db.refresh(new_session)
 
     # Notify clients authorized for this session
@@ -122,6 +156,8 @@ async def complete_session(
     """
     # Enforce access (404 if missing or caller has no relationship).
     session = authz.require_session_access(session_id, current_user, db, write=True)
+
+    already_completed = not session.is_active
 
     # Get all items with products and distributors (JOIN)
     items = db.query(models.GlobalSessionItem).filter(
@@ -157,23 +193,25 @@ async def complete_session(
         items_by_distributor[distributor_name].append(item_dto)
 
     # Mark session as completed
-    session.is_active = False
-    session.completed_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(session)
+    if not already_completed:
+        session.is_active = False
+        session.completed_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(session)
 
     # Notify clients authorized for this session
-    await manager.broadcast_to_session({
-        "type": "session_completed",
-        "data": {
-            "session_id": session_id,
-            "total_items": sum(item.quantity for item in items),
-            "distributor_count": len(items_by_distributor),
-            "pdf_generated": True,
-            "user_id": current_user.id,
-            "username": current_user.username
-        }
-    }, session_id, db)
+    if not already_completed:
+        await manager.broadcast_to_session({
+            "type": "session_completed",
+            "data": {
+                "session_id": session_id,
+                "total_items": sum(item.quantity for item in items),
+                "distributor_count": len(items_by_distributor),
+                "pdf_generated": True,
+                "user_id": current_user.id,
+                "username": current_user.username
+            }
+        }, session_id, db)
 
     # Return grouped data
     return {
@@ -192,7 +230,9 @@ async def clear_session(
 ):
     """Clear all items from a session with real-time notification"""
     # Enforce access (404 if missing or caller has no relationship).
-    authz.require_session_access(session_id, current_user, db, write=True)
+    session = authz.require_session_access(session_id, current_user, db, write=True)
+    if not session.is_active:
+        raise HTTPException(status_code=400, detail="Session is no longer active.")
 
     deleted_count = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
@@ -417,7 +457,9 @@ async def update_session_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     # Enforce access to the item's session (404 if no access; do not leak).
-    authz.require_session_access(item.session_id, current_user, db, write=True)
+    session = authz.require_session_access(item.session_id, current_user, db, write=True)
+    if not session.is_active:
+        raise HTTPException(status_code=400, detail="Session is no longer active.")
 
     key = update_data.idempotency_key
     # Idempotency: a retried update with the same key returns the stored result.
@@ -526,7 +568,9 @@ async def delete_session_item(
         raise HTTPException(status_code=404, detail="Item not found")
 
     # Enforce access to the item's session (404 if no access; do not leak).
-    authz.require_session_access(item.session_id, current_user, db, write=True)
+    session = authz.require_session_access(item.session_id, current_user, db, write=True)
+    if not session.is_active:
+        raise HTTPException(status_code=400, detail="Session is no longer active.")
 
     # Get product name before deleting
     product = db.query(models.Product).filter(

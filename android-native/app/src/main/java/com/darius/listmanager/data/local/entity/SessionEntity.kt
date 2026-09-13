@@ -3,8 +3,12 @@ package com.darius.listmanager.data.local.entity
 import androidx.room.Entity
 import androidx.room.ColumnInfo
 import androidx.room.PrimaryKey
+import androidx.room.Index
 
-@Entity(tableName = "sessions")
+@Entity(
+    tableName = "sessions",
+    indices = [Index(value = ["clientUuid"], unique = true)],
+)
 data class SessionEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Long = 0,
@@ -16,6 +20,8 @@ data class SessionEntity(
     /** Personal-cache owner. Team rows use 0; legacy rows use -1 (quarantined). */
     @ColumnInfo(defaultValue = "-1")
     val accountUserId: Long = LEGACY_ACCOUNT_ID,
+    /** Stable identity used to make offline promotion idempotent. */
+    val clientUuid: String? = null,
 ) {
     companion object {
         const val LEGACY_ACCOUNT_ID = -1L

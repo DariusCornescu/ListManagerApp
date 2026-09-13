@@ -57,7 +57,17 @@ sealed class OperationData {
     data class UpdateProduct( val productId: Long, val name: String, val distributorId: Long, val aliases: String? ) : OperationData()
     @Serializable  
     data class DeleteProduct( val productId: Long ) : OperationData()
-    
+
+    @Serializable
+    data class CreateSession(
+        val localSessionId: Long,
+        val clientUuid: String,
+        val name: String,
+        val teamId: Long?,
+    ) : OperationData()
+
+    @Serializable
+    data class CompleteSession(val sessionId: Long) : OperationData()
 
     @Serializable  
     data class AddSessionItem( val sessionId: Long, val productId: Long, val quantity: Int,

@@ -71,11 +71,18 @@ unavailable test with a passing test.
   tests cover the 7→8 migration, personal-session isolation, shared team cache,
   and cross-account outbox replay. Installing Preview over the existing S25
   app preserved the database and launched without Room/SQLite/runtime errors.
-- M6–M7: not complete on this branch. M7 is complete separately on
-  `fix/postgres-concurrent-op-sequences`.
+- M6: **177 Debug tests and 177 Release tests passed**, with no failures,
+  errors, or skips; Preview assembly succeeded on 2026-09-13. Backend gate:
+  **256 passed**. Tests cover Room 8→9 retention/UUID uniqueness, restart and
+  reconnect promotion, lost-create-response replay, ordered item/completion
+  upload, resolver protection, and immutable completed sessions. The Preview
+  APK installed over the existing S25 data and launched without Room, SQLite,
+  or runtime failures.
+- M7: complete separately on `fix/postgres-concurrent-op-sequences`; its real
+  PostgreSQL gate passed before the M5/M6 work.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
   changes. The user accepted the Android SDK license; platform 36, build tools
   35.0.0 and platform tools are installed in ignored local tooling.
-- Pending product decision: completed-list edit policy. Inventory remains
-  device-local per the existing EX-44 scope.
+- Completed-list policy: immutable. Corrections start a new session. Inventory
+  remains device-local per the existing EX-44 scope.

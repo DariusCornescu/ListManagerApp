@@ -87,6 +87,8 @@ class GlobalSession(Base):
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     version = Column(Integer, default=0)
+    # Stable client identity for idempotent offline-session promotion.
+    client_uuid = Column(String(36), nullable=True, unique=True, index=True)
 
     # Exactly one of these is set: owner_user_id => personal, team_id => team session.
     # The exactly-one rule is enforced at app level in Wave 2 (no DB CHECK here).

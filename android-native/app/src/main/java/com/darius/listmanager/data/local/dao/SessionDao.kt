@@ -18,6 +18,9 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun getById(id: Long): SessionEntity?
 
+    @Query("SELECT * FROM sessions WHERE clientUuid = :clientUuid LIMIT 1")
+    suspend fun getByClientUuid(clientUuid: String): SessionEntity?
+
     @Insert
     suspend fun insert(session: SessionEntity): Long
 
@@ -36,8 +39,15 @@ interface SessionDao {
     @Query("SELECT MIN(id) FROM sessions")
     suspend fun getMinSessionId(): Long?
 
+    @Query("DELETE FROM sessions WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Transaction
-    suspend fun getOrCreateActiveSession(accountUserId: Long, teamId: Long?): SessionEntity {
+    suspend fun getOrCreateActiveSession(
+        accountUserId: Long,
+        teamId: Long?,
+        clientUuid: String? = null,
+    ): SessionEntity {
         val active = getActiveSession(accountUserId, teamId)
         if (active != null) return active
         // Local fallback sessions get negative ids; server-mirrored sessions
@@ -49,6 +59,7 @@ interface SessionDao {
             isActive = true,
             teamId = teamId,
             accountUserId = if (teamId == null) accountUserId else SessionEntity.TEAM_SHARED_ACCOUNT_ID,
+            clientUuid = clientUuid,
         ))
         return getById(newId)!!
     }
@@ -59,7 +70,13 @@ interface SessionDao {
      * convention as products/distributors).
      */
     @Transaction
-    suspend fun activateServerSession(serverId: Long, name: String, accountUserId: Long, teamId: Long?) {
+    suspend fun activateServerSession(
+        serverId: Long,
+        name: String,
+        accountUserId: Long,
+        teamId: Long?,
+        clientUuid: String? = null,
+    ) {
         deactivateAll(accountUserId, teamId)
         upsert(SessionEntity(
             id = serverId,
@@ -67,6 +84,7 @@ interface SessionDao {
             isActive = true,
             teamId = teamId,
             accountUserId = if (teamId == null) accountUserId else SessionEntity.TEAM_SHARED_ACCOUNT_ID,
+            clientUuid = clientUuid,
         ))
     }
 

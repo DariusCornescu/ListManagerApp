@@ -48,6 +48,9 @@ interface SessionItemDao {
     @Query("SELECT * FROM session_items WHERE id = :id")
     suspend fun getById(id: Long): SessionItemEntity?
 
+    @Query("SELECT * FROM session_items WHERE sessionId = :sessionId ORDER BY id ASC")
+    suspend fun getItems(sessionId: Long): List<SessionItemEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(item: SessionItemEntity): Long
 
@@ -62,6 +65,9 @@ interface SessionItemDao {
 
     @Query("DELETE FROM session_items WHERE sessionId = :sessionId")
     suspend fun deleteAllInSession(sessionId: Long)
+
+    @Query("UPDATE session_items SET sessionId = :serverSessionId WHERE sessionId = :localSessionId")
+    suspend fun moveToSession(localSessionId: Long, serverSessionId: Long)
 
     @Transaction
     suspend fun addOrIncrement(sessionId: Long, productId: Long, quantityToAdd: Int = 1) {
