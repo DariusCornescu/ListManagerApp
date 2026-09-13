@@ -37,4 +37,19 @@ object SpokenQuantity {
         val normalized = TextNorm.normalize(token)
         return normalized in wordValues || normalized.toLongOrNull()?.let { it > 0 } == true
     }
+
+    /** Removes a valid leading count so matching only sees the product words. */
+    fun productText(spokenText: String): String {
+        val normalized = TextNorm.normalize(spokenText)
+        val tokens = normalized.split(' ').filter { it.isNotBlank() }
+        if (tokens.size < 2) return normalized
+
+        val first = tokens.first()
+        val numeric = Regex("^(\\d{1,10})x?$").matchEntire(first)
+            ?.groupValues
+            ?.get(1)
+            ?.toLongOrNull()
+        val isQuantity = first in wordValues || numeric?.let { it > 0 } == true
+        return if (isQuantity) tokens.drop(1).joinToString(" ") else normalized
+    }
 }

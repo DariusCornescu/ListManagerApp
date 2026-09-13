@@ -8,7 +8,7 @@ object QueryVariants {
      * Handles: plurals, with/without 'x', prefixes, decimal variations
      */
     fun generate(spokenText: String): List<String> {
-        val normalized = TextNorm.normalize(spokenText)
+        val normalized = SpokenQuantity.productText(spokenText)
         val variants = mutableSetOf<String>()
 
         // Base normalized query

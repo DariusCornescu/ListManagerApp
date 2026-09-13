@@ -6,6 +6,7 @@ import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SpokenQuantity
 import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.repository.ProductEmbeddingRepository
 import com.darius.listmanager.util.EmbeddingSearch
@@ -106,7 +107,7 @@ class ResolveSpokenProductUseCase(
         // Blank/duplicate guesses are dropped; a single hypothesis reproduces the
         // old single-transcript behavior exactly.
         val hypotheses = (listOf(spokenText) + alternatives)
-            .map { it.trim() }
+            .map { SpokenQuantity.productText(it) }
             .filter { it.isNotEmpty() }
             .distinct()
 

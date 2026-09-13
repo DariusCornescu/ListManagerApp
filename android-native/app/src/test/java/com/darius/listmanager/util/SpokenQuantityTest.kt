@@ -25,4 +25,13 @@ class SpokenQuantityTest {
         assertEquals(1, SpokenQuantity.from("0 lapte"))
         assertEquals(1, SpokenQuantity.from(""))
     }
+
+    @Test fun `removes only a valid leading quantity from product text`() {
+        assertEquals("lapte zuzu", SpokenQuantity.productText("două lapte Zuzu"))
+        assertEquals("lapte", SpokenQuantity.productText("3x lapte"))
+        assertEquals("sticle de apa", SpokenQuantity.productText("12 sticle de apă"))
+        assertEquals("lapte zuzu 1l", SpokenQuantity.productText("Lapte Zuzu 1L"))
+        assertEquals("suruburi 4x40mm", SpokenQuantity.productText("Șuruburi 4x40mm"))
+        assertEquals("0 lapte", SpokenQuantity.productText("0 lapte"))
+    }
 }
