@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M5 account/workspace isolation complete
+
+- Room schema 8 adds an account owner to cached sessions. Personal sessions are
+  selected by account id; team sessions remain intentionally shared by team id.
+- The authenticated user id is restored with the encrypted auth state. A new
+  login clears the previous id until `/auth/me` confirms the new identity, and
+  the session UI waits instead of opening a stale cache in that interval.
+- New outbox entries always record their author. Replay, pending/failed UI,
+  snapshot protection, and acknowledgement rebasing operate only on the current
+  account; unattributed legacy operations remain stored but quarantined.
+- Three native SQLite tests cover migration retention, personal/team cache
+  visibility, and A/B replay isolation with A able to resume later.
+- Final gates: 173 Debug tests and 173 Release tests passed with no failures or
+  skips; Preview assembly succeeded. An in-place S25 Preview upgrade preserved
+  its database and cold-launched without Room, SQLite, or runtime errors.
+- Next: M6 offline session promotion, durable completion, and immutable
+  completed-list behavior.
+
+---
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server

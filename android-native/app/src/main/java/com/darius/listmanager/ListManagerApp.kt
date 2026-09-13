@@ -20,6 +20,7 @@ import com.darius.listmanager.sync.SyncWorkManager
 import com.darius.listmanager.ui.components.DrawerContent
 import com.darius.listmanager.ui.navigation.NavGraph
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 
 class ListManagerApp : Application() {
     override fun onCreate() {
@@ -87,7 +88,12 @@ fun AppContent() {
 
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
-    val pendingCount by database.pendingOperationDao().getPendingCountFlow().collectAsState(initial = 0)
+    val accountUserId by AuthState.userId.collectAsState()
+    val pendingCountFlow = remember(accountUserId) {
+        accountUserId?.let { database.pendingOperationDao().getPendingCountFlowForUser(it) }
+            ?: flowOf(0)
+    }
+    val pendingCount by pendingCountFlow.collectAsState(initial = 0)
     
     // ===== OBSERVABLE LOGIN STATE (single source of truth, no disk polling) =====
     val isLoggedIn by AuthState.isLoggedIn.collectAsState()

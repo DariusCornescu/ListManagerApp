@@ -93,19 +93,21 @@ class SessionRepositoryWriteThroughTest {
         }
 
         override fun getAllFlow(): Flow<List<SessionEntity>> = throw NotImplementedError()
-        override suspend fun getActiveSession(teamId: Long?): SessionEntity? = throw NotImplementedError()
-        override fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = throw NotImplementedError()
+        override suspend fun getActiveSession(accountUserId: Long, teamId: Long?): SessionEntity? = throw NotImplementedError()
+        override fun getActiveSessionFlow(accountUserId: Long, teamId: Long?): Flow<SessionEntity?> = throw NotImplementedError()
         override suspend fun getById(id: Long): SessionEntity? = throw NotImplementedError()
         override suspend fun insert(session: SessionEntity): Long = throw NotImplementedError()
         override suspend fun upsert(session: SessionEntity): Long = throw NotImplementedError()
         override suspend fun update(session: SessionEntity) = throw NotImplementedError()
         override suspend fun delete(session: SessionEntity) = throw NotImplementedError()
-        override suspend fun deactivateAll(teamId: Long?) = throw NotImplementedError()
+        override suspend fun deactivateAll(accountUserId: Long, teamId: Long?) = throw NotImplementedError()
         override suspend fun getMinSessionId(): Long? = throw NotImplementedError()
     }
 
     private class FakePendingOperationDao : PendingOperationDao {
         override suspend fun getUnfinished() = inserted.filter { it.status != "COMPLETED" }
+        override suspend fun getUnfinishedForUser(userId: Long) =
+            inserted.filter { it.userId == userId && it.status != "COMPLETED" }
         val inserted = mutableListOf<PendingOperationEntity>()
 
         override suspend fun insert(operation: PendingOperationEntity): Long {
@@ -115,12 +117,18 @@ class SessionRepositoryWriteThroughTest {
         }
 
         override suspend fun getAllPending(): List<PendingOperationEntity> = throw NotImplementedError()
+        override suspend fun getAllPendingForUser(userId: Long): List<PendingOperationEntity> = throw NotImplementedError()
         override fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> = throw NotImplementedError()
+        override fun getAllPendingFlowForUser(userId: Long): Flow<List<PendingOperationEntity>> = throw NotImplementedError()
         override suspend fun getAllFailed(): List<PendingOperationEntity> = throw NotImplementedError()
+        override suspend fun getAllFailedForUser(userId: Long): List<PendingOperationEntity> = throw NotImplementedError()
         override suspend fun getById(id: Long): PendingOperationEntity? = inserted.firstOrNull { it.id == id }
         override suspend fun getReadyForSync(currentTime: Long): List<PendingOperationEntity> = throw NotImplementedError()
+        override suspend fun getReadyForSyncForUser(userId: Long, currentTime: Long): List<PendingOperationEntity> = throw NotImplementedError()
         override fun getPendingCountFlow(): Flow<Int> = throw NotImplementedError()
+        override fun getPendingCountFlowForUser(userId: Long): Flow<Int> = throw NotImplementedError()
         override fun getFailedCountFlow(): Flow<Int> = throw NotImplementedError()
+        override fun getFailedCountFlowForUser(userId: Long): Flow<Int> = throw NotImplementedError()
         override suspend fun insertAll(operations: List<PendingOperationEntity>) = throw NotImplementedError()
         override suspend fun update(operation: PendingOperationEntity) { inserted[inserted.indexOfFirst { it.id == operation.id }] = operation }
         override suspend fun markAsFailed(id: Long, status: String, error: String?, updatedAt: Long, scheduledFor: Long) {
@@ -132,6 +140,7 @@ class SessionRepositoryWriteThroughTest {
         override suspend fun deleteById(id: Long) { inserted.removeAll { it.id == id } }
         override suspend fun deleteAllCompleted() = throw NotImplementedError()
         override suspend fun deleteOldCompleted(olderThan: Long) = throw NotImplementedError()
+        override suspend fun deleteOldCompletedForUser(userId: Long, olderThan: Long) = throw NotImplementedError()
         override suspend fun deleteAll() = throw NotImplementedError()
     }
 

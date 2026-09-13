@@ -5,6 +5,8 @@ import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.data.local.entity.ProductEntity
+import com.darius.listmanager.data.local.entity.SessionEntity
+import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.network.CreateSessionRequest
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
@@ -22,6 +24,7 @@ import java.io.IOException
 class WorkspaceSessionResolver(
     private val database: AppDatabase,
     private val api: ListManagerApi = RetrofitClient.api,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
 ) {
     sealed class ResolveResult {
         data class Resolved(val sessionId: Long) : ResolveResult()
@@ -49,7 +52,10 @@ class WorkspaceSessionResolver(
                         return ResolveResult.Offline
                     }
                     database.sessionDao().activateServerSession(
-                        serverId = dto.id, name = dto.name, teamId = teamId
+                        serverId = dto.id,
+                        name = dto.name,
+                        accountUserId = currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID,
+                        teamId = teamId,
                     )
                     pullItems(dto.id)
                     ResolveResult.Resolved(dto.id)
@@ -77,7 +83,9 @@ class WorkspaceSessionResolver(
                 Log.w(TAG, "catalog refresh failed; keeping cached session items")
                 return
             }
-            SessionSnapshotStore(database).refresh(sessionId) { api.getSessionItems(sessionId) }
+            SessionSnapshotStore(database, currentUserId).refresh(sessionId) {
+                api.getSessionItems(sessionId)
+            }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: IOException) {

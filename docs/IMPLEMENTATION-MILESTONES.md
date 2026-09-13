@@ -66,9 +66,16 @@ unavailable test with a passing test.
   in 65s on 2026-09-11. 21 new tests; recovery and catalog regressions were
   reproduced before fixes. Room schema unchanged; native SQLite tests, not
   device instrumentation. Diff check passed.
-- M5–M7: not complete.
+- M5: **173 Debug tests and 173 Release tests passed**, with no failures or
+  skips, and Preview assembly succeeded on 2026-09-13. Three new native SQLite
+  tests cover the 7→8 migration, personal-session isolation, shared team cache,
+  and cross-account outbox replay. Installing Preview over the existing S25
+  app preserved the database and launched without Room/SQLite/runtime errors.
+- M6–M7: not complete on this branch. M7 is complete separately on
+  `fix/postgres-concurrent-op-sequences`.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
   changes. The user accepted the Android SDK license; platform 36, build tools
   35.0.0 and platform tools are installed in ignored local tooling.
-- Pending product decisions: completed-list edit policy and inventory ownership.
+- Pending product decision: completed-list edit policy. Inventory remains
+  device-local per the existing EX-44 scope.

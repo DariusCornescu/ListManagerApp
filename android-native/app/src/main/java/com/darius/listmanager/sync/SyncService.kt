@@ -14,6 +14,7 @@ import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.*
 import com.darius.listmanager.data.repository.SessionWriteCoordinator
+import com.darius.listmanager.data.repository.AuthState
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,9 +31,13 @@ class SyncService(
     private val context: Context,
     private val database: AppDatabase = AppDatabase.getInstance(context),
     private val api: ListManagerApi = RetrofitClient.api,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val pendingOperationRepo = PendingOperationRepository(database.pendingOperationDao())
+    private val pendingOperationRepo = PendingOperationRepository(
+        database.pendingOperationDao(),
+        currentUserId,
+    )
 
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
@@ -55,6 +60,7 @@ class SyncService(
     companion object {
         private const val TAG = "SyncService"
         private const val PREF_LAST_SYNC = "last_sync_time"
+        private const val PREF_USER_ID = "authenticated_user_id"
     }
 
     // ===== AUTHENTICATION =====
@@ -68,8 +74,19 @@ class SyncService(
         return prefs.getString("auth_token", null)
     }
 
+    fun saveAuthenticatedUserId(userId: Long) {
+        prefs.edit().putLong(PREF_USER_ID, userId).apply()
+    }
+
+    fun getAuthenticatedUserId(): Long? =
+        if (prefs.contains(PREF_USER_ID)) prefs.getLong(PREF_USER_ID, 0L) else null
+
+    fun clearAuthenticatedUserId() {
+        prefs.edit().remove(PREF_USER_ID).apply()
+    }
+
     fun clearAuthToken() {
-        prefs.edit().remove("auth_token").apply()
+        prefs.edit().remove("auth_token").remove(PREF_USER_ID).apply()
         RetrofitClient.setAuthToken(null)
     }
 
@@ -126,6 +143,9 @@ class SyncService(
 
     private suspend fun syncPendingOperationsLocked(): SyncResult {
         _syncStatus.value = _syncStatus.value.copy(isSyncing = true, lastError = null)
+        if (currentUserId() == null) {
+            return SyncResult.Error("Sign in to resume synchronization", retryable = true)
+        }
         try {
             // Global FIFO is conservative: do not overtake a delayed or rejected edit.
             // The shared process lock excludes other workers and foreground writes.

@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.darius.listmanager.data.local.entity.PendingOperationEntity
+import com.darius.listmanager.data.repository.AuthState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -23,14 +24,17 @@ import java.util.*
 fun PendingOperationsDialog( onDismiss: () -> Unit, onSyncClick: () -> Unit ) {
     val context = LocalContext.current
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
+    val accountUserId by AuthState.userId.collectAsState()
     
     var operations by remember { mutableStateOf<List<PendingOperationEntity>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     
     // Load pending operations
-    LaunchedEffect(Unit) {
+    LaunchedEffect(accountUserId) {
         withContext(Dispatchers.IO) {
-            operations = database.pendingOperationDao().getUnfinished()
+            operations = accountUserId?.let {
+                database.pendingOperationDao().getUnfinishedForUser(it)
+            } ?: emptyList()
             isLoading = false
         }
     }

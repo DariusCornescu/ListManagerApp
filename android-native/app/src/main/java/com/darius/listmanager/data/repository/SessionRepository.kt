@@ -39,20 +39,26 @@ class SessionRepository(
     private val api: ListManagerApi = RetrofitClient.api,
     private val pendingOps: PendingOperationRepository,
     private val transaction: SessionTransaction,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
 ) {
     private val mutex = SessionWriteCoordinator.mutex
     private val itemSender = SessionItemOperationSender(api)
 
-    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow(teamId)
+    private fun accountScope(): Long =
+        currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID
 
-    suspend fun getActiveSession(teamId: Long?): SessionEntity? = sessionDao.getActiveSession(teamId)
+    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> =
+        sessionDao.getActiveSessionFlow(accountScope(), teamId)
+
+    suspend fun getActiveSession(teamId: Long?): SessionEntity? =
+        sessionDao.getActiveSession(accountScope(), teamId)
 
     suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
-        return sessionDao.getOrCreateActiveSession(teamId)
+        return sessionDao.getOrCreateActiveSession(accountScope(), teamId)
     }
 
     suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
-        sessionDao.activateServerSession(serverId, name, teamId)
+        sessionDao.activateServerSession(serverId, name, accountScope(), teamId)
     }
 
     suspend fun getSessionById(id: Long): SessionEntity? = sessionDao.getById(id)

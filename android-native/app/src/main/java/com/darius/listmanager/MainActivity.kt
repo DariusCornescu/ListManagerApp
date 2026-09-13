@@ -49,7 +49,8 @@ class MainActivity : ComponentActivity() {
             val authPrefs = getSharedPreferences("auth", 0)
             com.darius.listmanager.data.repository.AuthState.setLoggedIn(
                 true,
-                authPrefs.getString("saved_username", null)
+                authPrefs.getString("saved_username", null),
+                syncService.getAuthenticatedUserId(),
             )
             // Last-known role so role-gated UI (catalog editing) works offline
             // too; the server refresh overwrites it as soon as we're reachable.

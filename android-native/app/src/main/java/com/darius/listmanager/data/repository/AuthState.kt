@@ -20,6 +20,9 @@ object AuthState {
     private val _username = MutableStateFlow<String?>(null)
     val username: StateFlow<String?> = _username.asStateFlow()
 
+    private val _userId = MutableStateFlow<Long?>(null)
+    val userId: StateFlow<Long?> = _userId.asStateFlow()
+
     /** Current user's role ("USER" | "ADMIN"), or null until loaded from the server. */
     private val _role = MutableStateFlow<String?>(null)
     val role: StateFlow<String?> = _role.asStateFlow()
@@ -33,9 +36,14 @@ object AuthState {
 
     val isAdmin: Boolean get() = _role.value == "ADMIN"
 
-    fun setLoggedIn(loggedIn: Boolean, username: String? = _username.value) {
+    fun setLoggedIn(
+        loggedIn: Boolean,
+        username: String? = _username.value,
+        userId: Long? = _userId.value,
+    ) {
         _isLoggedIn.value = loggedIn
         _username.value = if (loggedIn) username else null
+        _userId.value = if (loggedIn) userId else null
         if (!loggedIn) _role.value = null
     }
 
@@ -47,9 +55,14 @@ object AuthState {
         _username.value = username
     }
 
+    fun setUserId(userId: Long?) {
+        _userId.value = userId
+    }
+
     /** Called by the network layer when a 401 indicates the token is no longer valid. */
     fun notifySessionExpired() {
         _isLoggedIn.value = false
+        _userId.value = null
         _role.value = null
         _sessionExpiredEvent.value = _sessionExpiredEvent.value + 1
     }
@@ -57,6 +70,7 @@ object AuthState {
     fun clear() {
         _isLoggedIn.value = false
         _username.value = null
+        _userId.value = null
         _role.value = null
     }
 }

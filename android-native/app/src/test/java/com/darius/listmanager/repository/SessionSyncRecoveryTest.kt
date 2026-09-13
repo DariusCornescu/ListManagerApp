@@ -57,7 +57,13 @@ class SessionSyncRecoveryTest {
     }
     private fun repo(api: ListManagerApi) = SessionRepository(db.sessionDao(), db.sessionItemDao(), api,
         PendingOperationRepository(db.pendingOperationDao()), SessionTransaction.room(db))
-    private fun worker(api: ListManagerApi) = SyncService(context, db, api) { Long.MAX_VALUE - 1 }
+    private fun worker(api: ListManagerApi) = SyncService(
+        context,
+        db,
+        api,
+        currentUserId = { 0L },
+        now = { Long.MAX_VALUE - 1 },
+    )
     private suspend fun queuedAdd() {
         repo(api(add = { throw IOException("offline") })).addOrIncrementItem(10, 7, 3)
     }
@@ -185,7 +191,13 @@ class SessionSyncRecoveryTest {
         repo(api()).addOrIncrementItem(10, 7, 1)
         val head = db.pendingOperationDao().getUnfinished().first()
         db.pendingOperationDao().markAsFailed(head.id, error = "offline", scheduledFor = 200)
-        val service = SyncService(context, db, api(add = { fail("Sent during backoff"); Response.success(dto()) })) { 100 }
+        val service = SyncService(
+            context,
+            db,
+            api(add = { fail("Sent during backoff"); Response.success(dto()) }),
+            currentUserId = { 0L },
+            now = { 100 },
+        )
         val result = service.syncPendingOperations() as SyncResult.Error
         assertTrue(result.retryable)
         assertEquals(2, db.pendingOperationDao().getUnfinished().size)
@@ -230,6 +242,7 @@ class SessionSyncRecoveryTest {
             operationType = "ADD_SESSION_ITEM", resourceType = "SESSION_ITEM", resourceId = null,
             operationData = """{"type":"com.darius.listmanager.data.model.OperationData.AddSessionItem","sessionId":10,"productId":7,"quantity":3}""",
             status = "IN_PROGRESS",
+            userId = 0L,
         ))
         val result = worker(api(add = { fail("Unsafe legacy replay"); Response.success(dto()) })).syncPendingOperations()
         assertTrue(result is SyncResult.Error)
@@ -268,6 +281,7 @@ class SessionSyncRecoveryTest {
         val id = db.pendingOperationDao().insert(PendingOperationEntity(
             operationType = "ADD_SESSION_ITEM", resourceType = "SESSION_ITEM", resourceId = null,
             operationData = "broken-json", status = "PENDING",
+            userId = 0L,
         ))
         val result = worker(api()).syncPendingOperations() as SyncResult.Error
         assertFalse(result.retryable)
