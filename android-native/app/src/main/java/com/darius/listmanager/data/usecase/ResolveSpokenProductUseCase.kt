@@ -51,6 +51,30 @@ class ResolveSpokenProductUseCase(
         // during multi-product segmentation. Tunable.
         private const val SEGMENT_THRESHOLD = 0.62
         private const val SEGMENT_MAX_WINDOW = 4
+
+        internal fun mergeAdjacentAutoAdds(
+            results: List<Pair<String, ResolveResult>>,
+        ): List<Pair<String, ResolveResult>> {
+            val merged = mutableListOf<Pair<String, ResolveResult>>()
+            for ((segment, result) in results) {
+                val previous = merged.lastOrNull()
+                val previousMatch = previous?.second as? ResolveResult.AutoAdd
+                val currentMatch = result as? ResolveResult.AutoAdd
+                val sameProduct = previousMatch != null && currentMatch != null &&
+                    previousMatch.product.id == currentMatch.product.id
+                if (sameProduct && !SpokenQuantity.hasExplicitPrefix(segment)) {
+                    val bestMatch = if (currentMatch.score > previousMatch.score) {
+                        currentMatch
+                    } else {
+                        previousMatch
+                    }
+                    merged[merged.lastIndex] = "${previous.first} $segment" to bestMatch
+                } else {
+                    merged += segment to result
+                }
+            }
+            return merged
+        }
     }
 
     /**
@@ -91,11 +115,12 @@ class ResolveSpokenProductUseCase(
         // N-best alternatives are alternate transcripts of the WHOLE utterance, so
         // they only align with a single-product utterance. When the phrase splits
         // into several products, resolve each segment on its own.
-        return if (segments.size == 1) {
+        val resolved = if (segments.size == 1) {
             listOf(segments.first() to execute(segments.first(), alternatives))
         } else {
             segments.map { segment -> segment to execute(segment) }
         }
+        return mergeAdjacentAutoAdds(resolved)
     }
 
     suspend fun execute(spokenText: String, alternatives: List<String> = emptyList()): ResolveResult {

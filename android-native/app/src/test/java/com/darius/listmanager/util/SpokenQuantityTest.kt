@@ -33,5 +33,7 @@ class SpokenQuantityTest {
         assertEquals("lapte zuzu 1l", SpokenQuantity.productText("Lapte Zuzu 1L"))
         assertEquals("suruburi 4x40mm", SpokenQuantity.productText("Șuruburi 4x40mm"))
         assertEquals("0 lapte", SpokenQuantity.productText("0 lapte"))
+        assertEquals(true, SpokenQuantity.hasExplicitPrefix("două lapte Zuzu"))
+        assertEquals(false, SpokenQuantity.hasExplicitPrefix("Lapte Zuzu 1L"))
     }
 }

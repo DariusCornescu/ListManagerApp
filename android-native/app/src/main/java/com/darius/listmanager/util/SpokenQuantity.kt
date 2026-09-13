@@ -52,4 +52,9 @@ object SpokenQuantity {
         val isQuantity = first in wordValues || numeric?.let { it > 0 } == true
         return if (isQuantity) tokens.drop(1).joinToString(" ") else normalized
     }
+
+    fun hasExplicitPrefix(spokenText: String): Boolean {
+        val normalized = TextNorm.normalize(spokenText)
+        return normalized.isNotEmpty() && productText(normalized) != normalized
+    }
 }
