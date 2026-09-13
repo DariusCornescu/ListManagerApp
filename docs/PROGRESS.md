@@ -5,6 +5,28 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - T1 real-device crash recovery and retry idempotency
+
+- Added a crash trigger compiled only into the side-by-side Preview build and
+  covered it with a Robolectric test. The Preview gate passed 157 tests before
+  commit `487648e`.
+- Ran the full crash-loop path on a Samsung S25 with Android 16. Three rapid
+  crashes reset the streak, recreated the Room database, uploaded the pending
+  reports, and grouped them under one signature.
+- The first device run exposed duplicate ingestion under at-least-once delivery:
+  three crash files created four rows. Added optional client event IDs, a unique
+  indexed server column in Alembic revision `d5e6f7a8b902`, and conflict-safe
+  idempotent ingestion. Backend gate: 253 tests; commit `c16415c`.
+- Android now names each crash with a UUID and reuses that filename-derived ID
+  for every upload attempt. Android gate: 157 tests plus Preview assembly;
+  commit `dd66807`.
+- The repeated S25 test passed exactly: 3 reports, 3 event IDs, 1 signature,
+  streak 0, a new database inode, and an empty pending queue. Controlled data
+  is excluded from the real-shop top-signature and seven-day gates, so EX-15
+  and EX-16 remain open.
+
+---
+
 ## 2026-09-12 - T2 benchmark foundation
 
 - Added a versioned JSON voice corpus with product fixtures and labelled cases
