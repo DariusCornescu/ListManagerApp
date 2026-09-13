@@ -5,6 +5,21 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M0 S25 voice quantity acceptance passed
+
+- The S25 recognizer returned "două lapte Zuzu". The resolver matched both
+  segments to the same catalog product and merged them before persistence.
+- Exactly one AutoAdd and one POST occurred. The request carried product ID 1
+  and quantity 2, returned 200, and the session screen displayed one
+  `Lapte Zuzu 1L` row with quantity 2.
+- Existing review/unknown counters stayed at one each; this run did not create
+  another fallback item. The real transcript is retained text-only in the T2
+  corpus and no audio was recorded.
+- M0 stays open for drawer, completion/PDF, second-phone, publication, and the
+  Android 16 native-library compatibility warning.
+
+---
+
 ## 2026-09-13 - T2 controlled real-transcript corpus seeding
 
 - Added a local corpus appender that requires explicit text-only confirmation,

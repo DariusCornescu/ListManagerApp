@@ -82,7 +82,7 @@ Evidence table (do not pre-fill Pass):
 
 | Device / Android | Candidate tag / environment | Login/restart | Drawer | Dictate/match | Complete/PDF | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samsung S25 / Android 16 (API 36) | m0-candidate-2026-09-11 / USB local | Login passed; restart pending | Not run | Awaiting real dictation | Not run | Open: 16 KB warning and remaining flow |
+| Samsung S25 / Android 16 (API 36) | development `4af044e` / USB local | Login and reinstall/restart passed | Not run | Pass: Lapte Zuzu 1L ×2 | Not run | Open: 16 KB warning, drawer, completion/PDF |
 
 M0's tagged-device gate cannot be replaced by unit tests or merely producing an APK.
 
@@ -93,7 +93,8 @@ because their distributor parents had not been cached. Fixed in bf9736b, local
 tag m0-candidate-2026-09-11.2. Four new native Room tests failed before the fix;
 all 145 preview tests pass afterwards. APK SHA-256:
 CD48CAE8C5833423B2E628B26281B09930E26E87F69774B91C168CFE6B3677A2.
-Device retest remains pending; 16 KB warning is still unresolved.
+The later device retest confirmed the catalog cache fix; the remaining quantity
+and segmentation findings are recorded below. The 16 KB warning is still unresolved.
 
 ## Spoken quantity corrective candidate
 
@@ -109,4 +110,19 @@ cover Romanian words, numeric prefixes, product measurements, and multiple
 quantity/product pairs. Full preview gate: 151 tests, zero failures/errors;
 assemblePreview passed. Local tag `m0-candidate-2026-09-12.4`; APK SHA-256
 `F3D304FD0D8949C14F335BB60AEFBF6C89DEAB5E0B5CB873710EFD11BDDC36B8`.
-The build is installed on the S25. A clean device retest remains pending.
+This candidate was superseded by the quantity-aware matching and adjacent-fragment
+merge corrections in `8b58d13` and `3cd0284`.
+
+## Final quantity and fragment-merge device result
+
+The S25 recognizer returned "două lapte Zuzu" with two hypotheses. The resolver
+initially segmented the text into "două lapte" and "Zuzu", matched both fragments
+to Lapte Zuzu 1L, then merged them before the write. The app emitted one AutoAdd
+and one POST with `product_id=1`, `quantity=2`; the backend returned 200 and the
+session screen displayed exactly one `Lapte Zuzu 1L` row with quantity 2.
+
+The verified development APK includes the 168-test Android gate and Preview build
+from `4af044e`; SHA-256:
+`A4F79BBEE5A1970C53B0F573938C7BC52DC10CA173B431B618838E5237B58FF5`.
+M0 remains open for the drawer, completion/PDF, second-phone, publication, and
+Android 16 native-library compatibility gates.
