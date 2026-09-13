@@ -31,6 +31,7 @@ data class InviteDTO( val code: String, val expires_at: String, val role: String
 
 // ===== Crash reporting =====
 data class CrashReportRequest(
+    val event_id: String?,
     val app_version: String?,
     val android_version: String?,
     val device: String?,

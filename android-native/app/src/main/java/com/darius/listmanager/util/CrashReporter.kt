@@ -10,6 +10,7 @@ import com.darius.listmanager.network.RetrofitClient
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.util.UUID
 
 /**
  * Self-hosted crash telemetry. [install] wraps the default uncaught-exception
@@ -48,7 +49,7 @@ object CrashReporter {
         }
         val writer = StringWriter()
         throwable.printStackTrace(PrintWriter(writer))
-        File(dir, "crash_${System.currentTimeMillis()}.txt")
+        File(dir, "crash_${UUID.randomUUID()}.txt")
             .writeText(writer.toString().take(MAX_TRACE_CHARS))
     }
 
@@ -60,6 +61,7 @@ object CrashReporter {
             try {
                 val response = RetrofitClient.api.reportCrash(
                     CrashReportRequest(
+                        event_id = eventIdFor(file),
                         app_version = BuildConfig.VERSION_NAME,
                         android_version = Build.VERSION.RELEASE,
                         device = "${Build.MANUFACTURER} ${Build.MODEL}".trim().take(100),
@@ -79,4 +81,6 @@ object CrashReporter {
             }
         }
     }
+
+    internal fun eventIdFor(file: File): String = file.nameWithoutExtension.take(100)
 }
