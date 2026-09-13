@@ -87,6 +87,10 @@ class GlobalSession(Base):
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     version = Column(Integer, default=0)
+    # The next per-session operation-log sequence. Mutations reserve a value
+    # with one atomic UPDATE, which also serializes writers for this session on
+    # PostgreSQL.
+    next_op_seq = Column(Integer, nullable=False, default=1, server_default="1")
 
     # Exactly one of these is set: owner_user_id => personal, team_id => team session.
     # The exactly-one rule is enforced at app level in Wave 2 (no DB CHECK here).
@@ -157,7 +161,11 @@ class SessionOp(Base):
     created_at = Column(DateTime, default=func.now())
 
     __table_args__ = (
-        Index("ix_session_ops_session_id_seq", "session_id", "seq"),
+        UniqueConstraint(
+            "session_id",
+            "seq",
+            name="uq_session_ops_session_id_seq",
+        ),
     )
 
 class CrashReport(Base):
