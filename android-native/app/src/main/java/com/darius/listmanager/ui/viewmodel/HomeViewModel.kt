@@ -15,6 +15,7 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SensitiveLog
 import com.darius.listmanager.util.SpokenQuantity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,7 +109,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isProcessing = true)
 
             try {
-                Log.d(TAG, "Processing spoken text: '$spokenText' (+${alternatives.size} alternatives)")
+                SensitiveLog.d(TAG, "Processing spoken result (+${alternatives.size} alternatives)") {
+                    "Processing spoken text: '$spokenText' (+${alternatives.size} alternatives)"
+                }
 
                 // Segment the utterance so several products said in one breath
                 // ("lalele pâine albă ouă") are each matched and added. Recognizer
@@ -126,7 +129,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 for ((segment, result) in results) {
                     when (result) {
                         is ResolveResult.AutoAdd -> {
-                            Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
+                            SensitiveLog.d(TAG, "AutoAdd accepted (score: ${result.score})") {
+                                "AutoAdd: ${result.product.name} (score: ${result.score})"
+                            }
                             addProductUseCase.execute(
                                 session.id,
                                 result.product.id,
@@ -135,7 +140,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             added++
                         }
                         is ResolveResult.Suggestions -> {
-                            Log.d(TAG, "Ambiguous -> needs review: '$segment'")
+                            SensitiveLog.d(TAG, "Ambiguous result queued for review") {
+                                "Ambiguous -> needs review: '$segment'"
+                            }
                             needsReviewRepository.insert(
                                 spokenText = segment,
                                 sessionId = session.id,
@@ -144,7 +151,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             review++
                         }
                         is ResolveResult.Unknown -> {
-                            Log.d(TAG, "Unknown: '${result.spokenText}'")
+                            SensitiveLog.d(TAG, "Unknown result stored") {
+                                "Unknown: '${result.spokenText}'"
+                            }
                             unknownRepository.insert(result.spokenText)
                             unknown++
                         }

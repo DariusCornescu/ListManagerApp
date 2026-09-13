@@ -159,7 +159,10 @@ fun HomeScreen(
                         onClick = {
                             android.util.Log.d("HomeScreen", "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
                             android.util.Log.d("HomeScreen", "🎤 Mic button clicked")
-                            android.util.Log.d("HomeScreen", "Current state: ${uiState.speechState}")
+                            android.util.Log.d(
+                                "HomeScreen",
+                                "Current state: ${uiState.speechState.javaClass.simpleName}"
+                            )
                             
                             when (uiState.speechState) {
                                 is SpeechState.Idle -> {

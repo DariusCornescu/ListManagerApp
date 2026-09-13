@@ -9,6 +9,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.model.*
 import com.darius.listmanager.network.*
 import com.darius.listmanager.util.NetworkHelper
+import com.darius.listmanager.util.SensitiveLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -77,12 +78,12 @@ class ProductRepository(
     suspend fun getByDistributor(distributorId: Long): List<ProductEntity> = withContext(Dispatchers.IO) { return@withContext dao.getByDistributor(distributorId) }
 
     suspend fun searchFts(query: String): List<ProductEntity> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Searching products: $query")
+        SensitiveLog.d(TAG, "Searching products") { "Searching products: $query" }
         return@withContext dao.searchFts(query)
     }
     
     suspend fun searchFtsRaw(query: String): List<ProductEntity> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Searching products (raw): $query")
+        SensitiveLog.d(TAG, "Searching products (raw query)") { "Searching products (raw): $query" }
         return@withContext dao.searchFtsRaw(query)
     }
         

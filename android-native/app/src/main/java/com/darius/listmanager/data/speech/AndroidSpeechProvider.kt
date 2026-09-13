@@ -10,6 +10,7 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import com.darius.listmanager.data.repository.SpeechRepository
+import com.darius.listmanager.util.SensitiveLog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -132,7 +133,10 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                 override fun onResults(results: Bundle?) {
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull() ?: ""
-                    Log.d("Speech", "Final result: '$text' (${matches?.size ?: 0} hypotheses)")
+                    val hypothesisCount = matches?.size ?: 0
+                    SensitiveLog.d("Speech", "Final result received ($hypothesisCount hypotheses)") {
+                        "Final result: '$text' ($hypothesisCount hypotheses)"
+                    }
                     if (text.isNotBlank()) {
                         val alternatives = matches?.drop(1)?.filter { it.isNotBlank() } ?: emptyList()
                         _speechState.value = SpeechState.Final(text, alternatives)

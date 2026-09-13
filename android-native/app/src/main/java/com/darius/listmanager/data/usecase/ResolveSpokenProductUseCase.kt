@@ -6,6 +6,7 @@ import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SensitiveLog
 import com.darius.listmanager.util.SpokenQuantity
 import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.repository.ProductEmbeddingRepository
@@ -111,7 +112,9 @@ class ResolveSpokenProductUseCase(
             }.ifEmpty { listOf(spokenText) }
         }
 
-        android.util.Log.d("ResolveUseCase", "Segmented '$spokenText' -> $segments")
+        SensitiveLog.d("ResolveUseCase", "Segmented utterance into ${segments.size} part(s)") {
+            "Segmented '$spokenText' -> $segments"
+        }
         // N-best alternatives are alternate transcripts of the WHOLE utterance, so
         // they only align with a single-product utterance. When the phrase splits
         // into several products, resolve each segment on its own.
@@ -137,7 +140,9 @@ class ResolveSpokenProductUseCase(
             .distinct()
 
         android.util.Log.d("ResolveUseCase", "=== Starting Resolution ===")
-        android.util.Log.d("ResolveUseCase", "Hypotheses: $hypotheses")
+        SensitiveLog.d("ResolveUseCase", "Prepared ${hypotheses.size} hypothesis/hypotheses") {
+            "Hypotheses: $hypotheses"
+        }
 
         // Step 1+2: gather FTS candidates for EVERY hypothesis (union), so the
         // right product can still be found when the top guess is garbled.
@@ -146,7 +151,9 @@ class ResolveSpokenProductUseCase(
             try {
                 productRepository.searchFtsRaw(ftsQuery)
             } catch (e: Exception) {
-                android.util.Log.e("ResolveUseCase", "FTS query failed for '$hypothesis': ${e.message}", e)
+                SensitiveLog.e("ResolveUseCase", "FTS query failed", e) {
+                    "FTS query failed for '$hypothesis': ${e.message}"
+                }
                 emptyList()
             }
         }.distinctBy { it.id }
@@ -194,7 +201,9 @@ class ResolveSpokenProductUseCase(
         android.util.Log.d("ResolveUseCase", "Ranked ${rankedProducts.size} products")
 
         rankedProducts.take(5).forEach {
-            android.util.Log.d("ResolveUseCase", "  ${it.product.name}: ${it.score}")
+            SensitiveLog.d("ResolveUseCase", "Candidate score: ${it.score}") {
+                "  ${it.product.name}: ${it.score}"
+            }
         }
 
         if (rankedProducts.isEmpty()) {
@@ -204,7 +213,9 @@ class ResolveSpokenProductUseCase(
 
         // Step 5: Make decision based on top score
         val topMatch = rankedProducts.first()
-        android.util.Log.d("ResolveUseCase", "Top match: ${topMatch.product.name} = ${topMatch.score}")
+        SensitiveLog.d("ResolveUseCase", "Top match score: ${topMatch.score}") {
+            "Top match: ${topMatch.product.name} = ${topMatch.score}"
+        }
 
         return when {
             topMatch.score >= AUTO_ADD_THRESHOLD -> {

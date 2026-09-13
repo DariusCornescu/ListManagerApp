@@ -5,6 +5,20 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - T2 text-only voice diagnostics policy
+
+- Chose operator-confirmed, text-only benchmark collection for EX-19; audio is
+  never retained and collection is limited to deliberate debug/Preview runs.
+- Release logging now emits only structural voice diagnostics. Dictated text,
+  N-best hypotheses, segments, unknown/review phrases, and search queries are
+  available only in debuggable local builds.
+- Added a lazy redaction policy so release logging does not even evaluate the
+  sensitive message supplier, with unit coverage for both modes.
+- Gates: 168 Debug tests and 3 Release privacy tests passed with zero
+  failures/errors; Preview APK assembly succeeded.
+
+---
+
 ## 2026-09-13 - S25 authentication and active-session verification
 
 - Authenticated the Preview app against the isolated USB-forwarded backend and

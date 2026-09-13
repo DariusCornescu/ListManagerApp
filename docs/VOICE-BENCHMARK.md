@@ -41,18 +41,15 @@ The weight-sweep harness evaluates baseline weights plus configurable variations
 for all eight `ScoringWeights` fields. It ranks candidates by top-1, then MRR,
 then top-3, and prints the leading candidates with `VOICE_WEIGHT_SWEEP` lines.
 
-## Privacy decision required for EX-19
+## Privacy policy for EX-19
 
-Choose one collection policy before adding shop dictations:
+The corpus uses **operator-confirmed text-only transcripts and retains no audio**.
+Each accepted example contains only the recognizer output, expected product ID,
+locale, and a broad noise label. Collection is manual from an explicitly chosen
+debug or Preview run; production builds neither persist transcripts nor include
+their content in logs. Do not add names, account details, free-form conversation,
+or any example that was not deliberately dictated for this benchmark.
 
-1. **Text-only transcripts, no audio retained:** store the recognizer output,
-   expected product ID, locale, and noise label after an operator confirms the
-   match. This captures real recognition mistakes while minimizing retained data.
-2. **Explicitly consented recordings:** retain audio and transcripts only from
-   participants who gave informed consent, with a deletion/retention policy.
-3. **Synthetic text only:** no real speech data is retained; privacy risk is
-   lowest, but the corpus cannot measure actual shop acoustics or recognizer errors.
-
-After the policy is chosen, EX-19 needs tens of labelled examples per noise
-condition. Only then should EX-21 publish the baseline and set a top-1 target;
-EX-23 may tune weights and enable a regression threshold after that measurement.
+EX-19 still needs tens of labelled examples per noise condition. Only then should
+EX-21 publish the baseline and set a top-1 target; EX-23 may tune weights and
+enable a regression threshold after that measurement.
