@@ -69,3 +69,38 @@ python tools/voice_corpus.py `
 
 The tool validates the privacy mode, case ID, product reference, and noise label,
 then replaces the JSON atomically. It never accepts an audio path or recording.
+
+## Synthetic training pairs
+
+`android-native/tools/generate_voice_training_data.py` creates deterministic
+Romanian utterance-to-product examples for retrieval and reranking experiments.
+It accepts either a JSON catalog with a `products` array or a read-only SQLite
+catalog and selects only `id`, `name`, and `aliases` from the `products` table.
+It does not ingest audio, transcripts, sessions, accounts, or other user data.
+
+From `android-native/`:
+
+```powershell
+..\backend-fastapi\.venv\Scripts\python.exe tools\generate_voice_training_data.py `
+  --catalog app/src/test/resources/voice-benchmark/corpus.json `
+  --output training-data/voice/synthetic-v1.json `
+  --positive-count 2500 `
+  --negatives-per-positive 2 `
+  --seed 240513
+```
+
+The checked-in `synthetic-v1.json` contains 2,500 positive pairs and two hard
+negatives for each positive, for 7,500 rows in total. Templates vary commands,
+quantities, diacritics, digit quantities, and common ASR spacing. Negative
+candidates prioritize products from the same family and variants that differ by
+numeric package attributes. Train, validation, and test products are disjoint,
+so a product cannot leak across splits. A unit test regenerates the complete
+file and fails if the code, fixture, or versioned artifact drifts.
+
+The current artifact uses the four-product benchmark fixture. It validates the
+data pipeline but has too little catalog diversity for training or an accuracy
+claim. Before a model experiment, regenerate it from an approved catalog-only
+JSON or SQLite export and review the class and split distribution. Keep the
+operator-confirmed real transcript corpus separate and untouched as the final
+evaluation set; synthetic rows may warm-start training and hard-negative mining,
+but must not be counted as real recognition evidence.

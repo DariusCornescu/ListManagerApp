@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - Synthetic Romanian voice-pair pipeline
+
+- Added a deterministic catalog-derived generator for Romanian product retrieval
+  and reranking experiments. It reads only product IDs, names, and aliases from
+  JSON or read-only SQLite and retains no audio, user text, sessions, or accounts.
+- Versioned 2,500 positive text-product pairs with two hard negatives per pair,
+  producing 7,500 rows. Templates cover quantities, natural commands, missing
+  diacritics, digit quantities, and common ASR spacing variations.
+- Splits are product-disjoint and negative mining prioritizes same-family and
+  numeric package variants. The complete artifact is regenerated in tests so
+  code/data drift fails the milestone gate.
+- The checked-in artifact uses only the four-product benchmark fixture and is a
+  pipeline sample, not training evidence. A catalog-only export with substantially
+  more products is required before the first model experiment; real confirmed
+  transcripts stay reserved for evaluation.
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server
