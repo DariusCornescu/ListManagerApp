@@ -5,6 +5,21 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - Voice stop lifecycle race fixed
+
+- Each explicit recording start now owns a generation token. Final/error
+  callbacks and delayed restarts from older recognizers are ignored after Stop
+  or after a newer Start.
+- Stop cancels and destroys the recognizer, clears scheduled retries, and moves
+  immediately to Idle. Continuous mode still restarts between utterances only
+  while the same user-started session remains active.
+- Three state-machine regressions cover stop invalidation, stale callbacks after
+  a new start, and fatal callbacks scoped to their own session.
+- Final gates: 173 Debug tests and 173 Release tests passed with no failures,
+  errors, or skips; Preview assembly succeeded.
+
+---
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server

@@ -6,6 +6,39 @@ import org.junit.Test
 class ListeningLoopPolicyTest {
 
     @Test
+    fun explicitStop_invalidatesCallbacksAndRetriesFromCurrentRecognizer() {
+        val gate = RecognitionSessionGate()
+        val generation = gate.start()
+
+        gate.stop()
+
+        assertEquals(false, gate.isCurrent(generation))
+        assertEquals(false, gate.stopIfCurrent(generation))
+    }
+
+    @Test
+    fun newStart_rejectsLateCallbackFromPreviousRecognizer() {
+        val gate = RecognitionSessionGate()
+        val first = gate.start()
+        val second = gate.start()
+
+        assertEquals(false, gate.isCurrent(first))
+        assertEquals(true, gate.isCurrent(second))
+    }
+
+    @Test
+    fun fatalCallback_stopsOnlyItsOwnSession() {
+        val gate = RecognitionSessionGate()
+        val first = gate.start()
+        val second = gate.start()
+
+        assertEquals(false, gate.stopIfCurrent(first))
+        assertEquals(true, gate.isCurrent(second))
+        assertEquals(true, gate.stopIfCurrent(second))
+        assertEquals(false, gate.isCurrent(second))
+    }
+
+    @Test
     fun results_whileListening_restarts() {
         assertEquals(LoopAction.RESTART, ListeningLoopPolicy.decide(RecognizerEvent.RESULTS, true))
     }
