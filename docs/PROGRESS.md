@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M0 Android 16 KB native-library gate passed
+
+- Upgraded `sentence-embeddings` from `0.0.6` to the NDK-r28-built `v6` artifact
+  and forced its ONNX Runtime dependency from `1.17.0` to `1.24.3`.
+- Added a platform-independent APK/ELF gate for every `arm64-v8a` and `x86_64`
+  native library. Four tests cover aligned, unaligned, legacy-ABI, and malformed
+  inputs; all eight Python tool tests pass.
+- The fresh Preview APK passes the new gate for all eight relevant native
+  libraries and Android Build Tools `zipalign -P 16`. Before the upgrade, direct
+  inspection found 12 unaligned libraries across the packaged ABIs.
+- Android gates pass: 168 Debug tests, 168 Release tests, and Preview assembly.
+  The upgraded APK installs over Preview without deleting its data and starts
+  cold on the S25 without a native-link or process crash.
+- Android instrumentation now targets the isolated Preview build. Its focused
+  ONNX smoke test loaded `OrtEnvironment` through JNI on the S25 (1/1 passed).
+- The S25 reports a 4096-byte kernel page size, so it cannot replace a real
+  16 KB device/emulator execution. Startup also confirms the separately known
+  missing `model.onnx` asset; semantic matching still falls back to fuzzy-only.
+
+---
+
 ## 2026-09-13 - M0 S25 voice quantity acceptance passed
 
 - The S25 recognizer returned "două lapte Zuzu". The resolver matched both
@@ -15,8 +36,7 @@ Newest entries on top.
 - Existing review/unknown counters stayed at one each; this run did not create
   another fallback item. The real transcript is retained text-only in the T2
   corpus and no audio was recorded.
-- M0 stays open for drawer, completion/PDF, second-phone, publication, and the
-  Android 16 native-library compatibility warning.
+- M0 stays open for drawer, completion/PDF, second-phone, and publication.
 
 ---
 

@@ -50,13 +50,12 @@ health endpoint passes. Login with a seeded local test account succeeded and the
 main recording/session screen rendered; the preview process remained running.
 No production backend or daily-app data was used.
 
-**Observed issue:** Android displays an App Compatibility warning at startup:
+**Historical issue (resolved in the corrective candidate below):** Android displayed an App Compatibility warning at startup:
 `libonnxruntime.so`, `libhftokenizer.so`, and `libonnxruntime4j_jni.so` have LOAD
 segments that are not 16 KB aligned; `libandroidx.graphics.path.so` is also
-reported with an unknown alignment error. Dismissing the warning with OK lets
-the app reach login. The warning has not been suppressed or fixed. The
-sentence-embeddings dependency is still referenced by EmbeddingModel; removing
-it without adapting that implementation would break compilation.
+reported with an unknown alignment error. Dismissing the warning let the app
+reach login. The sentence-embeddings runtime was upgraded rather than removed,
+so the existing fuzzy fallback and semantic integration contract remain intact.
 
 Real dictation requested from the user: "doua lapte Zuzu" against the local
 catalog's "Lapte Zuzu 1L". No pass is recorded until the outcome is observed.
@@ -82,7 +81,7 @@ Evidence table (do not pre-fill Pass):
 
 | Device / Android | Candidate tag / environment | Login/restart | Drawer | Dictate/match | Complete/PDF | Result |
 | --- | --- | --- | --- | --- | --- | --- |
-| Samsung S25 / Android 16 (API 36) | development `4af044e` / USB local | Login and reinstall/restart passed | Not run | Pass: Lapte Zuzu 1L ×2 | Not run | Open: 16 KB warning, drawer, completion/PDF |
+| Samsung S25 / Android 16 (API 36) | development / USB local | Login and reinstall/restart passed | Not run | Pass: Lapte Zuzu 1L ×2 | Not run | Open: drawer, completion/PDF; device kernel is 4 KB |
 
 M0's tagged-device gate cannot be replaced by unit tests or merely producing an APK.
 
@@ -124,5 +123,31 @@ session screen displayed exactly one `Lapte Zuzu 1L` row with quantity 2.
 The verified development APK includes the 168-test Android gate and Preview build
 from `4af044e`; SHA-256:
 `A4F79BBEE5A1970C53B0F573938C7BC52DC10CA173B431B618838E5237B58FF5`.
-M0 remains open for the drawer, completion/PDF, second-phone, publication, and
-Android 16 native-library compatibility gates.
+M0 remains open for the drawer, completion/PDF, second-phone, and publication
+gates.
+
+## Android 16 KB native-library corrective candidate
+
+The original Preview APK contained 4 KB LOAD alignment in the tokenizer and
+ONNX libraries. `sentence-embeddings` is now `v6`, built by its upstream project
+after moving to NDK r28b, and ONNX Runtime is explicitly resolved to `1.24.3`
+instead of the old transitive `1.17.0`.
+
+`tools/check_native_page_alignment.py` parses each ELF program-header table in
+the APK and fails if an `arm64-v8a` or `x86_64` LOAD segment is below 16 KB. The
+fresh Preview APK passes for all eight relevant libraries; Android Build Tools
+35 `zipalign -c -P 16 -v 4` also passes. Four checker tests and the four existing
+voice-corpus tool tests pass. Android gates pass with 168 Debug tests, 168
+Release tests, and a successful Preview assembly. A focused Preview
+instrumentation test also loads `OrtEnvironment` through JNI on the S25 (1/1).
+
+The upgraded APK was installed over the existing Preview on the S25 without
+clearing data and completed a cold start without `UnsatisfiedLinkError` or a
+process crash. That phone reports `PAGE_SIZE=4096`, so final execution on a true
+16 KB device or emulator remains additional compatibility evidence rather than
+a blocker for the static APK gate. The APK SHA-256 is
+`389163CAB6FEB0F655A5D8FA02A07B5E3FCC5AE5C01E4B171E6A4A524A0CB6F1`.
+
+The startup log also confirms `model.onnx` is not packaged, as documented by the
+assets README. Semantic matching therefore continues to use the designed
+fuzzy-only fallback; supplying and validating the model is separate work.

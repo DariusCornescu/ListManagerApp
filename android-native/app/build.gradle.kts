@@ -72,6 +72,7 @@ android {
             matchingFallbacks += "debug"
         }
     }
+    testBuildType = "preview"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -117,7 +118,9 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.1")
 
     // On-device sentence embeddings (ONNX Runtime + HF tokenizer)
-    implementation("io.gitlab.shubham0204:sentence-embeddings:0.0.6")
+    implementation("io.gitlab.shubham0204:sentence-embeddings:v6")
+    // v6 still declares 1.17.0; this release supplies 16 KB-aligned JNI libraries.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
     // Coroutines (if not already added)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
