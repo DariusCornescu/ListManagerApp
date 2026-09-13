@@ -2,6 +2,7 @@ from typing import List
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import String, cast, func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -23,12 +24,33 @@ def report_crash(
 ):
     """Ingest a crash report from the Android app (no auth — the app may not
     be logged in when it crashes; rate limit + size caps bound abuse)."""
+    if crash.event_id:
+        existing = (
+            db.query(models.CrashReport)
+            .filter(models.CrashReport.event_id == crash.event_id)
+            .first()
+        )
+        if existing:
+            return existing
+
     db_crash = models.CrashReport(
         **crash.model_dump(),
         signature=crash_signature(crash.stacktrace),
     )
     db.add(db_crash)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        if crash.event_id:
+            existing = (
+                db.query(models.CrashReport)
+                .filter(models.CrashReport.event_id == crash.event_id)
+                .first()
+            )
+            if existing:
+                return existing
+        raise
     db.refresh(db_crash)
     return db_crash
 

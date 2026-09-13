@@ -166,6 +166,7 @@ class CrashReport(Base):
     __tablename__ = "crash_reports"
 
     id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(100), nullable=True, unique=True, index=True)
     app_version = Column(String(50), nullable=True)
     android_version = Column(String(50), nullable=True)
     device = Column(String(100), nullable=True)

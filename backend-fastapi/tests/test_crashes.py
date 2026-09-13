@@ -25,6 +25,31 @@ def test_report_crash_minimal_fields(client):
     assert resp.json()["app_version"] is None
 
 
+def test_report_crash_retry_with_same_event_id_is_idempotent(client, db_session):
+    payload = {**CRASH, "event_id": "crash-7c905d24-7f67-48eb-9169-13d63fbc70ac"}
+
+    first = client.post("/api/crashes", json=payload)
+    retry = client.post("/api/crashes", json=payload)
+
+    assert first.status_code == status.HTTP_200_OK
+    assert retry.status_code == status.HTTP_200_OK
+    assert retry.json()["id"] == first.json()["id"]
+    assert retry.json()["event_id"] == payload["event_id"]
+    from app.models import CrashReport
+
+    assert db_session.query(CrashReport).count() == 1
+
+
+def test_same_crash_signature_with_different_event_ids_keeps_both(client, db_session):
+    for event_id in ("crash-event-one", "crash-event-two"):
+        response = client.post("/api/crashes", json={**CRASH, "event_id": event_id})
+        assert response.status_code == status.HTTP_200_OK
+
+    from app.models import CrashReport
+
+    assert db_session.query(CrashReport).count() == 2
+
+
 def test_oversize_stacktrace_rejected(client):
     resp = client.post("/api/crashes", json={"stacktrace": "x" * 20001})
     assert resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY

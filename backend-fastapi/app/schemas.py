@@ -126,6 +126,7 @@ class ImportResultDTO(BaseModel):
 
 # ===== Crash Reporting Schemas =====
 class CrashReportCreate(BaseModel):
+    event_id: Optional[str] = Field(default=None, max_length=100)
     app_version: Optional[str] = Field(default=None, max_length=50)
     android_version: Optional[str] = Field(default=None, max_length=50)
     device: Optional[str] = Field(default=None, max_length=100)
