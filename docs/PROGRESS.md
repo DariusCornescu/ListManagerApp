@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - EX-24 randomized sync interleavings
+
+- Added a deterministic randomized convergence matrix for eight reproducible
+  seeds. Each case interleaves 36 operations from two team members across three
+  independently refreshed replicas.
+- The generated histories cover additions, absolute quantity changes, deletes,
+  clears, re-adds, and duplicate delivery of idempotent add/update requests.
+  Replica pulls occur at unrelated points through the public `?since=` op-log.
+- Every run asserts contiguous operation sequence numbers, exactly one log entry
+  per logical mutation, identical final views for both members, and equality
+  between every folded replica and the authoritative session snapshot.
+- Focused gate: 9 convergence tests passed. Full backend gate: 261 tests passed,
+  zero failures/errors, in 121.82 seconds. No API, schema, dependency, or runtime
+  behavior changed; EX-24 is test instrumentation for the existing contract.
+- Next: EX-25 should exercise real conflicting writers and repeated 409/reconcile
+  cycles. M7 must then verify sequence allocation under concurrent PostgreSQL
+  transactions, which this sequential TestClient matrix deliberately does not claim.
+
+---
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server
