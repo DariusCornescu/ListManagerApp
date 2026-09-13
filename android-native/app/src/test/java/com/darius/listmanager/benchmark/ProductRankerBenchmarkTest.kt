@@ -10,11 +10,15 @@ class ProductRankerBenchmarkTest {
         val corpus = VoiceBenchmark.load()
 
         assertEquals(1, corpus.schemaVersion)
-        assertEquals("synthetic-text-only", corpus.privacyMode)
+        assertEquals("operator-confirmed-text-only-no-audio", corpus.privacyMode)
         assertEquals(4, corpus.products.size)
-        assertEquals(5, corpus.cases.size)
+        assertEquals(6, corpus.cases.size)
         assertTrue(corpus.cases.all { it.locale == "ro-RO" })
-        assertEquals(setOf("clean", "background"), corpus.cases.map { it.noiseCondition }.toSet())
+        assertEquals(
+            setOf("clean", "background", "unspecified"),
+            corpus.cases.map { it.noiseCondition }.toSet()
+        )
+        assertEquals(1, corpus.cases.count { it.id.startsWith("real-") })
     }
 
     @Test
@@ -27,7 +31,7 @@ class ProductRankerBenchmarkTest {
                 "top3=${"%.4f".format(metrics.top3)} " +
                 "mrr=${"%.4f".format(metrics.mrr)}"
         )
-        assertEquals(5, metrics.total)
+        assertEquals(6, metrics.total)
         assertTrue(metrics.top1 in 0.0..1.0)
         assertTrue(metrics.top3 in metrics.top1..1.0)
         assertTrue(metrics.mrr in 0.0..1.0)

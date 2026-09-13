@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "privacy_mode": "synthetic-text-only",
+  "privacy_mode": "operator-confirmed-text-only-no-audio",
   "products": [
     { "id": 1, "name": "Lapte Zuzu 1L", "aliases": "lapte zuzu,zuzu" },
     { "id": 2, "name": "Lapte Fulga 1L", "aliases": "lapte fulga,fulga" },
@@ -42,6 +42,13 @@
       "expected_product_id": 4,
       "locale": "ro-RO",
       "noise_condition": "clean"
+    },
+    {
+      "id": "real-s25-unspecified-001",
+      "utterance": "două lapte Zuzu",
+      "expected_product_id": 1,
+      "locale": "ro-RO",
+      "noise_condition": "unspecified"
     }
   ]
 }

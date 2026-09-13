@@ -33,9 +33,10 @@ The test prints one machine-readable line:
 VOICE_BENCHMARK total=5 top1=1.0000 top3=1.0000 mrr=1.0000
 ```
 
-The current five examples are hand-written synthetic smoke data. Their perfect
-score proves the loader and metric calculations run; it is not the T2 baseline
-and must not be used to choose production weights or set the accuracy target.
+The corpus currently contains five hand-written synthetic smoke cases and one
+operator-confirmed S25 transcript from the deliberate M0 voice test. This is not
+enough to establish the T2 baseline and must not be used to choose production
+weights or set the accuracy target.
 
 The weight-sweep harness evaluates baseline weights plus configurable variations
 for all eight `ScoringWeights` fields. It ranks candidates by top-1, then MRR,
@@ -53,3 +54,18 @@ or any example that was not deliberately dictated for this benchmark.
 EX-19 still needs tens of labelled examples per noise condition. Only then should
 EX-21 publish the baseline and set a top-1 target; EX-23 may tune weights and
 enable a regression threshold after that measurement.
+
+Append a deliberately dictated, operator-confirmed sample with:
+
+```powershell
+python tools/voice_corpus.py `
+  --corpus app/src/test/resources/voice-benchmark/corpus.json `
+  --id real-s25-shop-floor-001 `
+  --utterance "transcript returned by Android" `
+  --expected-product-id 1 `
+  --noise-condition shop-floor `
+  --confirmed-text-only
+```
+
+The tool validates the privacy mode, case ID, product reference, and noise label,
+then replaces the JSON atomically. It never accepts an audio path or recording.

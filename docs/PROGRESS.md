@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - T2 controlled real-transcript corpus seeding
+
+- Added a local corpus appender that requires explicit text-only confirmation,
+  a `real-` case ID, an existing product ID, and a supported broad noise label.
+  It performs an atomic JSON replacement and has no audio input.
+- Added the deliberately dictated S25 transcript "două lapte Zuzu" as the first
+  real case, labelled `unspecified` because the acoustic condition was not recorded.
+- The mixed corpus now contains five synthetic smoke cases and one real case.
+  Current harness result remains top-1 1.0000, top-3 1.0000, MRR 1.0000; the
+  corpus is still too small for an accuracy target or weight tuning.
+- Gates: 4 collector tests and all 168 Android Debug tests passed with zero
+  failures/errors; Preview APK assembly succeeded. The benchmark's 2 tests are
+  included in the Android total.
+
+---
+
 ## 2026-09-13 - T2 text-only voice diagnostics policy
 
 - Chose operator-confirmed, text-only benchmark collection for EX-19; audio is
