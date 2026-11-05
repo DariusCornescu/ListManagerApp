@@ -9,8 +9,6 @@ import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.data.model.*
 import com.darius.listmanager.data.repository.PendingOperationRepository
-import com.darius.listmanager.data.local.entity.ProductEntity
-import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.*
 import com.darius.listmanager.data.repository.SessionWriteCoordinator
@@ -18,12 +16,12 @@ import com.darius.listmanager.data.repository.AuthState
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import retrofit2.Response
 
 data class SyncStatus( val isSyncing: Boolean = false, val pendingCount: Int = 0, val failedCount: Int = 0, val lastSyncTime: Long? = null, val lastError: String? = null, val currentOperation: String? = null )
 
@@ -34,6 +32,8 @@ class SyncService(
     private val currentUserId: () -> Long? = { AuthState.userId.value },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+    private val operationJson = Json { ignoreUnknownKeys = true }
+
     private val pendingOperationRepo = PendingOperationRepository(
         database.pendingOperationDao(),
         currentUserId,
@@ -59,7 +59,6 @@ class SyncService(
 
     companion object {
         private const val TAG = "SyncService"
-        private const val PREF_LAST_SYNC = "last_sync_time"
         private const val PREF_USER_ID = "authenticated_user_id"
         private const val PREF_REFRESH_TOKEN = "refresh_token"
         const val VERSION_CONFLICT_MESSAGE = "Version conflict - item was modified by another user"
@@ -112,45 +111,6 @@ class SyncService(
     }
 
     fun isLoggedIn(): Boolean { return getAuthToken() != null }
-
-    // ===== CATALOG SYNC (Download from Server) =====
-
-    suspend fun syncCatalog() = withContext(Dispatchers.IO) {
-        try {
-            Log.d(TAG, "Starting catalog sync...")
-
-            val productsResponse = api.getProducts()
-            val distributorsResponse = api.getDistributors()
-
-            if (productsResponse.isSuccessful && distributorsResponse.isSuccessful) {
-                val serverProducts = productsResponse.body() ?: emptyList()
-                val serverDistributors = distributorsResponse.body() ?: emptyList()
-
-                Log.d(TAG, "Syncing ${serverProducts.size} products, ${serverDistributors.size} distributors")
-
-                // Insert distributors first
-                serverDistributors.forEach { dto ->
-                    val distributor = DistributorEntity( id = dto.id, distributorName = dto.distributor_name )
-                    database.distributorDao().insert(distributor)
-                }
-
-                // Insert products
-                serverProducts.forEach { dto ->
-                    val product = ProductEntity( id = dto.id, name = dto.name, distributorId = dto.distributor_id, aliases = dto.aliases )
-                    database.productDao().insert(product)
-                }
-
-                // Update last sync time
-                prefs.edit().putLong(PREF_LAST_SYNC, System.currentTimeMillis()).apply()
-
-                Log.d(TAG, "Catalog sync completed successfully!")
-            } else {
-                Log.e(TAG, "Catalog sync failed: ${productsResponse.code()}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Catalog sync exception: ${e.message}", e)
-        }
-    }
 
     // ===== PENDING OPERATIONS SYNC (Upload to Server) =====
 
@@ -214,7 +174,7 @@ class SyncService(
 
     private fun safeToRecover(operation: PendingOperationEntity): Boolean {
         val data = runCatching {
-            Json { ignoreUnknownKeys = true }.decodeFromString<OperationData>(operation.operationData)
+            operationJson.decodeFromString<OperationData>(operation.operationData)
         }.getOrNull()
         return when (data) {
             is OperationData.CreateSession, is OperationData.CompleteSession -> true
@@ -235,69 +195,23 @@ class SyncService(
             val operation = pendingOperationRepo.prepareForReplay(queuedOperation)
             pendingOperationRepo.markAsInProgress(operation.id)
 
-            val operationType = OperationType.valueOf(operation.operationType)
-            val json = Json { ignoreUnknownKeys = true }
+            return when (val data = operationJson.decodeFromString<OperationData>(operation.operationData)) {
+                is OperationData.CreateDistributor -> created({ api.createDistributor(DistributorCreate(distributor_name = data.distributorName)) }) { it.id }
+                is OperationData.UpdateDistributor -> updated { api.updateDistributor(data.distributorId, DistributorCreate(distributor_name = data.distributorName)) }
+                is OperationData.DeleteDistributor -> deleted { api.deleteDistributor(data.distributorId) }
 
-            return when (operationType) {
-                // DISTRIBUTOR OPERATIONS
-                OperationType.CREATE_DISTRIBUTOR -> {
-                    val data = json.decodeFromString<OperationData.CreateDistributor>(operation.operationData)
-                    createDistributor(data)
-                }
-                OperationType.UPDATE_DISTRIBUTOR -> {
-                    val data = json.decodeFromString<OperationData.UpdateDistributor>(operation.operationData)
-                    updateDistributor(data)
-                }
-                OperationType.DELETE_DISTRIBUTOR -> {
-                    val data = json.decodeFromString<OperationData.DeleteDistributor>(operation.operationData)
-                    deleteDistributor(data)
-                }
+                is OperationData.CreateProduct -> created({ api.createProduct(ProductCreate(name = data.name, distributor_id = data.distributorId, aliases = data.aliases)) }) { it.id }
+                is OperationData.UpdateProduct -> updated { api.updateProduct(data.productId, ProductCreate(name = data.name, distributor_id = data.distributorId, aliases = data.aliases)) }
+                is OperationData.DeleteProduct -> deleted { api.deleteProduct(data.productId) }
 
-                // PRODUCT OPERATIONS
-                OperationType.CREATE_PRODUCT -> {
-                    val data = json.decodeFromString<OperationData.CreateProduct>(operation.operationData)
-                    createProduct(data)
-                }
-                OperationType.UPDATE_PRODUCT -> {
-                    val data = json.decodeFromString<OperationData.UpdateProduct>(operation.operationData)
-                    updateProduct(data)
-                }
-                OperationType.DELETE_PRODUCT -> {
-                    val data = json.decodeFromString<OperationData.DeleteProduct>(operation.operationData)
-                    deleteProduct(data)
-                }
+                is OperationData.CreateSession -> createSession(data, operation)
+                is OperationData.CompleteSession -> guarded { api.completeSession(data.sessionId).toResult() }
 
-                // SESSION OPERATIONS
-                OperationType.CREATE_SESSION -> {
-                    val data = json.decodeFromString<OperationData.CreateSession>(operation.operationData)
-                    createSession(data, operation)
-                }
-                OperationType.COMPLETE_SESSION -> {
-                    val data = json.decodeFromString<OperationData.CompleteSession>(operation.operationData)
-                    completeSession(data)
-                }
-
-                // SESSION ITEM OPERATIONS
-                OperationType.ADD_SESSION_ITEM -> {
-                    val data = json.decodeFromString<OperationData.AddSessionItem>(operation.operationData)
-                    addSessionItem(data, operation)
-                }
-                OperationType.UPDATE_SESSION_ITEM -> {
-                    val data = json.decodeFromString<OperationData.UpdateSessionItem>(operation.operationData)
-                    updateSessionItem(data, operation)
-                }
-                OperationType.DELETE_SESSION_ITEM -> {
-                    val data = json.decodeFromString<OperationData.DeleteSessionItem>(operation.operationData)
-                    deleteSessionItem(data)
-                }
-                OperationType.CLEAR_SESSION -> {
-                    val data = json.decodeFromString<OperationData.ClearSession>(operation.operationData)
-                    clearSession(data)
-                }
-
-                else -> SyncResult.Error("Unsupported operation type: $operationType", retryable = false)
+                is OperationData.AddSessionItem -> addSessionItem(data, operation)
+                is OperationData.UpdateSessionItem -> updateSessionItem(data, operation)
+                is OperationData.DeleteSessionItem -> deleted { api.deleteSessionItem(data.itemId) }
+                is OperationData.ClearSession -> clearSession(data)
             }
-
         } catch (e: CancellationException) {
             throw e
         } catch (e: IllegalArgumentException) {
@@ -315,118 +229,46 @@ class SyncService(
         else -> SyncResult.Error("Server rejected this edit ($code); review required", retryable = false)
     }
 
-    // ===== DISTRIBUTOR OPERATIONS =====
+    // ===== REQUEST OUTCOMES =====
 
-    private suspend fun createDistributor(data: OperationData.CreateDistributor): SyncResult {
-        return try {
-            val request = DistributorCreate(distributor_name = data.distributorName)
-            val response = api.createDistributor(request)
-
-            if (response.isSuccessful) {
-                val created = response.body()!!
-                SyncResult.Success(resourceId = created.id)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    /** A transport failure is always retryable; cancellation is never swallowed. */
+    private inline fun guarded(request: () -> SyncResult): SyncResult = try {
+        request()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        SyncResult.Error(e.message ?: "Network error", retryable = true)
     }
 
-    private suspend fun updateDistributor(data: OperationData.UpdateDistributor): SyncResult {
-        return try {
-            val request = DistributorCreate(distributor_name = data.distributorName)
-            val response = api.updateDistributor(data.distributorId, request)
+    private fun Response<*>.toResult(): SyncResult =
+        if (isSuccessful) SyncResult.Success() else mapHttpErrorToSyncResult(code())
 
-            if (response.isSuccessful) {
-                SyncResult.Success()
-            } else if (response.code() == 404) {
-                SyncResult.Error("Resource not found", retryable = false)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    private inline fun <T : Any> created(request: () -> Response<T>, id: (T) -> Long): SyncResult = guarded {
+        val response = request()
+        if (response.isSuccessful) SyncResult.Success(resourceId = id(response.body()!!))
+        else mapHttpErrorToSyncResult(response.code())
     }
 
-    private suspend fun deleteDistributor(data: OperationData.DeleteDistributor): SyncResult {
-        return try {
-            val response = api.deleteDistributor(data.distributorId)
-
-            if (response.isSuccessful) {
-                SyncResult.Success()
-            } else if (response.code() == 404) {
-                SyncResult.Success()
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    private inline fun updated(request: () -> Response<*>): SyncResult = guarded {
+        val response = request()
+        if (response.code() == 404) SyncResult.Error("Resource not found", retryable = false)
+        else response.toResult()
     }
 
-    // ===== PRODUCT OPERATIONS =====
-
-    private suspend fun createProduct(data: OperationData.CreateProduct): SyncResult {
-        return try {
-            val request = ProductCreate( name = data.name, distributor_id = data.distributorId, aliases = data.aliases )
-            val response = api.createProduct(request)
-
-            if (response.isSuccessful) {
-                val created = response.body()!!
-                SyncResult.Success(resourceId = created.id)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    /** Already gone is what a delete wanted. */
+    private inline fun deleted(request: () -> Response<*>): SyncResult = guarded {
+        val response = request()
+        if (response.code() == 404) SyncResult.Success() else response.toResult()
     }
 
-    private suspend fun updateProduct(data: OperationData.UpdateProduct): SyncResult {
-        return try {
-            val request = ProductCreate( name = data.name, distributor_id = data.distributorId, aliases = data.aliases )
-            val response = api.updateProduct(data.productId, request)
-
-            if (response.isSuccessful) {
-                SyncResult.Success()
-            } else if (response.code() == 404) {
-                SyncResult.Error("Resource not found", retryable = false)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
-    }
-
-    private suspend fun deleteProduct(data: OperationData.DeleteProduct): SyncResult {
-        return try {
-            val response = api.deleteProduct(data.productId)
-
-            if (response.isSuccessful) {
-                SyncResult.Success()
-            } else if (response.code() == 404) {
-                SyncResult.Success()
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    private suspend fun acknowledged(
+        operation: PendingOperationEntity,
+        response: Response<GlobalSessionItemDTO>,
+    ): SyncResult? {
+        if (!response.isSuccessful) return null
+        val dto = response.body() ?: return SyncResult.Error("Empty acknowledgement", retryable = true)
+        SessionAcknowledgement(database).apply(operation, dto)
+        return SyncResult.Success()
     }
 
     // ===== SESSION ITEM OPERATIONS =====
@@ -434,108 +276,42 @@ class SyncService(
     private suspend fun createSession(
         data: OperationData.CreateSession,
         operation: PendingOperationEntity,
-    ): SyncResult {
-        return try {
-            val response = api.createSession(
-                CreateSessionRequest(
-                    name = data.name,
-                    team_id = data.teamId,
-                    client_uuid = data.clientUuid,
-                )
+    ): SyncResult = guarded {
+        val response = api.createSession(
+            CreateSessionRequest(
+                name = data.name,
+                team_id = data.teamId,
+                client_uuid = data.clientUuid,
             )
-            val dto = response.body()
-            if (response.isSuccessful && dto != null) {
-                SessionPromotion(database).apply(
-                    localSessionId = data.localSessionId,
-                    accountUserId = operation.userId
-                        ?: return SyncResult.Error("Session owner is missing", retryable = false),
-                    dto = dto,
-                )
-                SyncResult.Success(resourceId = dto.id)
-            } else if (response.isSuccessful) {
-                SyncResult.Error("Empty acknowledgement", retryable = true)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
+        )
+        val dto = response.body()
+        if (response.isSuccessful && dto != null) {
+            val owner = operation.userId
+                ?: return SyncResult.Error("Session owner is missing", retryable = false)
+            SessionPromotion(database).apply(
+                localSessionId = data.localSessionId,
+                accountUserId = owner,
+                dto = dto,
+            )
+            SyncResult.Success(resourceId = dto.id)
+        } else if (response.isSuccessful) {
+            SyncResult.Error("Empty acknowledgement", retryable = true)
+        } else {
+            mapHttpErrorToSyncResult(response.code())
         }
     }
 
-    private suspend fun completeSession(data: OperationData.CompleteSession): SyncResult {
-        return try {
-            val response = api.completeSession(data.sessionId)
-            if (response.isSuccessful) SyncResult.Success()
-            else mapHttpErrorToSyncResult(response.code())
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
+    private suspend fun addSessionItem(data: OperationData.AddSessionItem, operation: PendingOperationEntity): SyncResult = guarded {
+        val response = SessionItemOperationSender(api).send(data)
+        acknowledged(operation, response) ?: mapHttpErrorToSyncResult(response.code())
     }
 
-    private suspend fun addSessionItem(data: OperationData.AddSessionItem, operation: PendingOperationEntity): SyncResult {
-        return try {
-            val response = SessionItemOperationSender(api).send(data)
-
-            if (response.isSuccessful && response.body() == null) {
-                SyncResult.Error("Empty acknowledgement", retryable = true)
-            } else if (response.isSuccessful) {
-                SessionAcknowledgement(database).apply(operation, response.body()!!)
-                SyncResult.Success()
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
-    }
-
-    private suspend fun updateSessionItem(data: OperationData.UpdateSessionItem, operation: PendingOperationEntity): SyncResult {
-        return try {
-            val response = SessionItemOperationSender(api).send(data)
-
-            if (response.isSuccessful && response.body() == null) {
-                SyncResult.Error("Empty acknowledgement", retryable = true)
-            } else if (response.isSuccessful) {
-                SessionAcknowledgement(database).apply(operation, response.body()!!)
-                SyncResult.Success()
-            } else if (response.code() == 409) {
-                SyncResult.Conflict(
-                    message = VERSION_CONFLICT_MESSAGE,
-                    serverData = response.body()
-                )
-            } else if (response.code() == 404) {
-                SyncResult.Error("Resource not found", retryable = false)
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
-        }
-    }
-
-    private suspend fun deleteSessionItem(data: OperationData.DeleteSessionItem): SyncResult {
-        return try {
-            val response = api.deleteSessionItem(data.itemId)
-
-            if (response.isSuccessful) {
-                SyncResult.Success()
-            } else if (response.code() == 404) {
-                SyncResult.Success()
-            } else {
-                mapHttpErrorToSyncResult(response.code())
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            SyncResult.Error(e.message ?: "Network error", retryable = true)
+    private suspend fun updateSessionItem(data: OperationData.UpdateSessionItem, operation: PendingOperationEntity): SyncResult = guarded {
+        val response = SessionItemOperationSender(api).send(data)
+        acknowledged(operation, response) ?: when (response.code()) {
+            409 -> SyncResult.Conflict(message = VERSION_CONFLICT_MESSAGE, serverData = response.body())
+            404 -> SyncResult.Error("Resource not found", retryable = false)
+            else -> mapHttpErrorToSyncResult(response.code())
         }
     }
 
@@ -556,9 +332,4 @@ class SyncService(
             SyncResult.Error("Clear outcome unknown; review server state", retryable = false)
         }
     }
-
-    // ===== UTILITY =====
-
-    fun getLastSyncTime(): Long? { return prefs.getLong(PREF_LAST_SYNC, -1).takeIf { it != -1L } }
-    suspend fun clearAllPendingOperations() { pendingOperationRepo.deleteAll() }
 }
