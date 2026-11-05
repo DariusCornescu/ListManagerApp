@@ -4,7 +4,8 @@ import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -18,7 +19,9 @@ ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
 BCRYPT_MAX_PASSWORD_LENGTH = 72
-security = HTTPBearer()
+# auto_error off: newer FastAPI answers a missing token with 401, but clients treat
+# 401 as "session expired", so get_current_user keeps the established 403.
+security = HTTPBearer(auto_error=False)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -75,7 +78,7 @@ def decode_access_token(token: str):
             )
         return payload
 
-    except JWTError:
+    except PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
@@ -205,8 +208,17 @@ def revoke_all_user_tokens(user: models.User, database: Session) -> None:
     ).update({"revoked_at": _utcnow()}, synchronize_session=False)
 
 
-def get_current_user( credentials: HTTPAuthorizationCredentials = Depends(security), database: Session = Depends(get_db) ):
+def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    database: Session = Depends(get_db),
+):
     """Get the current authenticated user from JWT token"""
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authenticated",
+        )
 
     user = resolve_token_user(credentials.credentials, database)
 

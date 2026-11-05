@@ -59,11 +59,12 @@ EXPECTED_HTTP_ROUTES = {
 
 
 def test_public_http_route_methods_and_paths_are_stable():
+    # The OpenAPI schema is the public view of the routes; app.routes nests
+    # included routers and its shape changes between FastAPI versions.
     actual = {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, "methods", set())
-        if route.path not in {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
+        (method.upper(), path)
+        for path, operations in app.openapi()["paths"].items()
+        for method in operations
     }
     assert actual == EXPECTED_HTTP_ROUTES
 
