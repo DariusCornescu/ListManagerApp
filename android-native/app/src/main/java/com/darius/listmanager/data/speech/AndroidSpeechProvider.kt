@@ -22,10 +22,7 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
 
     private var speechRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
-
-    /** True while the user wants a continuous session (between Record and Stop). */
-    @Volatile
-    private var wantListening = false
+    private val sessionGate = RecognitionSessionGate()
 
     private val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -40,60 +37,76 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
         Log.d("Speech", "Starting continuous listening...")
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
-            wantListening = false
+            sessionGate.stop()
             _speechState.value = SpeechState.Error("Speech recognition not available")
             return
         }
 
-        wantListening = true
-        beginRecognition()
+        mainHandler.removeCallbacksAndMessages(null)
+        val generation = sessionGate.start()
+        beginRecognition(generation)
     }
 
     override fun stopListening() {
         Log.d("Speech", "Stopping continuous listening")
-        wantListening = false
+        sessionGate.stop()
         mainHandler.removeCallbacksAndMessages(null)
         try {
-            speechRecognizer?.stopListening()
+            speechRecognizer?.cancel()
+            speechRecognizer?.destroy()
+            speechRecognizer = null
         } catch (e: Exception) {
             Log.e("Speech", "Error stopping listener", e)
         }
         _speechState.value = SpeechState.Idle
     }
 
-    /** (Re)create the recognizer and start one utterance. Does NOT change [wantListening]. */
-    private fun beginRecognition() {
+    /** (Re)create the recognizer for one utterance in the same explicit session. */
+    private fun beginRecognition(generation: Long) {
+        if (!sessionGate.isCurrent(generation)) return
+        speechRecognizer?.cancel()
         speechRecognizer?.destroy()
         speechRecognizer = null
-        initializeSpeechRecognizer()
+        initializeSpeechRecognizer(generation)
         try {
+            if (!sessionGate.isCurrent(generation)) return
             speechRecognizer?.startListening(recognizerIntent)
             _speechState.value = SpeechState.Listening
         } catch (e: Exception) {
             Log.e("Speech", "Failed to start listening", e)
-            wantListening = false
-            _speechState.value = SpeechState.Error("Failed to start: ${e.message}")
+            if (sessionGate.stopIfCurrent(generation)) {
+                _speechState.value = SpeechState.Error("Failed to start: ${e.message}")
+            }
         }
     }
 
     /** Apply the loop policy for [event]; restart, retry after a delay, or stop. */
-    private fun applyPolicy(event: RecognizerEvent, errorMessage: String? = null) {
-        when (ListeningLoopPolicy.decide(event, wantListening)) {
-            LoopAction.RESTART -> mainHandler.post { if (wantListening) beginRecognition() }
-            LoopAction.RETRY_SOON -> mainHandler.postDelayed({ if (wantListening) beginRecognition() }, 300)
+    private fun applyPolicy(
+        generation: Long,
+        event: RecognizerEvent,
+        errorMessage: String? = null,
+    ) {
+        if (!sessionGate.isCurrent(generation)) return
+        when (ListeningLoopPolicy.decide(event, wantListening = true)) {
+            LoopAction.RESTART -> mainHandler.post {
+                if (sessionGate.isCurrent(generation)) beginRecognition(generation)
+            }
+            LoopAction.RETRY_SOON -> mainHandler.postDelayed({
+                if (sessionGate.isCurrent(generation)) beginRecognition(generation)
+            }, 300)
             LoopAction.STOP -> {
-                if (errorMessage != null && wantListening) {
+                if (errorMessage != null && sessionGate.isCurrent(generation)) {
                     // Fatal error while the user still wanted to listen: surface it.
                     _speechState.value = SpeechState.Error(errorMessage)
                 } else {
                     _speechState.value = SpeechState.Idle
                 }
-                wantListening = false
+                sessionGate.stopIfCurrent(generation)
             }
         }
     }
 
-    private fun initializeSpeechRecognizer() {
+    private fun initializeSpeechRecognizer(generation: Long) {
         speechRecognizer = SpeechRecognizer.createSpeechRecognizer(context).apply {
             setRecognitionListener(object : RecognitionListener {
                 override fun onReadyForSpeech(params: Bundle?) {}
@@ -127,10 +140,11 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                         else -> "Recognition error: $error"
                     }
                     Log.d("Speech", "onError code=$error -> $event")
-                    applyPolicy(event, errorMessage = message)
+                    applyPolicy(generation, event, errorMessage = message)
                 }
 
                 override fun onResults(results: Bundle?) {
+                    if (!sessionGate.isCurrent(generation)) return
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull() ?: ""
                     val hypothesisCount = matches?.size ?: 0
@@ -141,10 +155,11 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                         val alternatives = matches?.drop(1)?.filter { it.isNotBlank() } ?: emptyList()
                         _speechState.value = SpeechState.Final(text, alternatives)
                     }
-                    applyPolicy(RecognizerEvent.RESULTS)
+                    applyPolicy(generation, RecognizerEvent.RESULTS)
                 }
 
                 override fun onPartialResults(partialResults: Bundle?) {
+                    if (!sessionGate.isCurrent(generation)) return
                     val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull() ?: ""
                     if (text.isNotBlank()) {
@@ -159,8 +174,9 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
 
     override fun release() {
         Log.d("Speech", "Releasing speech recognizer")
-        wantListening = false
+        sessionGate.stop()
         mainHandler.removeCallbacksAndMessages(null)
+        speechRecognizer?.cancel()
         speechRecognizer?.destroy()
         speechRecognizer = null
     }
