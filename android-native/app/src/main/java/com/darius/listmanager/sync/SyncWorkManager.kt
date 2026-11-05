@@ -10,7 +10,8 @@ import kotlinx.coroutines.flow.callbackFlow
 object SyncWorkManager {
 
     fun initialize(context: Context) {
-        android.util.Log.d("SyncWorkManager", "Initialized - manual sync only")
+        // The safety net when no screen is open; AppContent syncs as soon as work appears.
+        SyncWorker.schedulePeriodicSync(context)
     }
 
     fun syncNow(context: Context) { SyncWorker.scheduleImmediateSync(context) }

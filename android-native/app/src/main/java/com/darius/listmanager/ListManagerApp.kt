@@ -54,6 +54,7 @@ class ListManagerApp : Application() {
         }
         tokenService.getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
+            tokenService.getAuthenticatedUserId()?.let(AuthState::setUserId)
             Log.d("ListManagerApp", "Restored saved auth token")
         }
 
@@ -148,6 +149,12 @@ fun AppContent() {
                 Log.d("AppContent", "Presence refresh failed: ${e.message}")
             }
         }
+    }
+
+    // Queued work and a live connection are both reasons to replay now. The network
+    // constraint holds the request until a connection exists; KEEP removes duplicates.
+    LaunchedEffect(pendingCount, webSocketState is WebSocketState.Connected, isLoggedIn) {
+        if (isLoggedIn && pendingCount > 0) SyncWorker.scheduleImmediateSync(context)
     }
 
     // Decide where to start once, based on the persisted token at first composition.

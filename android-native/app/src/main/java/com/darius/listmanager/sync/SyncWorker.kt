@@ -20,6 +20,13 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
             .setRequiredNetworkType(NetworkType.CONNECTED) 
             .setRequiresBatteryNotLow(true)
             .build() 
+
+        // Expedited work may only constrain network and storage: WorkManager throws
+        // on anything else, which used to stop every immediate sync from running.
+        private val immediateConstraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
         fun schedulePeriodicSync(context: Context) {
             val workRequest = PeriodicWorkRequestBuilder<SyncWorker>(
                 repeatInterval = 15,
@@ -45,12 +52,15 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
             Log.d(TAG, "Periodic sync scheduled")
         }
 
-        fun scheduleImmediateSync(context: Context) {
-            val workRequest = OneTimeWorkRequestBuilder<SyncWorker>()
-                .setConstraints(constraints)
+        internal fun immediateSyncRequest(): OneTimeWorkRequest =
+            OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(immediateConstraints)
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .addTag(TAG)
                 .build()
+
+        fun scheduleImmediateSync(context: Context) {
+            val workRequest = immediateSyncRequest()
 
             WorkManager.getInstance(context).enqueueUniqueWork(
                 "${WORK_NAME}_immediate",
