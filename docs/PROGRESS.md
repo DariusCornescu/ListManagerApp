@@ -5,6 +5,24 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M7 real PostgreSQL concurrency complete
+
+- Session item add, update, delete, clear, and completion transactions now lock
+  the owning session row before reading mutable state or checking idempotency.
+- Replaced `MAX(seq) + 1` with an atomic per-session sequence reservation and
+  added a database unique constraint on `(session_id, seq)`.
+- The Alembic migration initializes counters from existing op history and stops
+  with a diagnostic if duplicate historical sequences would make the new
+  invariant unsafe.
+- A real PostgreSQL 17.11 gate with separate connections passed concurrent
+  increments, duplicate delivery of one idempotency key, competing versioned
+  updates (one 200 and one 409), and contiguous unique operation sequences.
+- Full backend gate: 255 passed, 218 warnings, zero failures/skips in 91.58s.
+- Next: M5 account/workspace isolation, followed by M6 offline session creation
+  and completion lifecycle.
+
+---
+
 ## 2026-09-13 - M0 S25 session restore and PDF acceptance passed
 
 - A clean Preview reinstall exposed a foreign-key ordering defect: the server

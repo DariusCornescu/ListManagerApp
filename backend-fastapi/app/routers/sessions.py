@@ -122,6 +122,7 @@ async def complete_session(
     """
     # Enforce access (404 if missing or caller has no relationship).
     session = authz.require_session_access(session_id, current_user, db, write=True)
+    session = sync_ops.lock_session(db, session_id)
 
     # Get all items with products and distributors (JOIN)
     items = db.query(models.GlobalSessionItem).filter(
@@ -193,6 +194,7 @@ async def clear_session(
     """Clear all items from a session with real-time notification"""
     # Enforce access (404 if missing or caller has no relationship).
     authz.require_session_access(session_id, current_user, db, write=True)
+    sync_ops.lock_session(db, session_id)
 
     deleted_count = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
@@ -283,6 +285,7 @@ async def add_session_item(
     """Add item to session (or increment if exists) with real-time notification"""
     # Validate session exists and the caller has access (404 otherwise).
     session = authz.require_session_access(session_id, current_user, db, write=True)
+    session = sync_ops.lock_session(db, session_id)
     key = item_data.idempotency_key
     # Idempotency: a retried add with the same key returns the stored result
     # without re-applying, even if the session has since completed. Access is
@@ -418,6 +421,15 @@ async def update_session_item(
 
     # Enforce access to the item's session (404 if no access; do not leak).
     authz.require_session_access(item.session_id, current_user, db, write=True)
+    sync_ops.lock_session(db, item.session_id)
+    item = (
+        db.query(models.GlobalSessionItem)
+        .filter(models.GlobalSessionItem.id == item_id)
+        .populate_existing()
+        .first()
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
 
     key = update_data.idempotency_key
     # Idempotency: a retried update with the same key returns the stored result.
@@ -527,13 +539,22 @@ async def delete_session_item(
 
     # Enforce access to the item's session (404 if no access; do not leak).
     authz.require_session_access(item.session_id, current_user, db, write=True)
+    session_id = item.session_id
+    sync_ops.lock_session(db, session_id)
+    item = (
+        db.query(models.GlobalSessionItem)
+        .filter(models.GlobalSessionItem.id == item_id)
+        .populate_existing()
+        .first()
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
 
     # Get product name before deleting
     product = db.query(models.Product).filter(
         models.Product.id == item.product_id
     ).first()
 
-    session_id = item.session_id
     product_id = item.product_id
     product_name = product.name if product else "Unknown"
     item_uuid = item.item_uuid

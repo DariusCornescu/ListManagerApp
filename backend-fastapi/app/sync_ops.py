@@ -6,20 +6,39 @@ for committing the transaction; these helpers only add rows / read.
 """
 import json
 
+from sqlalchemy import update
+
 from app import models
 
 
-def next_seq(db, session_id: int) -> int:
-    """Return the next per-session monotonic seq (max existing + 1, starting at 1)."""
-    last = (
-        db.query(models.SessionOp.seq)
-        .filter(models.SessionOp.session_id == session_id)
-        .order_by(models.SessionOp.seq.desc())
-        .first()
+def lock_session(db, session_id: int):
+    """Lock and refresh one session for the remainder of the transaction.
+
+    PostgreSQL's row lock serializes all mutations belonging to the session.
+    SQLite ignores ``FOR UPDATE``; its write lock plus the atomic sequence
+    update still keeps the local/test path compatible.
+    """
+    return (
+        db.query(models.GlobalSession)
+        .filter(models.GlobalSession.id == session_id)
+        .populate_existing()
+        .with_for_update()
+        .one_or_none()
     )
-    if last is None or last[0] is None:
-        return 1
-    return last[0] + 1
+
+
+def next_seq(db, session_id: int) -> int:
+    """Atomically reserve and return the next per-session sequence."""
+    next_value = db.execute(
+        update(models.GlobalSession)
+        .where(models.GlobalSession.id == session_id)
+        .values(next_op_seq=models.GlobalSession.next_op_seq + 1)
+        .returning(models.GlobalSession.next_op_seq)
+        .execution_options(synchronize_session=False)
+    ).scalar_one_or_none()
+    if next_value is None:
+        raise LookupError(f"Session {session_id} does not exist")
+    return int(next_value) - 1
 
 
 def record_op(

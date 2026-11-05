@@ -66,7 +66,13 @@ unavailable test with a passing test.
   in 65s on 2026-09-11. 21 new tests; recovery and catalog regressions were
   reproduced before fixes. Room schema unchanged; native SQLite tests, not
   device instrumentation. Diff check passed.
-- M5–M7: not complete.
+- M7: **255 backend tests passed**, including the real PostgreSQL gate, with no
+  failures or skips on 2026-09-13. Separate PostgreSQL connections proved eight
+  simultaneous increments preserve the sum, six deliveries of one idempotency
+  key apply once, competing absolute updates yield one 200 and one 409, and
+  operation sequences remain unique and contiguous. Alembic drift, round-trip,
+  and sequence-counter backfill tests passed.
+- M5–M6: not complete.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
   changes. The user accepted the Android SDK license; platform 36, build tools
