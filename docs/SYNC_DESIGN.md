@@ -77,10 +77,6 @@ and convergence of every folded replica with the server. The matrix uses the
 sequential in-memory SQLite TestClient and does not claim concurrent database
 transaction coverage; that remains the PostgreSQL gate in M7.
 
-## 6. Deferred (separate follow-on, needs device/emulator)
-Android queue rework: add `idempotencyKey` (Room migration), send it on replay, switch reads to
-the `?since=` pull endpoint, and replace drop-on-409 with a reconcile loop. Not done in this
-phase; the backend remains backward-compatible until then.
 ## 6. Android follow-on
 
 The Android outbox now persists operation identity, preserves it across retries,
