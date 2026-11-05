@@ -102,6 +102,11 @@ class UserUpdate(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    # Additive: clients predating refresh ignore it and re-login after expiry.
+    refresh_token: Optional[str] = None
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(max_length=128)
 
 class UserDTO(BaseModel):
     id: int

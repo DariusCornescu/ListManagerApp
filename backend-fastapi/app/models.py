@@ -13,6 +13,26 @@ class User(Base):
     role = Column(String(20), default="USER")   # Possible roles: USER, ADMIN
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
+    # Bumped to revoke every access token already issued to this user.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
+
+
+class RefreshToken(Base):
+    """One rotating refresh token. Tokens from one login share a family_id."""
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    family_id = Column(String(36), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
 
 class Distributor(Base):
     __tablename__ = "distributors"

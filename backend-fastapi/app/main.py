@@ -7,8 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from . import models
-from .auth import decode_access_token
+from .auth import resolve_token_user
 from .config import parse_cors_origins, settings
 from .limiting import limiter
 from .routers import admin, auth, catalog, crashes, presence, sessions, speech, stats, teams
@@ -107,22 +106,18 @@ async def websocket_endpoint(websocket: WebSocket, token: str = None):
         return
 
     try:
-        # Decode JWT token
-        payload = decode_access_token(token)
-        username = payload.get("sub")
-
-        # Get user from database
         from .database import SessionLocal
 
         db = SessionLocal()
-        user = db.query(models.User).filter(models.User.username == username).first()
-        db.close()
-
-        if not user:
-            await websocket.close(code=4002, reason="User not found")
-            return
-
-        user_id = user.id
+        try:
+            user = resolve_token_user(token, db)
+            if user is None:
+                await websocket.close(code=4002, reason="User not found")
+                return
+            user_id = user.id
+            username = user.username
+        finally:
+            db.close()
 
     except Exception as e:
         logger.error(f"WebSocket auth failed: {e}")

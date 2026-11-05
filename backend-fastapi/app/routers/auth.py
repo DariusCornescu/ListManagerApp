@@ -3,9 +3,13 @@ from sqlalchemy.orm import Session
 
 from .. import models, schemas
 from ..auth import (
-    create_access_token,
+    create_user_access_token,
     get_current_user,
     get_password_hash,
+    issue_refresh_token,
+    revoke_all_user_tokens,
+    revoke_refresh_token,
+    rotate_refresh_token,
     verify_password,
 )
 from ..database import get_db
@@ -110,12 +114,49 @@ def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends
             detail="User account is inactive"
         )
 
-    # Create access token
-    access_token = create_access_token(
-        data={"sub": user.username, "role": user.role}
-    )
+    refresh_token = issue_refresh_token(user, db)
+    db.commit()
 
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": create_user_access_token(user),
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
+    }
+
+
+@router.post("/api/auth/refresh", response_model=schemas.Token)
+@limiter.limit("30/minute")
+def refresh(request: Request, data: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    """Exchange a refresh token for a new access + refresh pair (single use)."""
+    user, refresh_token = rotate_refresh_token(data.refresh_token, db)
+    db.commit()
+
+    return {
+        "access_token": create_user_access_token(user),
+        "token_type": "bearer",
+        "refresh_token": refresh_token,
+    }
+
+
+@router.post("/api/auth/logout")
+@limiter.limit("30/minute")
+def logout(request: Request, data: schemas.RefreshRequest, db: Session = Depends(get_db)):
+    """Revoke this device's login. Works without a valid access token, so a device
+    holding an expired one can still log out; unknown tokens succeed silently."""
+    revoke_refresh_token(data.refresh_token, db)
+    db.commit()
+    return {"message": "Logged out"}
+
+
+@router.post("/api/auth/logout-all")
+def logout_all(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Revoke every token of the caller, on all devices, including this one."""
+    revoke_all_user_tokens(current_user, db)
+    db.commit()
+    return {"message": "All sessions revoked"}
 
 
 @router.get("/api/auth/me", response_model=schemas.UserDTO)
@@ -159,6 +200,8 @@ def update_current_user_info(
                 detail="Password is too long (maximum 72 bytes allowed). Please use a shorter password."
             )
         current_user.hashed_password = get_password_hash(update_data.password)
+        # A changed password ends every login, including this device's.
+        revoke_all_user_tokens(current_user, db)
 
     db.commit()
     db.refresh(current_user)

@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
 
     DATABASE_URL: str = "sqlite:///./listmanager.db"
 
@@ -25,7 +26,6 @@ class Settings(BaseSettings):
     # "https://app.example.com,http://localhost:5000". Empty means no browser
     # origin is allowed; native mobile clients are unaffected by CORS.
     CORS_ORIGINS: str = ""
-
 
     # ===== Speech transcription (server-side, audio -> text only) =====
     # Groq API key for the OpenAI-compatible transcription endpoint. Optional:

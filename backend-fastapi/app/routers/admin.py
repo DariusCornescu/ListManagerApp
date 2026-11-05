@@ -9,7 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..auth import get_current_admin_user
+from ..auth import get_current_admin_user, revoke_all_user_tokens
 from ..config import settings
 from ..database import get_db
 from ..limiting import limiter
@@ -160,6 +160,21 @@ def get_all_users(
     """
     users = db.query(models.User).all()
     return users
+
+
+@router.post("/api/admin/users/{user_id}/revoke-tokens")
+def revoke_user_tokens(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Force-logout a user: every access and refresh token stops working now."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    revoke_all_user_tokens(user, db)
+    db.commit()
+    return {"message": "Tokens revoked", "user_id": user_id}
 
 
 @router.delete("/api/admin/users/{user_id}")
