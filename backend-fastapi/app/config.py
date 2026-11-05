@@ -21,6 +21,12 @@ class Settings(BaseSettings):
 
     RATE_LIMIT_ENABLED: bool = True
 
+    # Comma-separated browser origins allowed by CORS, e.g.
+    # "https://app.example.com,http://localhost:5000". Empty means no browser
+    # origin is allowed; native mobile clients are unaffected by CORS.
+    CORS_ORIGINS: str = ""
+
+
     # ===== Speech transcription (server-side, audio -> text only) =====
     # Groq API key for the OpenAI-compatible transcription endpoint. Optional:
     # absent at startup is fine; the GroqTranscriber raises a clear error only
@@ -39,6 +45,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+
+def parse_cors_origins(raw: str) -> list[str]:
+    """Split the comma-separated setting, refusing the "*" wildcard."""
+    origins = [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        raise ValueError("CORS_ORIGINS must list explicit origins, not '*'")
+    return origins
 
 
 # Singleton settings instance. Importing this module with no SECRET_KEY set

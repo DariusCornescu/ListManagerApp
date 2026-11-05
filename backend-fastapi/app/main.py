@@ -3,11 +3,13 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from . import models
 from .auth import decode_access_token
+from .config import parse_cors_origins, settings
 from .limiting import limiter
 from .routers import admin, auth, catalog, crashes, presence, sessions, speech, stats, teams
 from .websocket_manager import manager
@@ -35,6 +37,14 @@ app = FastAPI(
 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+# Bearer tokens only, no cookies, so credentials stay off.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=parse_cors_origins(settings.CORS_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Authorization", "Content-Type"],
+)
 
 for router in (
     teams.router,
