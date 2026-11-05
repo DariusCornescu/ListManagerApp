@@ -51,6 +51,9 @@ interface ListManagerApi {
     @POST("/api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
     
+    @POST("/api/auth/logout")
+    suspend fun logout(@Body request: RefreshTokenRequest): Response<okhttp3.ResponseBody>
+
     @POST("/api/auth/register")
     suspend fun register(@Body request: RegisterRequest): Response<RegisterResponse>
     

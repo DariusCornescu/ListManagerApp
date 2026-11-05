@@ -221,6 +221,7 @@ class SessionRepositoryWriteThroughTest {
         override suspend fun updateDistributor(distributorId: Long, request: DistributorCreate): Response<DistributorDTO> = throw NotImplementedError()
         override suspend fun deleteDistributor(distributorId: Long): Response<Unit> = throw NotImplementedError()
         override suspend fun login(request: LoginRequest): Response<LoginResponse> = throw NotImplementedError()
+        override suspend fun logout(request: RefreshTokenRequest): Response<okhttp3.ResponseBody> = throw NotImplementedError()
         override suspend fun register(request: RegisterRequest): Response<RegisterResponse> = throw NotImplementedError()
         override suspend fun getCurrentUser(): Response<UserDTO> = throw NotImplementedError()
         override suspend fun updateCurrentUser(request: UpdateUserRequest): Response<UserDTO> = throw NotImplementedError()

@@ -41,6 +41,7 @@ class FakeListManagerApi : ListManagerApi {
 
     // ===== Authentication =====
     override suspend fun login(request: LoginRequest): Response<LoginResponse> = offline()
+    override suspend fun logout(request: RefreshTokenRequest): Response<okhttp3.ResponseBody> = offline()
     override suspend fun register(request: RegisterRequest): Response<RegisterResponse> = offline()
     override suspend fun getCurrentUser(): Response<UserDTO> = offline()
     override suspend fun updateCurrentUser(request: UpdateUserRequest): Response<UserDTO> = offline()

@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import com.darius.listmanager.data.repository.AuthState
+import com.darius.listmanager.network.AuthTokenStore
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.data.websocket.WebSocketState
@@ -44,7 +45,14 @@ class ListManagerApp : Application() {
         // stays logged in across app restarts. Without this, the token lives only
         // in encrypted prefs; RetrofitClient starts null, authenticated calls go
         // out without a Bearer header -> 401 -> forced re-login.
-        SyncService(this).getAuthToken()?.let { token ->
+        val tokenService = SyncService(this)
+        RetrofitClient.tokenStore = object : AuthTokenStore {
+            override fun accessToken() = tokenService.getAuthToken()
+            override fun refreshToken() = tokenService.getRefreshToken()
+            override fun saveTokens(accessToken: String, refreshToken: String) =
+                tokenService.saveRotatedTokens(accessToken, refreshToken)
+        }
+        tokenService.getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
             Log.d("ListManagerApp", "Restored saved auth token")
         }

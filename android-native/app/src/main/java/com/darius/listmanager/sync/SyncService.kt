@@ -61,6 +61,7 @@ class SyncService(
         private const val TAG = "SyncService"
         private const val PREF_LAST_SYNC = "last_sync_time"
         private const val PREF_USER_ID = "authenticated_user_id"
+        private const val PREF_REFRESH_TOKEN = "refresh_token"
     }
 
     // ===== AUTHENTICATION =====
@@ -72,6 +73,25 @@ class SyncService(
 
     fun getAuthToken(): String? {
         return prefs.getString("auth_token", null)
+    }
+
+    fun getRefreshToken(): String? = prefs.getString(PREF_REFRESH_TOKEN, null)
+
+    /** A null token (a server that predates refresh) removes any stale one. */
+    fun saveRefreshToken(token: String?) {
+        prefs.edit().putString(PREF_REFRESH_TOKEN, token).apply()
+    }
+
+    /**
+     * Stores a rotated pair. The old refresh token is now spent, so this is written
+     * synchronously: losing the new one to process death would end the login.
+     * Only called from the network layer's background thread.
+     */
+    fun saveRotatedTokens(accessToken: String, refreshToken: String) {
+        prefs.edit()
+            .putString("auth_token", accessToken)
+            .putString(PREF_REFRESH_TOKEN, refreshToken)
+            .commit()
     }
 
     fun saveAuthenticatedUserId(userId: Long) {
@@ -86,7 +106,7 @@ class SyncService(
     }
 
     fun clearAuthToken() {
-        prefs.edit().remove("auth_token").remove(PREF_USER_ID).apply()
+        prefs.edit().remove("auth_token").remove(PREF_REFRESH_TOKEN).remove(PREF_USER_ID).apply()
         RetrofitClient.setAuthToken(null)
     }
 

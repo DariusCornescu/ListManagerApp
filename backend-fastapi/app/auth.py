@@ -18,6 +18,7 @@ SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
 ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
+REFRESH_REUSE_GRACE_SECONDS = settings.REFRESH_REUSE_GRACE_SECONDS
 BCRYPT_MAX_PASSWORD_LENGTH = 72
 # auto_error off: newer FastAPI answers a missing token with 401, but clients treat
 # 401 as "session expired", so get_current_user keeps the established 403.
@@ -149,8 +150,9 @@ def issue_refresh_token(
 def rotate_refresh_token(raw_token: str, database: Session) -> tuple[models.User, str]:
     """Exchange a refresh token for its successor. Caller commits on success.
 
-    Presenting an already-used token means it was copied or replayed, so the whole
-    family is revoked and that revocation is committed here, before the 401.
+    A used token presented within the grace window gets another successor: the first
+    response was probably lost. Later than that it was copied or replayed, so the
+    whole family is revoked, and that revocation is committed here, before the 401.
     """
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -167,18 +169,20 @@ def rotate_refresh_token(raw_token: str, database: Session) -> tuple[models.User
         raise invalid
 
     now = _utcnow()
-    if row.used_at is not None:
+    if row.revoked_at is not None or row.expires_at <= now:
+        raise invalid
+    if row.used_at is not None and now - row.used_at > timedelta(
+        seconds=REFRESH_REUSE_GRACE_SECONDS
+    ):
         revoke_refresh_family(row.family_id, database)
         database.commit()
-        raise invalid
-    if row.revoked_at is not None or row.expires_at <= now:
         raise invalid
 
     user = database.query(models.User).filter(models.User.id == row.user_id).first()
     if user is None or not user.is_active:
         raise invalid
 
-    row.used_at = now
+    row.used_at = row.used_at or now
     return user, issue_refresh_token(user, database, family_id=row.family_id)
 
 

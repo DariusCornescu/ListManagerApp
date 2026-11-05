@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    # A used refresh token may be presented again for this long, because the phone
+    # may never have received its successor on a flaky shop network.
+    REFRESH_REUSE_GRACE_SECONDS: int = 300
 
     DATABASE_URL: str = "sqlite:///./listmanager.db"
 

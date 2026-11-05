@@ -6,9 +6,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.data.workspace.WorkspaceManager
+import com.darius.listmanager.network.LoginRequest
+import com.darius.listmanager.network.RefreshTokenRequest
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.UpdateUserRequest
 import com.darius.listmanager.sync.SyncService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +94,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Save token
                     syncService.saveAuthToken(loginResponse.access_token)
+                    syncService.saveRefreshToken(loginResponse.refresh_token)
                     syncService.clearAuthenticatedUserId()
                     saveUsername(username)
                     // A different account may be logging in — drop the previous
@@ -184,6 +190,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun logout() {
+        revokeOnServer(syncService.getRefreshToken())
         syncService.clearAuthToken()
         clearSavedRole()
         AuthState.clear()
@@ -192,6 +199,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         WorkspaceManager.getInstance(getApplication()).fallbackToPersonal()
         _uiState.value = AuthUiState()
         Log.d(TAG, "User logged out")
+    }
+
+    /**
+     * Best effort, and outlives this ViewModel because logout navigates away. Offline
+     * the local logout still stands; the token then simply expires on the server.
+     */
+    private fun revokeOnServer(refreshToken: String?) {
+        if (refreshToken == null) return
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            runCatching { RetrofitClient.api.logout(RefreshTokenRequest(refreshToken)) }
+                .onFailure { Log.w(TAG, "Server logout failed") }
+        }
+    }
+
+    /**
+     * A password change revokes every token, including this device's. Signing straight
+     * back in with the new password keeps the user working here.
+     */
+    private suspend fun signBackIn(username: String, password: String) {
+        val response = RetrofitClient.api.login(LoginRequest(username, password))
+        val tokens = response.body()
+        if (response.isSuccessful && tokens != null) {
+            syncService.saveAuthToken(tokens.access_token)
+            syncService.saveRefreshToken(tokens.refresh_token)
+        }
     }
 
     fun clearError() {
@@ -246,6 +278,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val response = RetrofitClient.api.updateCurrentUser(request)
                 if (response.isSuccessful && response.body() != null) {
                     val user = response.body()!!
+                    if (newPassword.isNotBlank()) signBackIn(user.username, newPassword)
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
                     saveRole(user.role)

@@ -71,6 +71,9 @@ class MainActivity : ComponentActivity() {
             com.darius.listmanager.data.repository.AuthState.notifySessionExpired()
         }
 
+        // A refresh on a cold start may follow a socket refused for its expired token.
+        RetrofitClient.onTokenRefreshed = { token -> webSocketService.connect(token) }
+
         SyncWorkManager.initialize(applicationContext)
         Log.d(TAG, "SyncWorkManager initialized")
         

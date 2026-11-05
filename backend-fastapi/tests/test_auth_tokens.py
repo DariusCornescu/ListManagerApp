@@ -21,6 +21,15 @@ def _bearer(token):
     return {"Authorization": f"Bearer {token}"}
 
 
+def _age_used_tokens(db_session):
+    """Push every used refresh token past the reuse grace window."""
+    past = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+    db_session.query(models.RefreshToken).filter(
+        models.RefreshToken.used_at.isnot(None)
+    ).update({"used_at": past}, synchronize_session=False)
+    db_session.commit()
+
+
 def _me_status(client, token):
     return client.get("/api/auth/me", headers=_bearer(token)).status_code
 
@@ -50,9 +59,22 @@ def test_refresh_rotates_and_returns_usable_pair(client, sample_user):
     assert _me_status(client, body["access_token"]) == 200
 
 
-def test_reused_refresh_token_revokes_the_whole_family(client, sample_user):
+def test_retry_within_grace_window_survives_a_lost_response(client, sample_user):
+    first = _login(client)["refresh_token"]
+    client.post("/api/auth/refresh", json={"refresh_token": first})
+
+    # The phone never saw that response, so it presents the same token again.
+    retry = client.post("/api/auth/refresh", json={"refresh_token": first})
+    assert retry.status_code == 200
+    assert client.post(
+        "/api/auth/refresh", json={"refresh_token": retry.json()["refresh_token"]}
+    ).status_code == 200
+
+
+def test_reused_refresh_token_revokes_the_whole_family(client, sample_user, db_session):
     first = _login(client)["refresh_token"]
     successor = client.post("/api/auth/refresh", json={"refresh_token": first}).json()
+    _age_used_tokens(db_session)
 
     replay = client.post("/api/auth/refresh", json={"refresh_token": first})
     assert replay.status_code == 401
@@ -64,11 +86,14 @@ def test_reused_refresh_token_revokes_the_whole_family(client, sample_user):
     assert after.status_code == 401
 
 
-def test_reuse_detection_does_not_touch_other_logins(client, sample_user):
+def test_reuse_detection_does_not_touch_other_logins(client, sample_user, db_session):
     other_device = _login(client)["refresh_token"]
     first = _login(client)["refresh_token"]
     client.post("/api/auth/refresh", json={"refresh_token": first})
-    client.post("/api/auth/refresh", json={"refresh_token": first})
+    _age_used_tokens(db_session)
+    assert client.post(
+        "/api/auth/refresh", json={"refresh_token": first}
+    ).status_code == 401
 
     assert client.post(
         "/api/auth/refresh", json={"refresh_token": other_device}
