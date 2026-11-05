@@ -128,6 +128,7 @@ class SessionRepositoryWriteThroughTest {
         override suspend fun getAllPending(): List<PendingOperationEntity> = throw NotImplementedError()
         override suspend fun getAllPendingForUser(userId: Long): List<PendingOperationEntity> = throw NotImplementedError()
         override fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> = throw NotImplementedError()
+        override fun getUnfinishedFlowForUser(userId: Long): kotlinx.coroutines.flow.Flow<List<PendingOperationEntity>> = throw NotImplementedError()
         override fun getAllPendingFlowForUser(userId: Long): Flow<List<PendingOperationEntity>> = throw NotImplementedError()
         override suspend fun getAllFailed(): List<PendingOperationEntity> = throw NotImplementedError()
         override suspend fun getAllFailedForUser(userId: Long): List<PendingOperationEntity> = throw NotImplementedError()

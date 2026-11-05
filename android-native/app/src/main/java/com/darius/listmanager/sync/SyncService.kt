@@ -62,6 +62,7 @@ class SyncService(
         private const val PREF_LAST_SYNC = "last_sync_time"
         private const val PREF_USER_ID = "authenticated_user_id"
         private const val PREF_REFRESH_TOKEN = "refresh_token"
+        const val VERSION_CONFLICT_MESSAGE = "Version conflict - item was modified by another user"
     }
 
     // ===== AUTHENTICATION =====
@@ -505,7 +506,7 @@ class SyncService(
                 SyncResult.Success()
             } else if (response.code() == 409) {
                 SyncResult.Conflict(
-                    message = "Version conflict - item was modified by another user",
+                    message = VERSION_CONFLICT_MESSAGE,
                     serverData = response.body()
                 )
             } else if (response.code() == 404) {

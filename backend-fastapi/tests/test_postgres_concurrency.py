@@ -198,3 +198,55 @@ def test_concurrent_mutations_are_serialized(postgres_api):
     assert [operation.seq for operation in operations] == list(range(1, 11))
     assert session.next_op_seq == 11
     assert len({operation.seq for operation in operations}) == len(operations)
+
+
+def test_two_writers_converge_through_a_real_409_storm(postgres_api):
+    """EX-25 on real connections: read, write, and retry on 409 until applied."""
+    client, session_factory, ids, headers = postgres_api
+    item_id = ids["item"]
+    session_id = ids["session"]
+    writes_per_writer = 15
+
+    with session_factory() as db:
+        item = db.get(models.GlobalSessionItem, item_id)
+        start_quantity, start_version = item.quantity, item.version
+
+    def writer(index):
+        conflicts = 0
+        for write in range(writes_per_writer):
+            for attempt in range(200):
+                items = client.get(f"/api/session/{session_id}/items", headers=headers).json()
+                current = next(row for row in items if row["id"] == item_id)
+                response = client.put(
+                    f"/api/session/items/{item_id}",
+                    headers=headers,
+                    json={
+                        "quantity": current["quantity"] + 1,
+                        "version": current["version"],
+                        "idempotency_key": f"storm-{index}-{write}",
+                    },
+                )
+                if response.status_code == 200:
+                    break
+                assert response.status_code == 409, response.text
+                conflicts += 1
+            else:
+                pytest.fail("Writer never got through")
+        return conflicts
+
+    conflicts = _concurrent(2, writer)
+
+    with session_factory() as db:
+        item = db.get(models.GlobalSessionItem, item_id)
+        sequences = [
+            row.seq
+            for row in db.query(models.SessionOp)
+            .filter(models.SessionOp.session_id == session_id)
+            .order_by(models.SessionOp.seq)
+        ]
+
+    # Every increment read the value it replaced, so none can be lost.
+    assert item.quantity == start_quantity + 2 * writes_per_writer
+    assert item.version == start_version + 2 * writes_per_writer
+    assert sequences == list(range(1, len(sequences) + 1))
+    print(f"409 responses under real contention: {sum(conflicts)}")
