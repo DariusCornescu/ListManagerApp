@@ -68,6 +68,19 @@ true broadcast — documented choice. Recompute recipients per send (membership 
 - **F7:** non-member's socket receives nothing for a team-session event; a member's does.
 - **Matrix-under-concurrency:** the Phase-2 authz matrix still holds with an interleaved op.
 
+EX-24 adds a reproducible randomized matrix over eight seeds. Each seed applies
+36 add/update/delete/clear operations from two team members, injects duplicate
+delivery for idempotent mutations, and lets three replicas pull the op-log at
+different points. The final assertions require contiguous sequence numbers,
+one op per logical mutation, agreement between both members' HTTP snapshots,
+and convergence of every folded replica with the server. The matrix uses the
+sequential in-memory SQLite TestClient and does not claim concurrent database
+transaction coverage; that remains the PostgreSQL gate in M7.
+
+## 6. Deferred (separate follow-on, needs device/emulator)
+Android queue rework: add `idempotencyKey` (Room migration), send it on replay, switch reads to
+the `?since=` pull endpoint, and replace drop-on-409 with a reconcile loop. Not done in this
+phase; the backend remains backward-compatible until then.
 ## 6. Android follow-on
 
 The Android outbox now persists operation identity, preserves it across retries,
