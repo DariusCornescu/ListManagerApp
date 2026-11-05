@@ -24,12 +24,14 @@ import androidx.compose.ui.unit.sp
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.data.model.SyncResult
+import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.network.ApiConfig
 import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.util.NetworkHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
@@ -42,6 +44,7 @@ fun SyncDebugScreen(
     val context = LocalContext.current
     val database = remember { AppDatabase.getInstance(context) }
     val syncService = remember { SyncService(context) }
+    val accountUserId by AuthState.userId.collectAsState()
     val scope = rememberCoroutineScope()
     
     // State
@@ -53,8 +56,16 @@ fun SyncDebugScreen(
     var lastSyncResult by remember { mutableStateOf<String?>(null) }
     
     // Database flows
-    val pendingOperations by database.pendingOperationDao().getAllPendingFlow().collectAsState(initial = emptyList())
-    val failedCount by database.pendingOperationDao().getFailedCountFlow().collectAsState(initial = 0)
+    val pendingOperationsFlow = remember(accountUserId) {
+        accountUserId?.let { database.pendingOperationDao().getAllPendingFlowForUser(it) }
+            ?: flowOf(emptyList())
+    }
+    val failedCountFlow = remember(accountUserId) {
+        accountUserId?.let { database.pendingOperationDao().getFailedCountFlowForUser(it) }
+            ?: flowOf(0)
+    }
+    val pendingOperations by pendingOperationsFlow.collectAsState(initial = emptyList())
+    val failedCount by failedCountFlow.collectAsState(initial = 0)
     val productCount by database.productDao().getCountFlow().collectAsState(initial = 0)
     val distributorCount by database.distributorDao().getCountFlow().collectAsState(initial = 0)
     
@@ -62,7 +73,7 @@ fun SyncDebugScreen(
     var allOperations by remember { mutableStateOf<List<PendingOperationEntity>>(emptyList()) }
     
     // Check network status periodically
-    LaunchedEffect(Unit) {
+    LaunchedEffect(accountUserId) {
         while (true) {
             isNetworkAvailable = NetworkHelper.isNetworkAvailable(context)
             if (isNetworkAvailable && !isCheckingServer) {
@@ -77,8 +88,10 @@ fun SyncDebugScreen(
             
             // Refresh all operations
             allOperations = withContext(Dispatchers.IO) {
-                database.pendingOperationDao().getAllPending() + 
-                database.pendingOperationDao().getAllFailed()
+                accountUserId?.let {
+                    database.pendingOperationDao().getAllPendingForUser(it) +
+                        database.pendingOperationDao().getAllFailedForUser(it)
+                } ?: emptyList()
             }
             
             delay(2000)

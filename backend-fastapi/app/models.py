@@ -91,6 +91,8 @@ class GlobalSession(Base):
     # with one atomic UPDATE, which also serializes writers for this session on
     # PostgreSQL.
     next_op_seq = Column(Integer, nullable=False, default=1, server_default="1")
+    # Stable client identity for idempotent offline-session promotion.
+    client_uuid = Column(String(36), nullable=True, unique=True, index=True)
 
     # Exactly one of these is set: owner_user_id => personal, team_id => team session.
     # The exactly-one rule is enforced at app level in Wave 2 (no DB CHECK here).

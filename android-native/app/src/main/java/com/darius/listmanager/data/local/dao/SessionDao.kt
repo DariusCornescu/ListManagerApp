@@ -9,14 +9,17 @@ interface SessionDao {
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC")
     fun getAllFlow(): Flow<List<SessionEntity>>
 
-    @Query("SELECT * FROM sessions WHERE isActive = 1 AND teamId IS :teamId LIMIT 1")
-    suspend fun getActiveSession(teamId: Long?): SessionEntity?
+    @Query("""SELECT * FROM sessions WHERE isActive = 1 AND ((:teamId IS NULL AND teamId IS NULL AND accountUserId = :accountUserId) OR (:teamId IS NOT NULL AND teamId = :teamId)) LIMIT 1""")
+    suspend fun getActiveSession(accountUserId: Long, teamId: Long?): SessionEntity?
 
-    @Query("SELECT * FROM sessions WHERE isActive = 1 AND teamId IS :teamId LIMIT 1")
-    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?>
+    @Query("""SELECT * FROM sessions WHERE isActive = 1 AND ((:teamId IS NULL AND teamId IS NULL AND accountUserId = :accountUserId) OR (:teamId IS NOT NULL AND teamId = :teamId)) LIMIT 1""")
+    fun getActiveSessionFlow(accountUserId: Long, teamId: Long?): Flow<SessionEntity?>
 
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun getById(id: Long): SessionEntity?
+
+    @Query("SELECT * FROM sessions WHERE clientUuid = :clientUuid LIMIT 1")
+    suspend fun getByClientUuid(clientUuid: String): SessionEntity?
 
     @Insert
     suspend fun insert(session: SessionEntity): Long
@@ -30,20 +33,34 @@ interface SessionDao {
     @Delete
     suspend fun delete(session: SessionEntity)
 
-    @Query("UPDATE sessions SET isActive = 0 WHERE teamId IS :teamId")
-    suspend fun deactivateAll(teamId: Long?)
+    @Query("""UPDATE sessions SET isActive = 0 WHERE ((:teamId IS NULL AND teamId IS NULL AND accountUserId = :accountUserId) OR (:teamId IS NOT NULL AND teamId = :teamId))""")
+    suspend fun deactivateAll(accountUserId: Long, teamId: Long?)
 
     @Query("SELECT MIN(id) FROM sessions")
     suspend fun getMinSessionId(): Long?
 
+    @Query("DELETE FROM sessions WHERE id = :id")
+    suspend fun deleteById(id: Long)
+
     @Transaction
-    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
-        val active = getActiveSession(teamId)
+    suspend fun getOrCreateActiveSession(
+        accountUserId: Long,
+        teamId: Long?,
+        clientUuid: String? = null,
+    ): SessionEntity {
+        val active = getActiveSession(accountUserId, teamId)
         if (active != null) return active
         // Local fallback sessions get negative ids; server-mirrored sessions
         // (activateServerSession) own the positive id space.
         val newId = minOf(getMinSessionId() ?: 0L, 0L) - 1L
-        insert(SessionEntity(id = newId, name = "Current Session", isActive = true, teamId = teamId))
+        insert(SessionEntity(
+            id = newId,
+            name = "Current Session",
+            isActive = true,
+            teamId = teamId,
+            accountUserId = if (teamId == null) accountUserId else SessionEntity.TEAM_SHARED_ACCOUNT_ID,
+            clientUuid = clientUuid,
+        ))
         return getById(newId)!!
     }
 
@@ -53,9 +70,22 @@ interface SessionDao {
      * convention as products/distributors).
      */
     @Transaction
-    suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
-        deactivateAll(teamId)
-        upsert(SessionEntity(id = serverId, name = name, isActive = true, teamId = teamId))
+    suspend fun activateServerSession(
+        serverId: Long,
+        name: String,
+        accountUserId: Long,
+        teamId: Long?,
+        clientUuid: String? = null,
+    ) {
+        deactivateAll(accountUserId, teamId)
+        upsert(SessionEntity(
+            id = serverId,
+            name = name,
+            isActive = true,
+            teamId = teamId,
+            accountUserId = if (teamId == null) accountUserId else SessionEntity.TEAM_SHARED_ACCOUNT_ID,
+            clientUuid = clientUuid,
+        ))
     }
 
     @Transaction

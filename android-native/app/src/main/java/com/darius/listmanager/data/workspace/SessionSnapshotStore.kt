@@ -4,6 +4,8 @@ import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.repository.SessionWriteCoordinator
+import com.darius.listmanager.data.repository.AuthState
+import com.darius.listmanager.data.local.entity.SessionEntity
 import com.darius.listmanager.network.GlobalSessionItemDTO
 import kotlinx.coroutines.sync.withLock
 import retrofit2.Response
@@ -12,12 +14,16 @@ import retrofit2.Response
  * Conservatively defer session snapshots while ANY session intent is unresolved;
  * legacy delete/update payloads do not identify their parent session reliably.
  */
-class SessionSnapshotStore(private val database: AppDatabase) {
+class SessionSnapshotStore(
+    private val database: AppDatabase,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
+) {
     suspend fun refresh(
         sessionId: Long,
         fetch: suspend () -> Response<List<GlobalSessionItemDTO>>,
     ): Boolean = SessionWriteCoordinator.mutex.withLock {
-        val blocked = database.pendingOperationDao().getUnfinished().any {
+        val accountUserId = currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID
+        val blocked = database.pendingOperationDao().getUnfinishedForUser(accountUserId).any {
             it.resourceType == "SESSION_ITEM" || it.resourceType == "SESSION"
         }
         if (blocked) return@withLock false

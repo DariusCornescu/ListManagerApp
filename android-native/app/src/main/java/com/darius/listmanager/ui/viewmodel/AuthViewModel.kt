@@ -53,7 +53,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         if (token != null) {
             RetrofitClient.setAuthToken(token)
             val savedUsername = getSavedUsername()
-            AuthState.setLoggedIn(true, savedUsername)
+            AuthState.setLoggedIn(true, savedUsername, syncService.getAuthenticatedUserId())
             // Last-known role so role-gated UI works offline; guarded so a role
             // already loaded from the server this process is never overwritten.
             if (AuthState.role.value == null) {
@@ -89,6 +89,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Save token
                     syncService.saveAuthToken(loginResponse.access_token)
+                    syncService.clearAuthenticatedUserId()
                     saveUsername(username)
                     // A different account may be logging in — drop the previous
                     // account's role until loadCurrentUser() confirms the new one.
@@ -96,7 +97,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     
                     Log.d(TAG, "Login successful for: $username")
 
-                    AuthState.setLoggedIn(true, username)
+                    AuthState.setLoggedIn(true, username, userId = null)
 
                     _uiState.value = _uiState.value.copy(
                         isLoggedIn = true,
@@ -207,6 +208,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val response = RetrofitClient.api.getCurrentUser()
                 if (response.isSuccessful && response.body() != null) {
                     val user = response.body()!!
+                    AuthState.setUserId(user.id)
+                    syncService.saveAuthenticatedUserId(user.id)
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
                     saveUsername(user.username)

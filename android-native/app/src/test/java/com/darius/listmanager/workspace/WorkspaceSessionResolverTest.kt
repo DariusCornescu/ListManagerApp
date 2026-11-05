@@ -4,8 +4,10 @@ import androidx.room.Room
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.data.local.entity.ProductEntity
+import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.data.local.entity.SessionEntity
 import com.darius.listmanager.data.local.entity.SessionItemEntity
+import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.workspace.Workspace
 import com.darius.listmanager.data.workspace.WorkspaceSessionResolver
 import com.darius.listmanager.network.DistributorDTO
@@ -14,6 +16,8 @@ import com.darius.listmanager.network.GlobalSessionItemDTO
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.ProductDTO
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -69,6 +73,29 @@ class WorkspaceSessionResolverTest {
 
         assertEquals(8, database.sessionItemDao().getItem(10, 7)?.quantity)
         assertEquals("Cached product", database.productDao().getById(7)?.name)
+    }
+
+    @Test
+    fun queuedOfflineCreationPreventsResolverFromReplacingLocalSession() = runBlocking {
+        val data = OperationData.CreateSession(-1, "stable", "Current Session", null)
+        database.pendingOperationDao().insert(
+            PendingOperationEntity(
+                operationType = "CREATE_SESSION",
+                resourceType = "SESSION",
+                resourceId = -1,
+                operationData = Json.encodeToString<OperationData>(data),
+                status = "WAITING",
+                userId = 0,
+            )
+        )
+        val neverCalled = Proxy.newProxyInstance(
+            ListManagerApi::class.java.classLoader,
+            arrayOf(ListManagerApi::class.java),
+        ) { _, method, _ -> error("Resolver called ${method.name}") } as ListManagerApi
+
+        val result = WorkspaceSessionResolver(database, neverCalled).resolve(Workspace.Personal)
+
+        assertEquals(WorkspaceSessionResolver.ResolveResult.Offline, result)
     }
 
     private fun api(catalogAvailable: Boolean = true): ListManagerApi {

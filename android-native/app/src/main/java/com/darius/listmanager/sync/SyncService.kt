@@ -14,6 +14,7 @@ import com.darius.listmanager.data.local.entity.DistributorEntity
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.*
 import com.darius.listmanager.data.repository.SessionWriteCoordinator
+import com.darius.listmanager.data.repository.AuthState
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -30,9 +31,13 @@ class SyncService(
     private val context: Context,
     private val database: AppDatabase = AppDatabase.getInstance(context),
     private val api: ListManagerApi = RetrofitClient.api,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
-    private val pendingOperationRepo = PendingOperationRepository(database.pendingOperationDao())
+    private val pendingOperationRepo = PendingOperationRepository(
+        database.pendingOperationDao(),
+        currentUserId,
+    )
 
     private val prefs: SharedPreferences by lazy {
         val masterKey = MasterKey.Builder(context)
@@ -55,6 +60,7 @@ class SyncService(
     companion object {
         private const val TAG = "SyncService"
         private const val PREF_LAST_SYNC = "last_sync_time"
+        private const val PREF_USER_ID = "authenticated_user_id"
     }
 
     // ===== AUTHENTICATION =====
@@ -68,8 +74,19 @@ class SyncService(
         return prefs.getString("auth_token", null)
     }
 
+    fun saveAuthenticatedUserId(userId: Long) {
+        prefs.edit().putLong(PREF_USER_ID, userId).apply()
+    }
+
+    fun getAuthenticatedUserId(): Long? =
+        if (prefs.contains(PREF_USER_ID)) prefs.getLong(PREF_USER_ID, 0L) else null
+
+    fun clearAuthenticatedUserId() {
+        prefs.edit().remove(PREF_USER_ID).apply()
+    }
+
     fun clearAuthToken() {
-        prefs.edit().remove("auth_token").apply()
+        prefs.edit().remove("auth_token").remove(PREF_USER_ID).apply()
         RetrofitClient.setAuthToken(null)
     }
 
@@ -126,6 +143,9 @@ class SyncService(
 
     private suspend fun syncPendingOperationsLocked(): SyncResult {
         _syncStatus.value = _syncStatus.value.copy(isSyncing = true, lastError = null)
+        if (currentUserId() == null) {
+            return SyncResult.Error("Sign in to resume synchronization", retryable = true)
+        }
         try {
             // Global FIFO is conservative: do not overtake a delayed or rejected edit.
             // The shared process lock excludes other workers and foreground writes.
@@ -176,11 +196,12 @@ class SyncService(
             Json { ignoreUnknownKeys = true }.decodeFromString<OperationData>(operation.operationData)
         }.getOrNull()
         return when (data) {
+            is OperationData.CreateSession, is OperationData.CompleteSession -> true
             is OperationData.AddSessionItem -> data.idempotencyKey != null
             is OperationData.UpdateSessionItem -> data.idempotencyKey != null
             is OperationData.DeleteSessionItem, is OperationData.DeleteProduct,
             is OperationData.DeleteDistributor -> true
-            else -> false // Creation and clear can have ambiguous effects after interruption.
+            else -> false // Non-idempotent creation and clear can have ambiguous effects.
         }
     }
 
@@ -188,9 +209,9 @@ class SyncService(
 
     private suspend fun processOperation(queuedOperation: PendingOperationEntity): SyncResult {
         try {
-            val operation = if (queuedOperation.operationType in setOf(
-                    OperationType.ADD_SESSION_ITEM.name, OperationType.UPDATE_SESSION_ITEM.name
-                )) pendingOperationRepo.prepareForReplay(queuedOperation) else queuedOperation
+            // Promotion can rewrite operations already captured by the outer
+            // FIFO snapshot, so always reload the latest durable payload.
+            val operation = pendingOperationRepo.prepareForReplay(queuedOperation)
             pendingOperationRepo.markAsInProgress(operation.id)
 
             val operationType = OperationType.valueOf(operation.operationType)
@@ -223,6 +244,16 @@ class SyncService(
                 OperationType.DELETE_PRODUCT -> {
                     val data = json.decodeFromString<OperationData.DeleteProduct>(operation.operationData)
                     deleteProduct(data)
+                }
+
+                // SESSION OPERATIONS
+                OperationType.CREATE_SESSION -> {
+                    val data = json.decodeFromString<OperationData.CreateSession>(operation.operationData)
+                    createSession(data, operation)
+                }
+                OperationType.COMPLETE_SESSION -> {
+                    val data = json.decodeFromString<OperationData.CompleteSession>(operation.operationData)
+                    completeSession(data)
                 }
 
                 // SESSION ITEM OPERATIONS
@@ -378,6 +409,51 @@ class SyncService(
     }
 
     // ===== SESSION ITEM OPERATIONS =====
+
+    private suspend fun createSession(
+        data: OperationData.CreateSession,
+        operation: PendingOperationEntity,
+    ): SyncResult {
+        return try {
+            val response = api.createSession(
+                CreateSessionRequest(
+                    name = data.name,
+                    team_id = data.teamId,
+                    client_uuid = data.clientUuid,
+                )
+            )
+            val dto = response.body()
+            if (response.isSuccessful && dto != null) {
+                SessionPromotion(database).apply(
+                    localSessionId = data.localSessionId,
+                    accountUserId = operation.userId
+                        ?: return SyncResult.Error("Session owner is missing", retryable = false),
+                    dto = dto,
+                )
+                SyncResult.Success(resourceId = dto.id)
+            } else if (response.isSuccessful) {
+                SyncResult.Error("Empty acknowledgement", retryable = true)
+            } else {
+                mapHttpErrorToSyncResult(response.code())
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SyncResult.Error(e.message ?: "Network error", retryable = true)
+        }
+    }
+
+    private suspend fun completeSession(data: OperationData.CompleteSession): SyncResult {
+        return try {
+            val response = api.completeSession(data.sessionId)
+            if (response.isSuccessful) SyncResult.Success()
+            else mapHttpErrorToSyncResult(response.code())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            SyncResult.Error(e.message ?: "Network error", retryable = true)
+        }
+    }
 
     private suspend fun addSessionItem(data: OperationData.AddSessionItem, operation: PendingOperationEntity): SyncResult {
         return try {

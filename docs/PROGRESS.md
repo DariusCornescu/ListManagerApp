@@ -5,6 +5,43 @@ Newest entries on top.
 
 ---
 
+## 2026-09-13 - M6 offline session lifecycle complete
+
+- Offline sessions now receive a stable client UUID and a durable create intent.
+  Item edits stay in FIFO order behind creation, and reconnect atomically maps
+  the negative Room id to the server id before replay continues.
+- Completion is durable and idempotent. It waits behind outstanding item writes,
+  survives restart, and cannot be undone by workspace resolution. Completed
+  sessions reject add, update, delete, and clear; corrections use a new session.
+- Room schema 9 adds the nullable unique session identity. Migration retention,
+  resolver deferral, restart/reconnect promotion, two-item replay, completion
+  ordering, and lost create-response recovery have regression coverage.
+- Final gates: 256 backend tests, 177 Android Debug tests, and 177 Android Release
+  tests passed without failures, errors, or skips; Preview assembly succeeded.
+  Installing Preview over the existing S25 data preserved the app and launched
+  without Room, SQLite, or runtime failures.
+- Integration note: M6 is stacked on M5. After the dedicated M7 branch is merged,
+  rebase M6 and point its Alembic revision at M7's revision before opening its PR.
+
+---
+
+## 2026-09-13 - M5 account/workspace isolation complete
+
+- Room schema 8 adds an account owner to cached sessions. Personal sessions are
+  selected by account id; team sessions remain intentionally shared by team id.
+- The authenticated user id is restored with the encrypted auth state. A new
+  login clears the previous id until `/auth/me` confirms the new identity, and
+  the session UI waits instead of opening a stale cache in that interval.
+- New outbox entries always record their author. Replay, pending/failed UI,
+  snapshot protection, and acknowledgement rebasing operate only on the current
+  account; unattributed legacy operations remain stored but quarantined.
+- Three native SQLite tests cover migration retention, personal/team cache
+  visibility, and A/B replay isolation with A able to resume later.
+- Final gates: 173 Debug tests and 173 Release tests passed with no failures or
+  skips; Preview assembly succeeded. An in-place S25 Preview upgrade preserved
+  its database and cold-launched without Room, SQLite, or runtime errors.
+- Next: M6 offline session promotion, durable completion, and immutable
+  completed-list behavior.
 ## 2026-09-13 - EX-24 randomized sync interleavings
 
 - Added a deterministic randomized convergence matrix for eight reproducible

@@ -63,7 +63,14 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
 
     private fun observeWorkspace() {
         viewModelScope.launch {
-            combine(workspaceManager.currentWorkspace, reloadTrigger) { w, _ -> w }.collectLatest { workspace ->
+            combine(
+                workspaceManager.currentWorkspace,
+                reloadTrigger,
+                AuthState.userId,
+                AuthState.isLoggedIn,
+            ) { workspace, _, userId, isLoggedIn ->
+                Triple(workspace, userId, isLoggedIn)
+            }.collectLatest { (workspace, userId, isLoggedIn) ->
                 currentSessionId = null
                 _uiState.value = _uiState.value.copy(
                     isLoading = true,
@@ -71,6 +78,10 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
                     items = emptyList(),
                     error = null,
                 )
+                // A fresh login has a token before /auth/me returns its stable
+                // account id. Wait for that identity instead of opening the
+                // previous account's cache under a temporary guest scope.
+                if (isLoggedIn && userId == null) return@collectLatest
                 try {
                     // Best effort: align with the server session for this
                     // workspace. Offline falls back to the local cache.

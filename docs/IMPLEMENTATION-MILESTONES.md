@@ -66,15 +66,27 @@ unavailable test with a passing test.
   in 65s on 2026-09-11. 21 new tests; recovery and catalog regressions were
   reproduced before fixes. Room schema unchanged; native SQLite tests, not
   device instrumentation. Diff check passed.
+- M5: **173 Debug tests and 173 Release tests passed**, with no failures or
+  skips, and Preview assembly succeeded on 2026-09-13. Three new native SQLite
+  tests cover the 7→8 migration, personal-session isolation, shared team cache,
+  and cross-account outbox replay. Installing Preview over the existing S25
+  app preserved the database and launched without Room/SQLite/runtime errors.
+- M6: **177 Debug tests and 177 Release tests passed**, with no failures,
+  errors, or skips; Preview assembly succeeded on 2026-09-13. Backend gate:
+  **256 passed**. Tests cover Room 8→9 retention/UUID uniqueness, restart and
+  reconnect promotion, lost-create-response replay, ordered item/completion
+  upload, resolver protection, and immutable completed sessions. The Preview
+  APK installed over the existing S25 data and launched without Room, SQLite,
+  or runtime failures.
 - M7: **255 backend tests passed**, including the real PostgreSQL gate, with no
   failures or skips on 2026-09-13. Separate PostgreSQL connections proved eight
   simultaneous increments preserve the sum, six deliveries of one idempotency
   key apply once, competing absolute updates yield one 200 and one 409, and
   operation sequences remain unique and contiguous. Alembic drift, round-trip,
   and sequence-counter backfill tests passed.
-- M5–M6: not complete.
 - Android setup: verified Microsoft OpenJDK 17.0.20.1 was extracted into the
   ignored `android-native/.tooling/jdk` folder, without system configuration
   changes. The user accepted the Android SDK license; platform 36, build tools
   35.0.0 and platform tools are installed in ignored local tooling.
-- Pending product decisions: completed-list edit policy and inventory ownership.
+- Completed-list policy: immutable. Corrections start a new session. Inventory
+  remains device-local per the existing EX-44 scope.

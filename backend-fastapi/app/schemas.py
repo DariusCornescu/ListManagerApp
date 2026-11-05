@@ -42,6 +42,7 @@ class GlobalSessionBase(BaseModel):
 class GlobalSessionCreate(GlobalSessionBase):
     # Optional: when set, creates a team-owned session (caller must be a member).
     team_id: Optional[int] = None
+    client_uuid: Optional[str] = Field(default=None, max_length=36)
 
 class GlobalSessionDTO(GlobalSessionBase):
     id: int
@@ -51,6 +52,7 @@ class GlobalSessionDTO(GlobalSessionBase):
     version: int
     owner_user_id: Optional[int] = None
     team_id: Optional[int] = None
+    client_uuid: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

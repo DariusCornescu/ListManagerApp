@@ -8,9 +8,14 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-class PendingOperationRepository(private val dao: PendingOperationDao) {
+class PendingOperationRepository(
+    private val dao: PendingOperationDao,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
+) {
 
-    suspend fun getUnfinished() = dao.getUnfinished()
+    private fun accountScope(): Long = currentUserId() ?: GUEST_ACCOUNT_ID
+
+    suspend fun getUnfinished() = dao.getUnfinishedForUser(accountScope())
 
     suspend fun markAsWaiting(id: Long) {
         val operation = dao.getById(id) ?: error("Missing queued operation")
@@ -21,17 +26,21 @@ class PendingOperationRepository(private val dao: PendingOperationDao) {
         dao.markAsFailed(id, error = message, scheduledFor = Long.MAX_VALUE)
     }
 
-    fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> = dao.getAllPendingFlow()
+    fun getAllPendingFlow(): Flow<List<PendingOperationEntity>> =
+        dao.getAllPendingFlowForUser(accountScope())
 
-    suspend fun getAllPending(): List<PendingOperationEntity> = dao.getAllPending()
+    suspend fun getAllPending(): List<PendingOperationEntity> =
+        dao.getAllPendingForUser(accountScope())
 
-    suspend fun getAllFailed(): List<PendingOperationEntity> = dao.getAllFailed()
+    suspend fun getAllFailed(): List<PendingOperationEntity> =
+        dao.getAllFailedForUser(accountScope())
 
-    suspend fun getReadyForSync(): List<PendingOperationEntity> = dao.getReadyForSync()
+    suspend fun getReadyForSync(): List<PendingOperationEntity> =
+        dao.getReadyForSyncForUser(accountScope())
 
-    fun getPendingCountFlow(): Flow<Int> = dao.getPendingCountFlow()
+    fun getPendingCountFlow(): Flow<Int> = dao.getPendingCountFlowForUser(accountScope())
 
-    fun getFailedCountFlow(): Flow<Int> = dao.getFailedCountFlow()
+    fun getFailedCountFlow(): Flow<Int> = dao.getFailedCountFlowForUser(accountScope())
 
     suspend fun queueOperation(
         operationType: OperationType,
@@ -39,7 +48,7 @@ class PendingOperationRepository(private val dao: PendingOperationDao) {
         resourceId: Long? = null,
         operationData: OperationData,
         conflictStrategy: ConflictStrategy = ConflictStrategy.LATEST_WINS,
-        userId: Long? = null 
+        userId: Long = accountScope(),
         ): Long {
         val json = Json { encodeDefaults = true }
         val dataJson = json.encodeToString(operationData.withOperationIdentity())
@@ -90,7 +99,11 @@ class PendingOperationRepository(private val dao: PendingOperationDao) {
     suspend fun deleteAllCompleted() = dao.deleteAllCompleted()
     suspend fun deleteOldCompleted(olderThanDays: Int = 7) {
         val olderThan = System.currentTimeMillis() - (olderThanDays * 24 * 60 * 60 * 1000L)
-        dao.deleteOldCompleted(olderThan)
+        dao.deleteOldCompletedForUser(accountScope(), olderThan)
     }
     suspend fun deleteAll() = dao.deleteAll()
+
+    companion object {
+        const val GUEST_ACCOUNT_ID = 0L
+    }
 }

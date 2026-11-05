@@ -18,17 +18,18 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.UUID
 
 /**
  * Room is the local source of truth (instant UI); item mutations are then
  * written through to the server so other devices see them (WS fan-out).
  *
  * - Sessions/items with POSITIVE ids are server-mirrored → write through.
- * - NEGATIVE ids are local offline fallbacks → local-only (no network, no queue).
+ * - NEGATIVE ids are local offline fallbacks whose writes wait behind CREATE_SESSION.
  * - Adds/updates persist an operation together with the local edit BEFORE sending.
  * - A successful response atomically updates Room and acknowledges the operation.
  * - Deletes/clears also persist before sending; ambiguous clears require review.
- * - Later edits queue behind unresolved writes. Offline completion is a later milestone.
+ * - Later edits and completion queue behind unresolved writes.
  *
  * Item mutations are serialized through [mutex] so two rapid taps can't both
  * capture the same optimistic-lock version (the second would silently 409).
@@ -39,44 +40,116 @@ class SessionRepository(
     private val api: ListManagerApi = RetrofitClient.api,
     private val pendingOps: PendingOperationRepository,
     private val transaction: SessionTransaction,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
 ) {
     private val mutex = SessionWriteCoordinator.mutex
     private val itemSender = SessionItemOperationSender(api)
 
-    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow(teamId)
+    private fun accountScope(): Long =
+        currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID
 
-    suspend fun getActiveSession(teamId: Long?): SessionEntity? = sessionDao.getActiveSession(teamId)
+    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> =
+        sessionDao.getActiveSessionFlow(accountScope(), teamId)
 
-    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
-        return sessionDao.getOrCreateActiveSession(teamId)
+    suspend fun getActiveSession(teamId: Long?): SessionEntity? =
+        sessionDao.getActiveSession(accountScope(), teamId)
+
+    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity = mutex.withLock {
+        var resolved: SessionEntity? = null
+        transaction.run {
+            val accountUserId = accountScope()
+            var session = sessionDao.getActiveSession(accountUserId, teamId)
+                ?: sessionDao.getOrCreateActiveSession(
+                    accountUserId,
+                    teamId,
+                    UUID.randomUUID().toString(),
+                )
+
+            if (session.id < 0) {
+                val clientUuid = session.clientUuid ?: UUID.randomUUID().toString()
+                if (session.clientUuid == null) {
+                    session = session.copy(clientUuid = clientUuid)
+                    sessionDao.update(session)
+                }
+                val alreadyQueued = pendingOps.getUnfinished().any {
+                    it.operationType == OperationType.CREATE_SESSION.name &&
+                        it.resourceId == session.id
+                }
+                if (!alreadyQueued) {
+                    val hadPreviousWork = pendingOps.getUnfinished().isNotEmpty()
+                    val createId = pendingOps.queueOperation(
+                        OperationType.CREATE_SESSION,
+                        ResourceType.SESSION,
+                        session.id,
+                        OperationData.CreateSession(
+                            localSessionId = session.id,
+                            clientUuid = clientUuid,
+                            name = session.name,
+                            teamId = session.teamId,
+                        ),
+                    )
+                    if (hadPreviousWork) pendingOps.markAsWaiting(createId)
+
+                    // Version-8 and older offline sessions had local rows but
+                    // no durable item intents. Seed them behind CREATE_SESSION.
+                    sessionItemDao.getItems(session.id).forEach { item ->
+                        val addId = pendingOps.queueOperation(
+                            OperationType.ADD_SESSION_ITEM,
+                            ResourceType.SESSION_ITEM,
+                            item.id,
+                            OperationData.AddSessionItem(
+                                session.id,
+                                item.productId,
+                                item.quantity,
+                            ),
+                        )
+                        pendingOps.markAsWaiting(addId)
+                    }
+                }
+            }
+            resolved = session
+        }
+        requireNotNull(resolved)
     }
 
     suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
-        sessionDao.activateServerSession(serverId, name, teamId)
+        sessionDao.activateServerSession(serverId, name, accountScope(), teamId)
     }
 
     suspend fun getSessionById(id: Long): SessionEntity? = sessionDao.getById(id)
 
     suspend fun completeSession(sessionId: Long) = sessionDao.completeSession(sessionId)
 
-    /**
-     * Complete the session locally AND on the server. No pending op on
-     * IOException — SyncService has no COMPLETE_SESSION handler.
-     */
+    /** Complete locally and persist an idempotent completion intent first. */
     suspend fun completeSessionWriteThrough(sessionId: Long) = mutex.withLock {
-        sessionDao.completeSession(sessionId)
-        if (sessionId <= 0) return@withLock
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || sessionId <= 0
+        var operationId = 0L
+        transaction.run {
+            sessionDao.completeSession(sessionId)
+            operationId = pendingOps.queueOperation(
+                OperationType.COMPLETE_SESSION,
+                ResourceType.SESSION,
+                sessionId,
+                OperationData.CompleteSession(sessionId),
+            )
+            if (waiting) pendingOps.markAsWaiting(operationId)
+        }
+        if (waiting) return@withLock
+
+        pendingOps.markAsInProgress(operationId)
         try {
             val response = api.completeSession(sessionId)
-            if (!response.isSuccessful) Log.w(TAG, "completeSession HTTP ${response.code()}")
+            if (response.isSuccessful) {
+                pendingOps.deleteById(operationId)
+            } else if (response.code() == 408 || response.code() == 429 || response.code() >= 500) {
+                pendingOps.markAsFailed(operationId, "Server returned ${response.code()}")
+            } else {
+                pendingOps.holdForReview(operationId, "Server returned ${response.code()}; review required")
+            }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            // Offline completion stays local-only: the server session remains
-            // active and the next resolve restores it (documented edge).
-            Log.w(TAG, "completeSession offline; server session still active")
         } catch (e: Exception) {
-            Log.w(TAG, "completeSession failed", e)
+            pendingOps.markAsFailed(operationId, e.message ?: "Network failure")
         }
     }
 
@@ -90,38 +163,41 @@ class SessionRepository(
     }
 
     suspend fun addOrIncrementItem(sessionId: Long, productId: Long, quantity: Int = 1) = mutex.withLock {
-        if (sessionId <= 0) {
-            sessionItemDao.addOrIncrement(sessionId, productId, quantity)
-            return@withLock
-        }
         val operation = OperationData.AddSessionItem(sessionId, productId, quantity).withOperationIdentity()
-        persistAndSend(operation) { sessionItemDao.addOrIncrement(sessionId, productId, quantity) }
+        persistAndSend(operation, forceWaiting = sessionId < 0) {
+            sessionItemDao.addOrIncrement(sessionId, productId, quantity)
+        }
     }
 
     suspend fun setItemQuantity(sessionId: Long, productId: Long, quantity: Int) = mutex.withLock {
         val existing = sessionItemDao.getItem(sessionId, productId)
-        if (sessionId <= 0) {
-            sessionItemDao.setQuantity(sessionId, productId, quantity)
-            return@withLock
-        }
         if (quantity > 0) {
             val operation = if (existing == null) {
                 OperationData.AddSessionItem(sessionId, productId, quantity)
             } else {
                 OperationData.UpdateSessionItem(existing.id, quantity, existing.version)
             }.withOperationIdentity()
-            persistAndSend(operation) { sessionItemDao.setQuantity(sessionId, productId, quantity) }
+            persistAndSend(operation, forceWaiting = sessionId < 0) {
+                sessionItemDao.setQuantity(sessionId, productId, quantity)
+            }
             return@withLock
         }
         if (existing == null) return@withLock
-        persistRemoval(OperationData.DeleteSessionItem(existing.id)) {
+        persistRemoval(
+            OperationData.DeleteSessionItem(existing.id),
+            forceWaiting = sessionId < 0,
+        ) {
             sessionItemDao.setQuantity(sessionId, productId, quantity)
         }
     }
 
-    private suspend fun persistAndSend(operation: OperationData, localWrite: suspend () -> Unit) {
+    private suspend fun persistAndSend(
+        operation: OperationData,
+        forceWaiting: Boolean = false,
+        localWrite: suspend () -> Unit,
+    ) {
         var operationId = 0L
-        val waiting = pendingOps.getUnfinished().isNotEmpty()
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || forceWaiting
         transaction.run {
             localWrite()
             operationId = when (operation) {
@@ -163,18 +239,26 @@ class SessionRepository(
 
     suspend fun deleteItem(itemId: Long) = mutex.withLock {
         val row = sessionItemDao.getById(itemId) ?: return@withLock
-        if (row.sessionId <= 0) sessionItemDao.deleteById(itemId)
-        else persistRemoval(OperationData.DeleteSessionItem(itemId)) { sessionItemDao.deleteById(itemId) }
+        persistRemoval(
+            OperationData.DeleteSessionItem(itemId),
+            forceWaiting = row.sessionId < 0,
+        ) { sessionItemDao.deleteById(itemId) }
     }
 
     suspend fun clearSession(sessionId: Long) = mutex.withLock {
-        if (sessionId <= 0) sessionItemDao.deleteAllInSession(sessionId)
-        else persistRemoval(OperationData.ClearSession(sessionId)) { sessionItemDao.deleteAllInSession(sessionId) }
+        persistRemoval(
+            OperationData.ClearSession(sessionId),
+            forceWaiting = sessionId < 0,
+        ) { sessionItemDao.deleteAllInSession(sessionId) }
     }
 
-    private suspend fun persistRemoval(operation: OperationData, localWrite: suspend () -> Unit) {
+    private suspend fun persistRemoval(
+        operation: OperationData,
+        forceWaiting: Boolean = false,
+        localWrite: suspend () -> Unit,
+    ) {
         var id = 0L
-        val waiting = pendingOps.getUnfinished().isNotEmpty()
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || forceWaiting
         transaction.run {
             localWrite()
             id = when (operation) {

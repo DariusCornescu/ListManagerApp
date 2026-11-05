@@ -19,7 +19,8 @@ internal class SessionAcknowledgement(private val database: AppDatabase) {
         val local = items.getItem(dto.session_id, dto.product_id)
         var laterEdit = false
         var laterRemoval = false
-        for (next in pending.getUnfinished().filter { it.id != operation.id }) {
+        val accountUserId = operation.userId ?: return@withTransaction
+        for (next in pending.getUnfinishedForUser(accountUserId).filter { it.id != operation.id }) {
             val data = runCatching { json.decodeFromString<OperationData>(next.operationData) }.getOrNull()
             val matches = when (data) {
                 is OperationData.UpdateSessionItem -> data.itemId == dto.id || data.itemId == local?.id || data.itemId == operation.resourceId
