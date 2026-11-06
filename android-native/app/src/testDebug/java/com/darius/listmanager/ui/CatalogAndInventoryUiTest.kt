@@ -16,6 +16,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasScrollToIndexAction
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -119,7 +122,7 @@ class CatalogAndInventoryUiTest {
                 CatalogSearchField(if (searching) "paine" else "", {}, Modifier.padding(horizontal = 14.dp, vertical = 6.dp))
                 CatalogList(
                     catalog = items,
-                    searching = searching,
+                    searchQuery = if (searching) "paine" else "",
                     isAdmin = admin,
                     isSelectionMode = selecting,
                     selectedProductIds = selected,
@@ -174,6 +177,62 @@ class CatalogAndInventoryUiTest {
         rule.onNodeWithText("Pâine albă").assertExists()
         rule.onNodeWithText("Distribuitor B").assertDoesNotExist()
         shoot("catalog-search")
+    }
+
+    private val manyGroups = (1L..40L).map { DistributorWithProducts(DistributorEntity(it, "Distribuitor $it"), emptyList()) }
+
+    @Composable
+    private fun LongCatalog(query: String, items: List<DistributorWithProducts> = manyGroups) {
+        Page {
+            CatalogList(
+                catalog = items,
+                searchQuery = query,
+                isAdmin = false,
+                isSelectionMode = false,
+                selectedProductIds = emptySet(),
+                onProductLongPress = {},
+                onProductClick = {},
+                onEditProduct = {},
+            )
+        }
+    }
+
+    private fun scrollFarDown() {
+        rule.onNode(hasScrollToIndexAction()).performScrollToIndex(30)
+        rule.onNodeWithText("Distribuitor 1").assertDoesNotExist()
+    }
+
+    @Test fun changingTheSearch_returnsToTheTop() {
+        var query by mutableStateOf("")
+        rule.setContent { LongCatalog(query) }
+        scrollFarDown()
+
+        query = "distribuitor"
+        rule.onNodeWithText("Distribuitor 1").assertExists()
+
+        scrollFarDown()
+        query = ""
+        rule.onNodeWithText("Distribuitor 1").assertExists()
+    }
+
+    @Test fun theSameSearch_keepsThePlace_whenTheListChanges() {
+        var items by mutableStateOf(manyGroups)
+        rule.setContent { LongCatalog("distribuitor", items) }
+        scrollFarDown()
+
+        items = manyGroups.dropLast(1)
+        rule.waitForIdle()
+        rule.onNodeWithText("Distribuitor 1").assertDoesNotExist()
+    }
+
+    @Test fun comingBackToTheCatalog_keepsThePlace() {
+        val restoration = StateRestorationTester(rule)
+        restoration.setContent { LongCatalog("") }
+        scrollFarDown()
+
+        restoration.emulateSavedInstanceStateRestore()
+        rule.waitForIdle()
+        rule.onNodeWithText("Distribuitor 1").assertDoesNotExist()
     }
 
     @Test fun admin_canEditFromARow_andLongPressStartsSelecting() {

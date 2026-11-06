@@ -5,6 +5,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -114,7 +115,7 @@ internal fun CatalogEmptyState(query: String, modifier: Modifier = Modifier) {
 @Composable
 internal fun CatalogList(
     catalog: List<DistributorWithProducts>,
-    searching: Boolean,
+    searchQuery: String,
     isAdmin: Boolean,
     isSelectionMode: Boolean,
     selectedProductIds: Set<Long>,
@@ -124,9 +125,21 @@ internal fun CatalogList(
     modifier: Modifier = Modifier,
 ) {
     var opened by rememberSaveable { mutableStateOf(emptySet<Long>().toLongArray()) }
+    val searching = searchQuery.isNotBlank()
+    val listState = rememberLazyListState()
+    var lastQuery by rememberSaveable { mutableStateOf(searchQuery) }
+
+    // Only a new search moves the list, so returning from a product keeps the place.
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != lastQuery) {
+            lastQuery = searchQuery
+            listState.scrollToItem(0)
+        }
+    }
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
+        state = listState,
         contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 96.dp),
     ) {
         catalog.forEach { group ->

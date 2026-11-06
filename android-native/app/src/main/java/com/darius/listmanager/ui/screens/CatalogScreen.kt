@@ -128,7 +128,7 @@ fun CatalogScreen(
                     } else {
                         CatalogList(
                             catalog = filtered,
-                            searching = uiState.searchQuery.isNotBlank(),
+                            searchQuery = uiState.searchQuery,
                             isAdmin = uiState.isAdmin,
                             isSelectionMode = uiState.isSelectionMode,
                             selectedProductIds = uiState.selectedProductIds,
