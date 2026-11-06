@@ -210,7 +210,10 @@ async def update_product(
     product.name = product_update.name
     product.distributor_id = product_update.distributor_id
     product.aliases = product_update.aliases
-    product.price = product_update.price
+    # Android and Flutter edit products without sending a price. Only an explicit
+    # value, including null from /admin, may change it.
+    if "price" in product_update.model_fields_set:
+        product.price = product_update.price
 
     db.commit()
     db.refresh(product)
