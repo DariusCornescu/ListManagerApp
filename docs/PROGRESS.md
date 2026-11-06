@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 3 of 7: the current list
+
+**Changed**
+- Products are grouped by distributor. Swiping left deletes, with **Anulează** in the message that
+  follows. At quantity 1 the minus button deletes too, so swiping isn't the only way.
+- The screen shows loading rows, a retry when the list can't load, and a way back to recording when
+  it's empty. Emptying the list asks first, in a sheet.
+- After generating PDFs, a success screen can open the share sheet again.
+- **Fix:** a PDF failure no longer replaces the whole list with an error screen. The list stays, and
+  a message explains. A failure to complete the session after generating gets its own message.
+- `SessionUndoOfflineTest` runs both undos on a real Room database with no connection, and checks
+  what waits in the queue.
+
+**Not done**
+- Undo while another phone edits the same product, and replaying an undone delete once the
+  connection returns, need a check on real phones.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 4: **De rezolvat** and the single product form.
+
+---
+
 ## 2026-11-06 - Android redesign, part 2 of 7: Home
 
 **Changed**
