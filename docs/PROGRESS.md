@@ -7,8 +7,9 @@ Newest entries on top.
 
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
-Work is on branch `claude/ex-dario-issues-features-b0e765`. Nothing is pushed or merged
-into `development`. Full review: `APP-REVIEW-2026-11.md`.
+Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
+local `development` (`8701773` to `05d767d`). Nothing is pushed, so CI has never run. Full
+review: `APP-REVIEW-2026-11.md`.
 
 **Integrated** the finished local branches, with both histories kept: M7, EX-24, M5 and M6,
 the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real
@@ -54,6 +55,8 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
 - Existing virtual environments must reinstall `requirements.txt`.
 
 **Verification**
+- Re-run on `05d767d` after the merge: backend 346 passed, 3 skipped; Android 265 Debug and
+  252 Release with the tests forced to re-run, plus Preview assembly. No phone was attached.
 - Backend: 346 passed, 3 skipped (the PostgreSQL gate), on the pinned dependencies; `pip-audit`
   finds no known vulnerabilities. A real server booted and ran the token flow.
 - Android: 265 Debug and 252 Release unit tests, including 12 Compose UI tests that render
@@ -73,16 +76,20 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   Robolectric. The prod Python is 3.11; the suite ran on 3.12.
 
 **Linear, updated with an evidence comment on each issue touched**
-- All 43: 16 Done, 15 In Review, 2 In Progress, 10 Backlog, read back from the project page.
-- Moved to Done: EX-5, EX-6, EX-7, EX-26, EX-27, EX-30, EX-31. EX-7 and part of the EX-26 and
-  EX-27 evidence are only in local `development`, which is 42 commits ahead of its remote.
+- All 43: 28 Done, 3 In Review, 2 In Progress, 10 Backlog, read back from the project page.
+- Moved to Done after the merge, each against its own "Done when", with what stays unverified
+  in its comment: EX-25, EX-29, EX-33, EX-34, EX-37, EX-39, EX-40, EX-42, EX-43, EX-45, EX-46,
+  EX-47. Done here means in local `development`, not pushed or deployed.
+- Moved to Done earlier: EX-5, EX-6, EX-7, EX-26, EX-27, EX-30, EX-31.
 - EX-26 is Done against its stated criterion, a drop-and-replay test. Those tests call
-  `SyncService` directly, so they did not catch the broken trigger; until `4c97cde` is merged,
-  queued edits in `development` still replay only from the debug screen.
-- In Review, on this branch: EX-25, EX-29, EX-33 to EX-37, EX-39, EX-40, EX-42 to EX-47.
-  They stay there until merged, and EX-35, EX-36 and EX-44 also need the real-world checks.
-- Unchanged: EX-15, EX-24 (In Progress), EX-8, EX-9, EX-16, EX-19, EX-21, EX-23, EX-28, EX-32,
-  EX-38, EX-41 (Backlog). Each needs a person, a device, real data or a go-ahead.
+  `SyncService` directly, so they did not catch the broken trigger. The fix, `4c97cde`, is now
+  in local `development`, but `origin/development` still replays only from the debug screen.
+- Merged but left In Review, because their criteria need the real world: EX-35 and EX-36 (a
+  real user, EX-32), EX-44 (two real phones, EX-28).
+- EX-24 stays In Progress as its Talos note asks. The merged test meets its original criterion,
+  but accepting or closing the candidate `workbench/5adfcd05-374` is the owner's decision.
+- Unchanged: EX-15 (In Progress), EX-8, EX-9, EX-16, EX-19, EX-21, EX-23, EX-28, EX-32, EX-38,
+  EX-41 (Backlog). Each needs a person, a device, real data or a go-ahead.
 
 **Commit slip:** the removal of the old Flutter demo screens and fake service landed in
 `1748c22` (inventory API) instead of `e2b63f2` (Flutter), breaking the one-concern rule. The
@@ -90,7 +97,8 @@ removal itself was intended, but `flutter_ui` does not compile between those two
 matters only when bisecting. History was left as it is.
 
 **Next**
-- Merge decision and push: this branch, then EX-8's branch cleanup.
+- Push `development`. Its first CI run is also the first real run of the Flutter widget tests
+  and the PostgreSQL gates, so read it closely. Then EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).

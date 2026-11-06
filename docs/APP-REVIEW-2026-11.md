@@ -80,40 +80,47 @@ These were found by review and checked against the current code. Defects in code
 
 ## Linear status, 43 issues
 
-Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
+28 Done, 3 In Review, 2 In Progress, 10 Backlog. Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
 
 ### Done
 
 | Issue | State |
 | --- | --- |
 | EX-5, EX-6 | Merged, and on `origin/development` |
-| EX-7 | Merged into local `development` only, which is 42 commits ahead of its remote |
-| EX-26 | Replay tests are in local `development`. They call `SyncService` directly, so they missed the broken trigger; the fix, `4c97cde`, is on this branch and not merged |
+| EX-7 | Merged into local `development` only |
+| EX-26 | Replay tests and the trigger fix, `4c97cde`, are in local `development`. The tests call `SyncService` directly, so they missed the broken trigger; `origin/development` still has it |
 | EX-27 | The backend duplicate-delivery test is on `origin/development`; the Android side is in local `development` |
 | EX-30, EX-31 | WebSocket scoping and the stats leak are fixed on `origin/development` |
 
-### In Review, on this branch and not merged
+### Done on the local merge
+
+These meet their own "Done when" and are in local `development` at `05d767d`. None is pushed or deployed, and CI has not run.
 
 | Issue | What landed |
 | --- | --- |
-| EX-25 | Two-writer storm, and Android's way out of a 409 |
+| EX-25 | Two-writer storm, and Android's way out of a 409. PostgreSQL variant skipped |
 | EX-29 | `SyncService` 563 to 335 lines, `SyncDebugScreen` 607 to 221 |
-| EX-33, EX-34 | Catalog and Home screens split |
-| EX-35 | Save-state chip. Its "verified against confusion points" step waits on EX-32 |
-| EX-36 | Big-REC home. "Obvious to a first-time user" needs a real user |
-| EX-37 | Profile fields end to end |
+| EX-33, EX-34 | Catalog and Home screens split. Not checked on a real phone |
+| EX-37 | Profile fields end to end. Android screen not run on a real phone |
 | EX-39, EX-40 | Results on synthetic noise: keep phonetic 0.8, keep N-best 5 |
 | EX-42 | Session 25/36 to 36/36, inventory 11/17 to 17/17, on a hand-written slice |
-| EX-43 | Decided: finish. Flutter runs on the real API; widget tests not yet run |
+| EX-43 | Decided: finish. Flutter runs on the real API; widget tests and builds not yet run |
+| EX-45, EX-46, EX-47 | Token refresh and revocation, CORS (no web origin deployed yet), dependency audit at zero findings |
+
+### In Review, merged locally, with a real-world check left
+
+| Issue | What landed |
+| --- | --- |
+| EX-35 | Save-state chip. Its "verified against confusion points" step waits on EX-32 |
+| EX-36 | Big-REC home. "Obvious to a first-time user" needs a real user |
 | EX-44 | Shared inventory on server and Android; real phones still needed |
-| EX-45, EX-46, EX-47 | Token refresh and revocation, CORS, dependency audit at zero findings |
 
 ### Still open, and what each needs
 
 | Issue | Needs |
 | --- | --- |
-| EX-24 | Yours to accept. A test is merged here, and the separate Talos candidate awaits your acceptance as its note asks |
-| EX-8 | Needs your go-ahead to delete remote branches and publish `development` |
+| EX-24 | Yours to accept. A test in local `development` meets the original criterion, and the separate Talos candidate awaits your acceptance as its note asks |
+| EX-8 | Needs your go-ahead to publish `development` and delete remote branches |
 | EX-9, EX-28 | Needs a second real phone and a two-phone run |
 | EX-15, EX-16 | Needs real shop crash reports over the seven-day window |
 | EX-19, EX-21, EX-23 | Needs tens of real dictations per noise condition. A synthetic floor is in place toward EX-23's gate |
