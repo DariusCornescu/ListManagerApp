@@ -55,7 +55,7 @@ class TeamDetailViewModel(application: Application) : AndroidViewModel(applicati
                 )
                 is TeamResult.Offline -> _uiState.value = _uiState.value.copy(
                     isLoading = false, loadFailed = true,
-                    error = "Team management requires a connection"
+                    error = "Echipele au nevoie de conexiune la internet."
                 )
                 is TeamResult.Failure -> _uiState.value = _uiState.value.copy(
                     isLoading = false, loadFailed = true, error = result.message
@@ -70,7 +70,7 @@ class TeamDetailViewModel(application: Application) : AndroidViewModel(applicati
                 is TeamResult.Success ->
                     _uiState.value = _uiState.value.copy(inviteCode = result.data.code)
                 is TeamResult.Offline ->
-                    _uiState.value = _uiState.value.copy(error = "Team management requires a connection")
+                    _uiState.value = _uiState.value.copy(error = "Echipele au nevoie de conexiune la internet.")
                 is TeamResult.Failure ->
                     _uiState.value = _uiState.value.copy(error = result.message)
             }
@@ -97,7 +97,7 @@ class TeamDetailViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
                 is TeamResult.Offline ->
-                    _uiState.value = _uiState.value.copy(error = "Team management requires a connection")
+                    _uiState.value = _uiState.value.copy(error = "Echipele au nevoie de conexiune la internet.")
                 is TeamResult.Failure ->
                     _uiState.value = _uiState.value.copy(error = result.message)
             }

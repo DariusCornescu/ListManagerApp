@@ -2,8 +2,10 @@ package com.darius.listmanager.ui
 
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
@@ -19,13 +21,20 @@ import com.darius.listmanager.ui.components.PendingOperationsDialogContent
 import com.darius.listmanager.ui.components.SaveStateChipContent
 import com.darius.listmanager.ui.screens.HomeContent
 import com.darius.listmanager.ui.screens.RecordAction
+import com.darius.listmanager.ui.screens.StageKind
+import com.darius.listmanager.ui.screens.SuggestionSheetContent
+import com.darius.listmanager.ui.screens.homeStageFor
 import com.darius.listmanager.ui.screens.recordActionFor
+import com.darius.listmanager.ui.theme.AppTheme
 import com.darius.listmanager.ui.viewmodel.HomeUiState
+import com.darius.listmanager.ui.viewmodel.LastAdded
 import com.darius.listmanager.ui.viewmodel.ReviewKind
 import com.darius.listmanager.ui.viewmodel.ReviewLine
+import com.darius.listmanager.ui.viewmodel.SuggestionPrompt
 import com.darius.listmanager.util.RankedProduct
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -43,20 +52,30 @@ class HomeAndSaveStateUiTest {
     private var starts = 0
     private var stops = 0
     private var sessionOpens = 0
+    private var resolveOpens = 0
+    private var undos = 0
+
+    /** Endless animations never let the test clock settle, so they're off except where tested. */
+    @Before fun turnAnimationsOff() = setAnimatorScale(0f)
+
+    private fun setAnimatorScale(scale: Float) {
+        Settings.Global.putFloat(rule.activity.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, scale)
+    }
 
     @Composable
-    private fun Home(state: HomeUiState) {
-        MaterialTheme {
-            HomeContent(
-                uiState = state,
-                onStart = { starts++ },
-                onStop = { stops++ },
-                onClearSuggestions = {},
-                onPickSuggestion = {},
-                onOpenSession = { sessionOpens++ },
-                onOpenReview = {},
-                onOpenUnknown = {},
-            )
+    private fun Home(state: HomeUiState, dark: Boolean = false) {
+        AppTheme(darkTheme = dark) {
+            // The app's Scaffold paints this background, so snapshots need it too.
+            Surface(color = MaterialTheme.colorScheme.background) {
+                HomeContent(
+                    uiState = state,
+                    onStart = { starts++ },
+                    onStop = { stops++ },
+                    onUndoLastAdded = { undos++ },
+                    onOpenSession = { sessionOpens++ },
+                    onOpenResolve = { resolveOpens++ },
+                )
+            }
         }
     }
 
@@ -86,18 +105,34 @@ class HomeAndSaveStateUiTest {
     @Test fun listening_turnsTheSameButtonIntoStop() {
         rule.setContent { Home(HomeUiState(speechState = SpeechState.Listening)) }
 
+        rule.onNodeWithText("Te ascult…").assertExists()
         rule.onNodeWithContentDescription("Oprește înregistrarea").performClick()
         assertEquals(1, stops)
         assertEquals(0, starts)
         shoot("home-listening")
     }
 
+    @Test fun listening_withAnimationsOn_stillShowsStop() {
+        setAnimatorScale(1f)
+        rule.mainClock.autoAdvance = false // The rings never settle.
+        rule.setContent { Home(HomeUiState(speechState = SpeechState.Listening)) }
+        rule.mainClock.advanceTimeBy(600)
+
+        rule.onNodeWithContentDescription("Oprește înregistrarea").assertIsEnabled()
+    }
+
     @Test fun midPhrase_stopStillWorks() {
         rule.setContent { Home(HomeUiState(speechState = SpeechState.Partial("două lapte"))) }
 
-        rule.onNodeWithText("Am auzit: două lapte").assertExists()
+        rule.onNodeWithText("două lapte").assertExists()
         rule.onNodeWithContentDescription("Oprește înregistrarea").performClick()
         assertEquals(1, stops)
+    }
+
+    @Test fun earlierPhraseStillProcessing_saysItsSearching() {
+        rule.setContent { Home(HomeUiState(speechState = SpeechState.Partial("zahăr"), isProcessing = true)) }
+
+        rule.onNodeWithText("Caut în catalog…").assertExists()
     }
 
     @Test fun processing_disablesTheButton() {
@@ -111,24 +146,102 @@ class HomeAndSaveStateUiTest {
     @Test fun error_offersRecordAgain_withTheReason() {
         rule.setContent { Home(HomeUiState(speechState = SpeechState.Error("Fără microfon"))) }
 
-        rule.onNodeWithText("Eroare: Fără microfon").assertExists()
+        rule.onNodeWithText("Nu am putut asculta").assertExists()
+        rule.onNodeWithText("Fără microfon").assertExists()
         rule.onNodeWithContentDescription("Începe înregistrarea").performClick()
         assertEquals(1, starts)
     }
 
-    @Test fun secondaryActions_stayReachable_evenWithManySuggestions() {
-        val suggestions = (1L..8L).map { id ->
-            RankedProduct(ProductEntity(id, "Produs $id", 1), 80.0)
-        }
+    @Test fun dock_showsCounts_andOpensBothLists() {
+        rule.setContent { Home(HomeUiState(reviewCount = 2, unknownProductCount = 1, sessionItemCount = 6)) }
+
+        rule.onNodeWithContentDescription("Lista curentă: 6 produse").performClick()
+        rule.onNodeWithContentDescription("De rezolvat: 3").performClick()
+        assertEquals(1, sessionOpens)
+        assertEquals(1, resolveOpens)
+        rule.onNodeWithText("6").assertExists()
+        rule.onNodeWithText("3").assertExists()
+        shoot("home-counts")
+    }
+
+    @Test fun dock_hidesEmptyCounts() {
+        rule.setContent { Home(HomeUiState()) }
+
+        rule.onNodeWithText("0").assertDoesNotExist()
+    }
+
+    @Test fun lastAdded_offersUndoWhileTheWindowIsOpen() {
+        val last = LastAdded(1, 10, 20, "Pâine albă", 2)
+        rule.setContent { Home(HomeUiState(lastAdded = last, canUndoLastAdded = true)) }
+
+        rule.onNodeWithText("Pâine albă × 2").assertExists()
+        shoot("home-last-added")
+        rule.onNodeWithText("Anulează").performClick()
+        assertEquals(1, undos)
+    }
+
+    @Test fun darkTheme_showsTheSameScreen() {
+        val last = LastAdded(1, 10, 20, "Pâine albă", 2)
         rule.setContent {
-            Home(HomeUiState(suggestions = suggestions, reviewCount = 2, unknownProductCount = 1))
+            Home(
+                HomeUiState(
+                    speechState = SpeechState.Partial("două pâini albe"),
+                    lastAdded = last,
+                    canUndoLastAdded = true,
+                    reviewCount = 2,
+                    unknownProductCount = 1,
+                    sessionItemCount = 6,
+                ),
+                dark = true,
+            )
         }
 
-        rule.onNodeWithText("Mergi spre sesiunea curentă").performClick()
-        assertEquals(1, sessionOpens)
-        rule.onNodeWithText("De verificat").assertExists()
-        rule.onNodeWithText("Necunoscute").assertExists()
-        shoot("home-suggestions")
+        rule.onNodeWithText("două pâini albe").assertExists()
+        shoot("home-dark")
+    }
+
+    @Test fun lastAdded_staysAfterTheWindow_withoutUndo() {
+        val last = LastAdded(1, 10, 20, "Pâine albă", 2)
+        rule.setContent { Home(HomeUiState(lastAdded = last, canUndoLastAdded = false)) }
+
+        rule.onNodeWithText("Pâine albă × 2").assertExists()
+        rule.onNodeWithText("Anulează").assertDoesNotExist()
+    }
+
+    @Test fun suggestionSheet_picksACandidate_orLeavesItForLater() {
+        val candidates = listOf("Ciment alb 25 kg", "Ciment Portland 40 kg").mapIndexed { index, name ->
+            RankedProduct(ProductEntity(index + 1L, name, 1), 80.0)
+        }
+        var picked: RankedProduct? = null
+        var dismissed = 0
+        rule.setContent {
+            AppTheme(darkTheme = false) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    SuggestionSheetContent(
+                        prompt = SuggestionPrompt(1, "ciment", 10, 1, candidates),
+                        onPick = { picked = it },
+                        onDismiss = { dismissed++ },
+                    )
+                }
+            }
+        }
+
+        rule.onNodeWithText("Ai vrut să zici?").assertExists()
+        rule.onNodeWithText("Am auzit „ciment”.").assertExists()
+        shoot("home-suggestion-sheet")
+        rule.onNodeWithText("Ciment Portland 40 kg").performClick()
+        assertEquals(candidates[1], picked)
+        rule.onNodeWithText("Niciunul").performClick()
+        assertEquals(1, dismissed)
+    }
+
+    @Test fun stage_coversEverySpeechState() {
+        assertEquals(StageKind.IDLE, homeStageFor(SpeechState.Idle, false).kind)
+        assertEquals(StageKind.LISTENING, homeStageFor(SpeechState.Idle, true).kind)
+        assertEquals(StageKind.LISTENING, homeStageFor(SpeechState.Listening, false).kind)
+        assertEquals("x", homeStageFor(SpeechState.Partial("x"), false).text)
+        assertTrue(homeStageFor(SpeechState.Final("x"), false).seeking)
+        assertEquals(StageKind.ERROR, homeStageFor(SpeechState.Error("x"), false).kind)
     }
 
     @Test fun recordAction_coversEveryState() {
@@ -154,7 +267,7 @@ class HomeAndSaveStateUiTest {
             SaveState.SavedOffline to "Salvat, offline",
             SaveState.Saving(2) to "Se salvează…",
             SaveState.StoredOnPhone(3) to "Pe telefon (3)",
-            SaveState.NeedsAttention(1) to "De verificat (1)",
+            SaveState.NeedsAttention(1) to "De decis (1)",
         )
         for ((saveState, label) in expectations) {
             state.value = saveState

@@ -3,12 +3,14 @@ package com.darius.listmanager
 import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.network.AuthTokenStore
@@ -91,10 +93,7 @@ fun AppContent() {
         com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(context)
     }
     val currentWorkspace by workspaceManager.currentWorkspace.collectAsState()
-    val teamRepository = remember { com.darius.listmanager.data.repository.TeamRepository() }
-    var drawerTeams by remember {
-        mutableStateOf<List<com.darius.listmanager.network.TeamDTO>>(emptyList())
-    }
+    val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
     var serverReachable by remember { mutableStateOf(false) }
 
     // Get pending operations count from database
@@ -111,17 +110,9 @@ fun AppContent() {
     val username by AuthState.username.collectAsState()
     val sessionExpiredEvent by AuthState.sessionExpiredEvent.collectAsState()
 
-    // Refresh the team list whenever the drawer is opened while logged in.
-    // On logout, drop the cached teams so the next user cannot see (or switch
-    // into) the previous user's workspaces.
+    // Refresh connection and presence whenever the drawer is opened while logged in.
     LaunchedEffect(drawerState.isOpen, isLoggedIn) {
-        if (!isLoggedIn) {
-            drawerTeams = emptyList()
-        } else if (drawerState.isOpen) {
-            val result = teamRepository.getMyTeams()
-            if (result is com.darius.listmanager.data.repository.TeamResult.Success) {
-                drawerTeams = result.data
-            }
+        if (isLoggedIn && drawerState.isOpen) {
             // Server reachability (the old banner's middle state): REST can be
             // perfectly fine while the live WebSocket is down — show that
             // honestly instead of a scary "no connection".
@@ -183,7 +174,7 @@ fun AppContent() {
         drawerContent = {
             DrawerContent(
                 workspaceName = currentWorkspace.displayName,
-                teams = drawerTeams,
+                currentRoute = currentRoute,
                 username = username,
                 webSocketState = webSocketState,
                 serverReachable = serverReachable,
@@ -196,16 +187,6 @@ fun AppContent() {
                         SyncWorker.scheduleImmediateSync(context)
                     } catch (e: Exception) {
                         Log.e("AppContent", "Error scheduling sync", e)
-                    }
-                },
-                onSwitchWorkspace = { workspace ->
-                    workspaceManager.switchTo(workspace)
-                    scope.launch {
-                        drawerState.close()
-                        navController.navigate("session") {
-                            popUpTo("home") { inclusive = false }
-                            launchSingleTop = true
-                        }
                     }
                 },
                 onNavigate = { route ->
@@ -223,7 +204,12 @@ fun AppContent() {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
+            // Each screen has its own Scaffold. Consuming here stops it reserving the system bars again.
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .consumeWindowInsets(padding)
+            ) {
                 NavGraph(
                     navController = navController,
                     startDestination = startDestination,

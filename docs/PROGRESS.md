@@ -5,6 +5,189 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign: first run on a real phone, against production
+
+**Changed**
+- PR 33 now lands the whole redesign stack on `development`, because parts 2 to 7 had merged only into
+  their base branches.
+- Fixed the doubled system bar spacing, and preview builds can reach a local test server.
+- **Catalog search:** a new search returns the list to the top. Returning to the catalog keeps the place.
+
+**Checked on a Galaxy S25, Android 17, against production**
+- Install, sign-in, Home, Catalog, Settings, About and Contul meu open without a crash.
+- The catalog shows 3,196 products and 67 distributors. While scrolling, 95% of frames took at most
+  8 ms with closed groups and 13 ms in an open group of 261 products.
+- Android tests: 397 passing. Only read requests were made after sign-in.
+- The local `ApiConfig.kt` decides which server a build uses. It is git-ignored and was edited by hand.
+
+**Found, not fixed**
+- Back with the menu open leaves the app instead of closing the menu.
+- The live connection dropped several times around a reinstall and leaving the app. In the code, a
+  failed connection is only retried when the menu opens or a token is refreshed.
+- Opening Catalog downloads the whole catalog again instead of reusing the ETag.
+
+**Not done**
+- Dictation, the list, swipe and both undo actions have not run on a phone. Voice speed is still
+  unmeasured (WP4).
+
+**Next**
+- Try dictation and the list on the phone, then decide on merging PR 33.
+
+---
+
+## 2026-11-06 - Android redesign, part 7 of 7: remaining screens and cleanup
+
+**Changed**
+- **Login:** Romanian labels and the new look. After creating an account the form returns to
+  signing in. "Continuă fără cont" now says lists stay on that phone.
+- **Settings are real:** theme (Sistem, Întunecat, Deschis) and vibrations are saved on the phone
+  in `data/settings/AppSettings`. Vibrations apply to the shared buttons, record and swipe to delete.
+  The offline speech switch is gone, because it never did anything.
+- **PDFs, About and the sync sheet** use the shared look. About shows the build's real version. The
+  sync sheet keeps its logic and its wording.
+- **Diagnostic** is in Romanian without emoji, and is only reachable in debug and preview builds.
+  **Golește operațiunile now asks first**, because it erases the offline queue for good.
+- Removed unused `SyncStatusBar`, `ErrorCard`, `PDFCard`, `AppCard`, `Buttons` and `SettingItem`.
+
+**Behavior changes**
+- Release builds no longer show Diagnostic.
+- Theme defaults to Sistem. Before, the app always followed the system and the switch did nothing.
+
+**Not done**
+- Nothing in the redesign has run on a real phone. Gestures, animations, dictation and the catalog's
+  scrolling all still need that.
+- Some older messages from sync code stay as they are, including in English (T3).
+
+**Next**
+- Merge the seven parts in order, after trying them on a phone.
+- WP4: voice speed, measured on a phone.
+
+---
+
+## 2026-11-06 - Android redesign, part 6 of 7: account, menu and teams
+
+**Changed**
+- **Workspace** moved from the menu to **Contul meu**, as requested. A new
+  `WorkspaceSwitcherViewModel` loads the teams when that screen opens. The current team stays listed
+  if the team list can't load. Switching still opens the list for that workspace.
+- **Menu:** all entries are in Romanian and the current page is highlighted. It shows the active
+  workspace as text only, and the connection row now has a color for each state.
+- **Teams:** both screens are in Romanian, including server messages and the invite text. Create, join
+  and "switch now?" use bottom sheets.
+- **Removing a team member now asks first.** It used to happen on one tap.
+- Roles read "Administrator" and "Membru" instead of the raw `admin` and `member`.
+
+**Behavior change**
+- Someone who chose "Continue offline" has no **Contul meu**, so they stay on Personal. The old menu
+  offered them the switcher, but it only held Personal without an account.
+
+**Not done**
+- Members still show as "Utilizator 12". Real names need the API to return them.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 7: login, settings, PDFs, sync, About and cleanup.
+
+---
+
+## 2026-11-06 - Android redesign, part 5 of 7: catalog, product editing and inventory
+
+**Changed**
+- **Catalog:** distributor groups start closed and open on tap, by themselves during a search or a
+  selection. Each product is its own lazy item, so 3,196 products cost only what's on screen. Admins
+  can edit from any row, not only in selection mode.
+- **Catalog loading:** one load when the screen opens, instead of up to three. Products are grouped
+  in memory instead of 67 queries, overlapping refreshes cancel each other, and a refresh keeps the
+  list on screen.
+- **Search** ignores diacritics, so "paine" finds "Pâine". A distributor found by name keeps all its
+  products. Search keys are built once per load.
+- **Product editing:** one save button, which also blocks a blank name with an explanation. Deleting
+  asks in a sheet.
+- **Inventory:** cards instead of a four-column table. A row says what's missing, and tapping it
+  opens the editor, which is now the way to delete. Deleting can be undone. A denied microphone and
+  speech errors now show a message, where before nothing happened.
+- Remaining English and raw error text on these screens is now Romanian.
+
+**Not done**
+- `ProductRepository.getAll()` still downloads the full catalog each time the screen resumes, even
+  when nothing changed. `CatalogRefresher` has a cheaper path, but that's sync code (T3).
+- Scrolling 3,196 products hasn't been measured. Nothing here has run on a real phone.
+
+**Next**
+- Part 6: account, menu and teams.
+
+---
+
+## 2026-11-06 - Android redesign, part 4 of 7: De rezolvat and the single product form
+
+**Changed**
+- New `resolve` route and `ResolveScreen` show ambiguous phrases and unknown ones together, using
+  the existing `NeedsReviewViewModel` and `UnknownViewModel`. They replace the `review` and `unknown`
+  routes, `NeedsReviewScreen` and `UnknownProductsScreen`. The routes were internal to the app.
+- `ProductFormSheet` is now the one form for adding a product, from here and from the catalog. It
+  replaces `EditProductBottomSheet` and the catalog's `AddProductDialog`. The catalog can now create
+  a distributor, which its view model already supported.
+- Only admins see **Adaugă** on an unknown phrase. Others used to see it and then get an error.
+- Deleting an unknown phrase can be undone. A failed save now gets a message instead of replacing
+  the whole list with an error screen.
+
+**Not done**
+- The catalog screen itself and the edit screen change in part 5.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 5: catalog, product editing and inventory.
+
+---
+
+## 2026-11-06 - Android redesign, part 3 of 7: the current list
+
+**Changed**
+- Products are grouped by distributor. Swiping left deletes, with **Anulează** in the message that
+  follows. At quantity 1 the minus button deletes too, so swiping isn't the only way.
+- The screen shows loading rows, a retry when the list can't load, and a way back to recording when
+  it's empty. Emptying the list asks first, in a sheet.
+- After generating PDFs, a success screen can open the share sheet again.
+- **Fix:** a PDF failure no longer replaces the whole list with an error screen. The list stays, and
+  a message explains. A failure to complete the session after generating gets its own message.
+- `SessionUndoOfflineTest` runs both undos on a real Room database with no connection, and checks
+  what waits in the queue.
+
+**Not done**
+- Undo while another phone edits the same product, and replaying an undone delete once the
+  connection returns, need a check on real phones.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 4: **De rezolvat** and the single product form.
+
+---
+
+## 2026-11-06 - Android redesign, part 2 of 7: Home
+
+**Changed**
+- Home now shows what's happening in large type at the top, with **De rezolvat**, the record button
+  and **Lista** in a bar within thumb reach. The button squares off, turns red and pulses while
+  listening. With animations off on the phone, the rings and sound bars stay still.
+- Each add shows a card with **Anulează** for 6 seconds. Undo removes only the quantity that add
+  put there (`UndoAddUseCase`), so someone else's additions to the same product stay.
+- **Behavior change:** an ambiguous phrase now opens "Ai vrut să zici?" for the first match, while
+  listening continues. Later ones in the same stretch wait in the review list. The phrase is saved
+  before the question appears, so closing the sheet or the app loses nothing.
+- Speech errors and Home messages are in Romanian. The save chip says "De decis" for held changes,
+  because "De verificat" also named the ambiguous-speech list.
+
+**Not done**
+- `HomeViewModel`'s prompt and undo window have no automated test, because the view model needs a
+  real speech recognizer and database. They need a check on a phone.
+- **De rezolvat** still opens the old review or unknown screen. Part 4 merges them.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 3: the current list.
+
+---
+
 ## 2026-11-06 - Android redesign, part 1 of 7: foundation
 
 **Changed**

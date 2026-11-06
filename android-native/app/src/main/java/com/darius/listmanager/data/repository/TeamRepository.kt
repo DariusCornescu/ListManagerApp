@@ -28,7 +28,7 @@ class TeamRepository(private val api: ListManagerApi = RetrofitClient.api) {
         call { api.createInvite(teamId) }
 
     suspend fun acceptInvite(code: String): TeamResult<TeamMemberDTO> =
-        call(badRequestMessage = "Invite is invalid, expired, or already used") {
+        call(badRequestMessage = "Codul de invitație nu e valid, a expirat sau a fost folosit.") {
             api.acceptInvite(code.trim())
         }
 
@@ -37,7 +37,7 @@ class TeamRepository(private val api: ListManagerApi = RetrofitClient.api) {
 
     /** Works for both "remove member" (admin) and "leave team" (self). */
     suspend fun removeMember(teamId: Long, userId: Long): TeamResult<Unit> =
-        call(badRequestMessage = "Couldn't remove: a team must keep at least one admin") {
+        call(badRequestMessage = "Nu pot elimina membrul: echipa trebuie să aibă cel puțin un administrator.") {
             api.removeTeamMember(teamId, userId)
         }
 
@@ -52,20 +52,20 @@ class TeamRepository(private val api: ListManagerApi = RetrofitClient.api) {
                     @Suppress("UNCHECKED_CAST")
                     TeamResult.Success(response.body() ?: Unit as T)
                 response.code() == 400 || response.code() == 404 ->
-                    TeamResult.Failure(badRequestMessage ?: "Request rejected (${response.code()})")
+                    TeamResult.Failure(badRequestMessage ?: "Serverul a refuzat cererea (${response.code()}).")
                 response.code() == 403 ->
-                    TeamResult.Failure("You don't have permission for this action")
+                    TeamResult.Failure("Nu ai permisiunea pentru această acțiune.")
                 response.code() == 409 ->
-                    TeamResult.Failure("You are already a member of this team")
+                    TeamResult.Failure("Faci deja parte din această echipă.")
                 else ->
-                    TeamResult.Failure("Server error (${response.code()})")
+                    TeamResult.Failure("Eroare de server (${response.code()}).")
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: IOException) {
             TeamResult.Offline
         } catch (e: Exception) {
-            TeamResult.Failure("Unexpected error: ${e.javaClass.simpleName}")
+            TeamResult.Failure("A apărut o eroare neașteptată.")
         }
     }
 

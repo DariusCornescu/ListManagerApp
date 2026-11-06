@@ -5,10 +5,15 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
@@ -16,14 +21,31 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.darius.listmanager.data.local.entity.InventoryItemEntity
 import com.darius.listmanager.data.speech.SpeechState
+import com.darius.listmanager.ui.components.AppDangerSoftButton
+import com.darius.listmanager.ui.components.AppEmptyState
+import com.darius.listmanager.ui.components.AppIconButton
+import com.darius.listmanager.ui.components.AppPrimaryButton
+import com.darius.listmanager.ui.components.AppSecondaryButton
+import com.darius.listmanager.ui.components.AppTopBar
+import com.darius.listmanager.ui.components.ConfirmSheet
+import com.darius.listmanager.ui.components.SaveStateChip
+import com.darius.listmanager.ui.components.SheetBody
+import com.darius.listmanager.ui.components.pressScale
+import com.darius.listmanager.ui.theme.Motion
+import com.darius.listmanager.ui.viewmodel.InventoryUiState
 import com.darius.listmanager.ui.viewmodel.InventoryViewModel
 import com.darius.listmanager.util.InventoryMath
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,14 +55,21 @@ fun InventoryScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
     var editingItem by remember { mutableStateOf<InventoryItemEntity?>(null) }
-    var showClearConfirm by remember { mutableStateOf(false) }
+    var showClearSheet by remember { mutableStateOf(false) }
 
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) viewModel.startListening() }
+    ) { granted ->
+        if (granted) {
+            viewModel.startListening()
+        } else {
+            scope.launch { snackbarHostState.showSnackbar("Am nevoie de acces la microfon ca să te ascult") }
+        }
+    }
 
     fun checkPermissionAndStart() {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO)
@@ -59,6 +88,10 @@ fun InventoryScreen(
         }
     }
 
+    LaunchedEffect(uiState.speechState) {
+        (uiState.speechState as? SpeechState.Error)?.let { snackbarHostState.showSnackbar(it.message) }
+    }
+
     LaunchedEffect(uiState.generatedPdf) {
         uiState.generatedPdf?.let {
             viewModel.createShareIntent()?.let { intent ->
@@ -71,328 +104,349 @@ fun InventoryScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("Inventar") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "Back") }
-                },
+            AppTopBar(
+                title = "Inventar",
+                subtitle = inventorySubtitle(uiState.items.size),
+                onBack = onBack,
                 actions = {
-                    com.darius.listmanager.ui.components.SaveStateChip()
-                    IconButton(onClick = { showClearConfirm = true }) {
-                        Icon(Icons.Rounded.DeleteSweep, "Listă nouă")
+                    SaveStateChip()
+                    if (uiState.items.isNotEmpty()) {
+                        AppIconButton(Icons.Rounded.DeleteSweep, "Listă nouă", { showClearSheet = true })
                     }
-                }
+                },
             )
-        }
+        },
+        bottomBar = {
+            InventoryFooter(
+                state = uiState,
+                onMic = {
+                    if (uiState.speechState is SpeechState.Listening) viewModel.stopListening() else checkPermissionAndStart()
+                },
+                onExport = viewModel::exportPdf,
+                onContinuousChange = viewModel::setContinuous,
+            )
+        },
     ) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding)) {
-
-            // ===== Table =====
-            if (uiState.items.isEmpty()) {
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Mic, contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            "Apasă microfonul și zi:\n„produs  cantitate  preț”",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                // header row
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                ) {
-                    Text("Produs", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge)
-                    Text("Cant.", Modifier.width(52.dp), style = MaterialTheme.typography.labelLarge)
-                    Text("Preț", Modifier.width(72.dp), style = MaterialTheme.typography.labelLarge)
-                    Text("Valoare", Modifier.width(80.dp), style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.width(32.dp))
-                }
-                HorizontalDivider()
-                LazyColumn(Modifier.weight(1f)) {
-                    items(uiState.items, key = { it.id }) { item ->
-                        InventoryRow(
-                            item = item,
-                            onClick = { editingItem = item },
-                            onDelete = { viewModel.deleteItem(item) }
-                        )
-                        HorizontalDivider()
-                    }
-                }
-            }
-
-            // ===== Total + controls =====
-            Surface(color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    // Live transcript + draft row while speaking ("chatbot" feedback)
-                    val listening = uiState.speechState is SpeechState.Listening ||
-                        uiState.speechState is SpeechState.Partial
-                    if (listening) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer
-                            )
-                        ) {
-                            Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                                Text(
-                                    uiState.partialText ?: "Ascult…",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                uiState.draft?.let { draft ->
-                                    Spacer(Modifier.height(6.dp))
-                                    Row(Modifier.fillMaxWidth()) {
-                                        DraftCell("Produs", draft.nameText.ifBlank { "…" }, Modifier.weight(1f))
-                                        DraftCell("Cant.", draft.quantity?.let { InventoryMath.formatQuantity(it) } ?: "…", Modifier.width(64.dp))
-                                        DraftCell("Preț", draft.priceBani?.let { InventoryMath.formatLei(it) } ?: "…", Modifier.width(88.dp))
-                                    }
-                                }
-                            }
-                        }
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Total", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            InventoryMath.formatLei(uiState.totalBani),
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // mic button — one spoken line per tap
-                        Surface(
-                            shape = CircleShape,
-                            color = when (uiState.speechState) {
-                                is SpeechState.Listening -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.primaryContainer
-                            },
-                            modifier = Modifier.size(64.dp),
-                            onClick = {
-                                when (uiState.speechState) {
-                                    is SpeechState.Listening -> viewModel.stopListening()
-                                    else -> checkPermissionAndStart()
-                                }
-                            }
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    if (uiState.speechState is SpeechState.Listening)
-                                        Icons.Rounded.Stop else Icons.Rounded.Mic,
-                                    contentDescription = "Microfon",
-                                    modifier = Modifier.size(32.dp),
-                                    tint = when (uiState.speechState) {
-                                        is SpeechState.Listening -> MaterialTheme.colorScheme.onPrimary
-                                        else -> MaterialTheme.colorScheme.onPrimaryContainer
-                                    }
-                                )
-                            }
-                        }
-                        Button(
-                            onClick = { viewModel.exportPdf() },
-                            enabled = uiState.items.isNotEmpty() && !uiState.isGeneratingPdf,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            if (uiState.isGeneratingPdf) {
-                                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Rounded.Description, null, Modifier.size(18.dp))
-                                Spacer(Modifier.width(6.dp))
-                                Text("Export PDF")
-                            }
-                        }
-                    }
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Switch(
-                            checked = uiState.continuous,
-                            onCheckedChange = { viewModel.setContinuous(it) }
-                        )
-                        Text(
-                            "Dictare continuă — vorbește fluent, rândurile se taie singure",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    editingItem?.let { item ->
-        EditInventoryRowDialog(
-            item = item,
-            onDismiss = { editingItem = null },
-            onSave = { updated ->
-                viewModel.updateItem(updated)
-                editingItem = null
-            }
+        InventoryContent(
+            items = uiState.items,
+            onEdit = { editingItem = it },
+            modifier = Modifier.padding(padding),
         )
     }
 
-    if (showClearConfirm) {
-        AlertDialog(
-            onDismissRequest = { showClearConfirm = false },
-            title = { Text("Listă nouă") },
-            text = { Text("Ștergi toate rândurile din inventarul curent?") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showClearConfirm = false
-                    viewModel.clearList()
-                }) { Text("Da, șterge tot") }
+    editingItem?.let { item ->
+        ModalBottomSheet(
+            onDismissRequest = { editingItem = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            InventoryEditContent(
+                item = item,
+                onSave = {
+                    viewModel.updateItem(it)
+                    editingItem = null
+                },
+                onDelete = {
+                    viewModel.deleteItem(item)
+                    editingItem = null
+                    scope.launch {
+                        snackbarHostState.currentSnackbarData?.dismiss()
+                        val result = snackbarHostState.showSnackbar(
+                            message = "Rând șters: ${item.name}",
+                            actionLabel = "Anulează",
+                            duration = SnackbarDuration.Short,
+                        )
+                        if (result == SnackbarResult.ActionPerformed) viewModel.restoreItem(item)
+                    }
+                },
+                onDismiss = { editingItem = null },
+            )
+        }
+    }
+
+    if (showClearSheet) {
+        ConfirmSheet(
+            title = "Listă nouă",
+            message = "Ștergi toate rândurile din inventarul curent?",
+            confirmLabel = "Șterge tot",
+            onConfirm = {
+                showClearSheet = false
+                viewModel.clearList()
             },
-            dismissButton = {
-                TextButton(onClick = { showClearConfirm = false }) { Text("Renunță") }
-            }
+            onDismiss = { showClearSheet = false },
         )
     }
 }
 
-@Composable
-private fun InventoryRow(
+internal fun inventorySubtitle(count: Int): String = when (count) {
+    0 -> "Niciun rând"
+    1 -> "1 rând"
+    else -> "$count rânduri"
+}
+
+/** What the second line of a row says: the sum, or what's still missing from it. */
+internal fun inventoryDetail(item: InventoryItemEntity): String {
+    val quantity = InventoryMath.formatQuantity(item.quantity)
+    return when {
+        item.quantity == null && item.priceBani == null -> "Lipsesc cantitatea și prețul"
+        item.quantity == null -> "Lipsește cantitatea"
+        item.priceBani == null -> "Lipsește prețul"
+        else -> "$quantity × ${InventoryMath.formatLei(item.priceBani)}"
+    }
+}
+
+/** A blank or unreadable field means "not known yet", never zero. Prices are stored in bani. */
+internal fun applyInventoryEdit(
     item: InventoryItemEntity,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    name: String,
+    quantityText: String,
+    priceText: String,
+): InventoryItemEntity = item.copy(
+    name = name.trim().ifBlank { item.name },
+    quantity = quantityText.trim().replace(',', '.').toDoubleOrNull(),
+    priceBani = priceText.trim().replace(',', '.').toDoubleOrNull()?.let { Math.round(it * 100) },
+)
+
+@Composable
+internal fun InventoryContent(
+    items: List<InventoryItemEntity>,
+    onEdit: (InventoryItemEntity) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val valueBani = InventoryMath.lineValueBani(item.quantity, item.priceBani)
-    Surface(onClick = onClick) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
+    if (items.isEmpty()) {
+        AppEmptyState(
+            icon = Icons.Rounded.Mic,
+            title = "Inventarul e gol",
+            message = "Apasă microfonul și spune:\n„produs, cantitate, preț”",
+            modifier = modifier,
+        )
+    } else {
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 12.dp),
         ) {
-            Text(
-                item.name,
-                Modifier.weight(1f),
-                style = MaterialTheme.typography.bodyLarge,
-                maxLines = 2
-            )
-            MissingAwareText(InventoryMath.formatQuantity(item.quantity), Modifier.width(52.dp))
-            MissingAwareText(
-                item.priceBani?.let { InventoryMath.formatLei(it) } ?: "",
-                Modifier.width(72.dp)
-            )
-            Text(
-                valueBani?.let { InventoryMath.formatLei(it) } ?: "—",
-                Modifier.width(80.dp),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Rounded.Close, "Șterge",
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+            items(items, key = { it.id }) { item ->
+                InventoryRow(
+                    item = item,
+                    onClick = { onEdit(item) },
+                    modifier = Modifier
+                        .animateItem()
+                        .padding(bottom = 8.dp),
                 )
             }
         }
     }
 }
 
-/** One cell of the live draft row shown while the operator is speaking. */
 @Composable
-private fun DraftCell(label: String, value: String, modifier: Modifier) {
-    Column(modifier) {
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-        )
-        Text(
-            value,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            maxLines = 1
+private fun InventoryRow(item: InventoryItemEntity, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val value = InventoryMath.lineValueBani(item.quantity, item.priceBani)
+    val source = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = scheme.surface,
+        contentColor = scheme.onSurface,
+        interactionSource = source,
+        modifier = modifier
+            .pressScale(source, pressedScale = 0.98f)
+            .fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .heightIn(min = 64.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(item.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    inventoryDetail(item),
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (value == null) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (value == null) scheme.onErrorContainer else scheme.onSurfaceVariant,
+                )
+            }
+            Text(
+                value?.let { InventoryMath.formatLei(it) } ?: "—",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+internal fun InventoryFooter(
+    state: InventoryUiState,
+    onMic: () -> Unit,
+    onExport: () -> Unit,
+    onContinuousChange: (Boolean) -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val listening = state.speechState is SpeechState.Listening || state.speechState is SpeechState.Partial
+    Column {
+        HorizontalDivider(color = scheme.outline)
+        Surface(color = scheme.background) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+            ) {
+                AnimatedVisibility(visible = listening) {
+                    Surface(color = scheme.primaryContainer, contentColor = scheme.onPrimaryContainer, shape = RoundedCornerShape(16.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                        ) {
+                            Text(
+                                state.partialText ?: "Te ascult…",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                            state.draft?.let { draft ->
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    listOf(
+                                        draft.nameText.ifBlank { "…" },
+                                        draft.quantity?.let { InventoryMath.formatQuantity(it) } ?: "…",
+                                        draft.priceBani?.let { InventoryMath.formatLei(it) } ?: "…",
+                                    ).joinToString(" · "),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Total", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+                        Text(
+                            InventoryMath.formatLei(state.totalBani),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                        )
+                    }
+                    ExportButton(state, onExport)
+                    InventoryMicButton(state.speechState is SpeechState.Listening, onMic)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Dictare continuă", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Rândurile se separă singure",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = state.continuous, onCheckedChange = onContinuousChange)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ExportButton(state: InventoryUiState, onExport: () -> Unit) {
+    Box(Modifier.width(126.dp)) {
+        AppSecondaryButton(
+            text = "Export PDF",
+            onClick = onExport,
+            enabled = state.items.isNotEmpty(),
+            loading = state.isGeneratingPdf,
         )
     }
 }
 
-/** Blank (missing) cells render as a highlighted em-dash inviting a tap-to-edit. */
 @Composable
-private fun MissingAwareText(text: String, modifier: Modifier) {
-    if (text.isEmpty()) {
-        Text(
-            "—", modifier,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.error
-        )
-    } else {
-        Text(text, modifier, style = MaterialTheme.typography.bodyMedium)
+private fun InventoryMicButton(listening: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    val corner by animateDpAsState(if (listening) 20.dp else 30.dp, tween(Motion.ShortMillis), label = "micCorner")
+    val container by animateColorAsState(
+        if (listening) scheme.error else scheme.primary,
+        tween(Motion.ShortMillis),
+        label = "micColor",
+    )
+    val description = if (listening) "Oprește microfonul" else "Pornește microfonul"
+    val source = remember { MutableInteractionSource() }
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(corner),
+        color = container,
+        contentColor = if (listening) scheme.onError else scheme.onPrimary,
+        shadowElevation = 4.dp,
+        interactionSource = source,
+        modifier = Modifier
+            .pressScale(source, pressedScale = 0.94f)
+            .size(60.dp)
+            .semantics { contentDescription = description },
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                if (listening) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                contentDescription = null,
+                modifier = Modifier.size(28.dp),
+            )
+        }
     }
 }
 
 @Composable
-private fun EditInventoryRowDialog(
+internal fun InventoryEditContent(
     item: InventoryItemEntity,
+    onSave: (InventoryItemEntity) -> Unit,
+    onDelete: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (InventoryItemEntity) -> Unit
 ) {
     var name by remember { mutableStateOf(item.name) }
     var quantityText by remember { mutableStateOf(InventoryMath.formatQuantity(item.quantity)) }
     var priceText by remember {
         mutableStateOf(item.priceBani?.let { b -> "${b / 100},${(b % 100).toString().padStart(2, '0')}" } ?: "")
     }
+    val shape = RoundedCornerShape(16.dp)
+    val decimal = KeyboardOptions(keyboardType = KeyboardType.Decimal)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Modifică rândul") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    SheetBody {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Modifică rândul", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Produs") },
+                singleLine = true,
+                shape = shape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
-                    value = name, onValueChange = { name = it },
-                    label = { Text("Produs") }, singleLine = true
+                    value = quantityText,
+                    onValueChange = { quantityText = it },
+                    label = { Text("Cantitate") },
+                    singleLine = true,
+                    keyboardOptions = decimal,
+                    shape = shape,
+                    modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
-                    value = quantityText, onValueChange = { quantityText = it },
-                    label = { Text("Cantitate") }, singleLine = true
-                )
-                OutlinedTextField(
-                    value = priceText, onValueChange = { priceText = it },
-                    label = { Text("Preț (lei, ex. 4,50)") }, singleLine = true
+                    value = priceText,
+                    onValueChange = { priceText = it },
+                    label = { Text("Preț (lei)") },
+                    placeholder = { Text("ex. 4,50") },
+                    singleLine = true,
+                    keyboardOptions = decimal,
+                    shape = shape,
+                    modifier = Modifier.weight(1f),
                 )
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val quantity = quantityText.trim().replace(',', '.').toDoubleOrNull()
-                    val priceBani = priceText.trim().replace(',', '.').toDoubleOrNull()
-                        ?.let { Math.round(it * 100) }
-                    onSave(
-                        item.copy(
-                            name = name.trim().ifBlank { item.name },
-                            quantity = quantity,
-                            priceBani = priceBani
-                        )
-                    )
-                }
-            ) { Text("Salvează") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Renunță") } }
-    )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppPrimaryButton("Salvează", { onSave(applyInventoryEdit(item, name, quantityText, priceText)) })
+                AppDangerSoftButton("Șterge rândul", onDelete)
+                AppSecondaryButton("Anulează", onDismiss)
+            }
+        }
+    }
 }

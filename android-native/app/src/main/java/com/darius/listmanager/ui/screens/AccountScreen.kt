@@ -1,29 +1,45 @@
 package com.darius.listmanager.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.darius.listmanager.data.websocket.WebSocketService
+import com.darius.listmanager.data.workspace.Workspace
+import com.darius.listmanager.ui.components.AppDangerSoftButton
+import com.darius.listmanager.ui.components.AppIconButton
+import com.darius.listmanager.ui.components.AppPrimaryButton
+import com.darius.listmanager.ui.components.AppSecondaryButton
+import com.darius.listmanager.ui.components.AppTextButton
+import com.darius.listmanager.ui.components.AppTopBar
+import com.darius.listmanager.ui.components.ConfirmSheet
+import com.darius.listmanager.ui.components.SheetBody
+import com.darius.listmanager.ui.components.pressScale
 import com.darius.listmanager.ui.viewmodel.AuthViewModel
 import com.darius.listmanager.ui.viewmodel.ProfileInput
+import com.darius.listmanager.ui.viewmodel.WorkspaceSwitcherViewModel
+import com.darius.listmanager.ui.viewmodel.workspaceOptions
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,13 +47,17 @@ fun AccountScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit,
     username: String?,
-    viewModel: AuthViewModel = viewModel()
+    onWorkspaceSwitched: () -> Unit = {},
+    onManageTeams: () -> Unit = {},
+    viewModel: AuthViewModel = viewModel(),
+    workspaceViewModel: WorkspaceSwitcherViewModel = viewModel(),
 ) {
-    val scrollState = rememberScrollState()
-    var showLogoutDialog by remember { mutableStateOf(false) }
-    var showEditDialog by remember { mutableStateOf(false) }
+    var showLogoutSheet by remember { mutableStateOf(false) }
+    var showEditSheet by remember { mutableStateOf(false) }
     val webSocketService = remember { WebSocketService.getInstance() }
     val uiState by viewModel.uiState.collectAsState()
+    val currentWorkspace by workspaceViewModel.current.collectAsState()
+    val teams by workspaceViewModel.teams.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
 
     // Load the real account (username/email/role) from the server
@@ -45,7 +65,6 @@ fun AccountScreen(
         viewModel.loadCurrentUser()
     }
 
-    // Surface profile update success/error
     LaunchedEffect(uiState.profileMessage) {
         uiState.profileMessage?.let {
             snackbarHostState.showSnackbar(it)
@@ -55,251 +74,307 @@ fun AccountScreen(
 
     val displayUsername = uiState.username ?: username
 
-    // Logout confirmation dialog
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            icon = { Icon(Icons.AutoMirrored.Rounded.Logout, null) },
-            title = { Text("Deconectare") },
-            text = { Text("Ești sigur că vrei să te deconectezi?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLogoutDialog = false
-                        // Disconnect WebSocket first
-                        webSocketService.disconnect()
-                        android.util.Log.d("AccountScreen", "WebSocket disconnected on logout")
-                        // Then logout
-                        viewModel.logout()
-                        onLogout()
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Deconectează-mă")
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        topBar = { AppTopBar(title = "Contul meu", onBack = onBack) },
+        bottomBar = {
+            AccountFooter(
+                canEdit = uiState.isLoggedIn || uiState.username != null,
+                onEdit = { showEditSheet = true },
+                onLogout = { showLogoutSheet = true },
+            )
+        },
+    ) { padding ->
+        AccountContent(
+            username = displayUsername,
+            role = uiState.role,
+            email = uiState.email,
+            fullName = uiState.fullName,
+            company = uiState.company,
+            address = uiState.address,
+            currentWorkspace = currentWorkspace,
+            teams = teams,
+            onPickWorkspace = { workspace ->
+                if (workspace != currentWorkspace) {
+                    workspaceViewModel.switchTo(workspace)
+                    onWorkspaceSwitched()
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Anulează")
-                }
-            }
-        )
-    }
-    
-    // Edit profile dialog
-    if (showEditDialog) {
-        EditProfileDialog(
-            current = ProfileInput(
-                email = uiState.email ?: "",
-                fullName = uiState.fullName ?: "",
-                company = uiState.company ?: "",
-                address = uiState.address ?: "",
-            ),
-            isSaving = uiState.isSavingProfile,
-            onDismiss = { showEditDialog = false },
-            onConfirm = { input, newPassword ->
-                viewModel.updateProfile(input, newPassword)
-                showEditDialog = false
-            }
+            onManageTeams = onManageTeams,
+            modifier = Modifier.padding(padding),
         )
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = { Text("Contul meu") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Înapoi")
-                    }
-                }
+    if (showLogoutSheet) {
+        ConfirmSheet(
+            title = "Te deconectezi?",
+            message = "Poți reveni oricând cu utilizatorul și parola ta.",
+            confirmLabel = "Deconectează-mă",
+            onConfirm = {
+                showLogoutSheet = false
+                // Disconnect WebSocket first
+                webSocketService.disconnect()
+                android.util.Log.d("AccountScreen", "WebSocket disconnected on logout")
+                viewModel.logout()
+                onLogout()
+            },
+            onDismiss = { showLogoutSheet = false },
+        )
+    }
+
+    if (showEditSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showEditSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = MaterialTheme.colorScheme.surface,
+        ) {
+            EditProfileContent(
+                current = ProfileInput(
+                    email = uiState.email ?: "",
+                    fullName = uiState.fullName ?: "",
+                    company = uiState.company ?: "",
+                    address = uiState.address ?: "",
+                ),
+                isSaving = uiState.isSavingProfile,
+                onDismiss = { showEditSheet = false },
+                onConfirm = { input, newPassword ->
+                    viewModel.updateProfile(input, newPassword)
+                    showEditSheet = false
+                },
             )
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+    }
+}
+
+internal fun roleLabel(role: String?): String = when (role) {
+    "ADMIN" -> "Administrator"
+    "USER" -> "Utilizator"
+    else -> "—"
+}
+
+@Composable
+internal fun AccountContent(
+    username: String?,
+    role: String?,
+    email: String?,
+    fullName: String?,
+    company: String?,
+    address: String?,
+    currentWorkspace: Workspace,
+    teams: List<Workspace.Team>,
+    onPickWorkspace: (Workspace) -> Unit,
+    onManageTeams: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 8.dp, bottom = 16.dp),
         ) {
-            // Avatar
             Surface(
-                modifier = Modifier.size(100.dp),
                 shape = CircleShape,
-                color = MaterialTheme.colorScheme.primaryContainer
+                color = scheme.primaryContainer,
+                contentColor = scheme.onPrimaryContainer,
+                modifier = Modifier.size(68.dp),
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text(
-                        text = (displayUsername?.firstOrNull() ?: 'U').uppercase().toString(),
-                        style = MaterialTheme.typography.displayMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                        (username?.firstOrNull() ?: 'U').uppercase(),
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.ExtraBold,
                     )
                 }
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Username
-            Text(
-                text = displayUsername ?: "Utilizator",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Role (real value from server)
-            Text(
-                text = when (uiState.role) {
-                    "ADMIN" -> "Administrator"
-                    "USER" -> "Utilizator"
-                    else -> "—"
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary
-            )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Account info card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+            Column {
+                Text(
+                    username ?: "Utilizator",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.ExtraBold,
                 )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        "Informații cont",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    HorizontalDivider()
-                    
-                    AccountInfoRow(
-                        icon = Icons.Rounded.Person,
-                        label = "Utilizator",
-                        value = displayUsername ?: "-"
-                    )
-
-                    AccountInfoRow(
-                        icon = Icons.Rounded.Email,
-                        label = "Email",
-                        value = uiState.email ?: "-"
-                    )
-
-                    AccountInfoRow(
-                        icon = Icons.Rounded.AccountCircle,
-                        label = "Nume complet",
-                        value = uiState.fullName ?: "-"
-                    )
-
-                    AccountInfoRow(
-                        icon = Icons.Rounded.Business,
-                        label = "Companie",
-                        value = uiState.company ?: "-"
-                    )
-
-                    AccountInfoRow(
-                        icon = Icons.Rounded.Place,
-                        label = "Adresă",
-                        value = uiState.address ?: "-"
-                    )
-
-                    AccountInfoRow(
-                        icon = Icons.Rounded.Badge,
-                        label = "Rol",
-                        value = when (uiState.role) {
-                            "ADMIN" -> "Administrator"
-                            "USER" -> "Utilizator"
-                            else -> "—"
-                        },
-                        valueColor = MaterialTheme.colorScheme.primary
-                    )
-                }
+                Text(roleLabel(role), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Edit profile button
-            OutlinedButton(
-                onClick = { showEditDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = uiState.isLoggedIn || uiState.username != null
-            ) {
-                Icon(Icons.Rounded.Edit, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Editează profilul")
-            }
-
-            Spacer(modifier = Modifier.weight(1f))
-
-            // Logout button
-            Button(
-                onClick = { showLogoutDialog = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                    contentColor = MaterialTheme.colorScheme.onErrorContainer
-                )
-            ) {
-                Icon(Icons.AutoMirrored.Rounded.Logout, null)
-                Spacer(Modifier.width(8.dp))
-                Text("Deconectare")
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
         }
+
+        AccountHeading("Spațiu de lucru")
+        WorkspaceSection(currentWorkspace, teams, onPickWorkspace, onManageTeams)
+
+        AccountHeading("Date personale")
+        Surface(color = scheme.surface, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                AccountInfoRow("Email", email)
+                HorizontalDivider(color = scheme.surfaceVariant)
+                AccountInfoRow("Nume complet", fullName)
+                HorizontalDivider(color = scheme.surfaceVariant)
+                AccountInfoRow("Companie", company)
+                HorizontalDivider(color = scheme.surfaceVariant)
+                AccountInfoRow("Adresă", address)
+            }
+        }
+        Spacer(Modifier.height(12.dp))
     }
 }
 
 @Composable
-private fun AccountInfoRow(
-    icon: ImageVector,
-    label: String,
-    value: String,
-    valueColor: Color = Color.Unspecified
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(label)
-        }
-        Spacer(Modifier.width(16.dp))
+private fun AccountHeading(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 14.dp, bottom = 8.dp),
+    )
+}
+
+@Composable
+private fun AccountInfoRow(label: String, value: String?) {
+    Column(Modifier.padding(vertical = 12.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(
-            value,
-            fontWeight = FontWeight.Medium,
-            color = valueColor,
-            textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            modifier = Modifier.weight(1f),
+            value?.ifBlank { null } ?: "-",
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EditProfileDialog(
+private fun WorkspaceSection(
+    current: Workspace,
+    teams: List<Workspace.Team>,
+    onPick: (Workspace) -> Unit,
+    onManageTeams: () -> Unit,
+) {
+    val scheme = MaterialTheme.colorScheme
+    var open by rememberSaveable { mutableStateOf(false) }
+    val source = remember { MutableInteractionSource() }
+
+    Surface(
+        onClick = { open = !open },
+        shape = RoundedCornerShape(18.dp),
+        color = scheme.surface,
+        contentColor = scheme.onSurface,
+        interactionSource = source,
+        modifier = Modifier
+            .pressScale(source, pressedScale = 0.98f)
+            .fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier
+                .heightIn(min = 64.dp)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(13.dp),
+                color = scheme.surfaceVariant,
+                contentColor = scheme.onSurfaceVariant,
+                modifier = Modifier.size(40.dp),
+            ) {
+                Box(contentAlignment = Alignment.Center) { Icon(Icons.Rounded.Groups, contentDescription = null) }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(current.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (current is Workspace.Personal) "Lista ta" else "Lista comună a echipei",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = scheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                contentDescription = if (open) "Ascunde spațiile de lucru" else "Arată spațiile de lucru",
+                tint = scheme.onSurfaceVariant,
+            )
+        }
+    }
+
+    AnimatedVisibility(visible = open) {
+        Surface(
+            color = scheme.surface,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier
+                .padding(top = 8.dp)
+                .fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(6.dp)) {
+                workspaceOptions(current, teams).forEach { option ->
+                    WorkspaceOption(option, option == current) {
+                        open = false
+                        onPick(option)
+                    }
+                }
+                AppTextButton("Gestionează echipele", onManageTeams, Modifier.padding(horizontal = 2.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorkspaceOption(workspace: Workspace, isCurrent: Boolean, onClick: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(14.dp),
+        color = if (isCurrent) scheme.primaryContainer else scheme.surface,
+        contentColor = if (isCurrent) scheme.onPrimaryContainer else scheme.onSurface,
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                role = Role.RadioButton
+                selected = isCurrent
+            },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text(
+                workspace.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            if (isCurrent) Icon(Icons.Rounded.Check, contentDescription = null)
+        }
+    }
+}
+
+@Composable
+internal fun AccountFooter(canEdit: Boolean, onEdit: () -> Unit, onLogout: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column {
+        HorizontalDivider(color = scheme.outline)
+        Surface(color = scheme.background) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                AppSecondaryButton("Editează profilul", onEdit, enabled = canEdit)
+                AppDangerSoftButton("Deconectare", onLogout)
+            }
+        }
+    }
+}
+
+@Composable
+internal fun EditProfileContent(
     current: ProfileInput,
     isSaving: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (input: ProfileInput, newPassword: String) -> Unit
+    onConfirm: (input: ProfileInput, newPassword: String) -> Unit,
 ) {
     var fullName by remember { mutableStateOf(current.fullName) }
     var company by remember { mutableStateOf(current.company) }
@@ -307,85 +382,76 @@ private fun EditProfileDialog(
     var email by remember { mutableStateOf(current.email) }
     var newPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(16.dp)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
-        title = { Text("Editează profilul") },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-            ) {
-                OutlinedTextField(
-                    value = fullName,
-                    onValueChange = { fullName = it.take(100) },
-                    label = { Text("Nume complet") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSaving
+    SheetBody(Modifier.verticalScroll(rememberScrollState())) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("Editează profilul", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+            OutlinedTextField(
+                value = fullName,
+                onValueChange = { fullName = it.take(100) },
+                label = { Text("Nume complet") },
+                singleLine = true,
+                shape = shape,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = company,
+                onValueChange = { company = it.take(100) },
+                label = { Text("Companie") },
+                singleLine = true,
+                shape = shape,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = address,
+                onValueChange = { address = it.take(255) },
+                label = { Text("Adresă") },
+                shape = shape,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = email,
+                onValueChange = { email = it },
+                label = { Text("Email *") },
+                isError = email.isBlank(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                shape = shape,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = newPassword,
+                onValueChange = { newPassword = it },
+                label = { Text("Parolă nouă (opțional)") },
+                supportingText = { Text("Las-o goală ca să o păstrezi pe cea actuală.") },
+                singleLine = true,
+                visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    AppIconButton(
+                        if (passwordVisible) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                        if (passwordVisible) "Ascunde parola" else "Arată parola",
+                        { passwordVisible = !passwordVisible },
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                shape = shape,
+                enabled = !isSaving,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                AppPrimaryButton(
+                    text = "Salvează",
+                    onClick = { onConfirm(ProfileInput(email, fullName, company, address), newPassword) },
+                    enabled = email.isNotBlank(),
+                    loading = isSaving,
                 )
-                OutlinedTextField(
-                    value = company,
-                    onValueChange = { company = it.take(100) },
-                    label = { Text("Companie") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSaving
-                )
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it.take(255) },
-                    label = { Text("Adresă") },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSaving
-                )
-                OutlinedTextField(
-                    value = email,
-                    onValueChange = { email = it },
-                    label = { Text("Email") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSaving
-                )
-                OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it },
-                    label = { Text("Parolă nouă (opțional)") },
-                    singleLine = true,
-                    visualTransformation = if (passwordVisible) VisualTransformation.None
-                                           else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                if (passwordVisible) Icons.Rounded.VisibilityOff
-                                else Icons.Rounded.Visibility,
-                                contentDescription = null
-                            )
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isSaving
-                )
-                Text(
-                    "Lasă parola goală pentru a o păstra pe cea actuală.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                AppSecondaryButton("Anulează", onDismiss)
             }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(ProfileInput(email, fullName, company, address), newPassword) },
-                enabled = !isSaving && email.isNotBlank()
-            ) {
-                Text("Salvează")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Anulează") }
         }
-    )
+    }
 }

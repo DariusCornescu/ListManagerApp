@@ -27,8 +27,9 @@ data class SessionUiState(
     val isLoading: Boolean = true,
     val error: String? = null,
     val isGeneratingPdfs: Boolean = false,
-    val pdfGenerationProgress: String? = null,
     val generatedPdfs: Map<String, File>? = null,
+    val shareChooserPending: Boolean = false,
+    val message: String? = null,
     val workspaceName: String = "Personal",
 )
 
@@ -114,14 +115,29 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun deleteItem(itemId: Long) {
-        viewModelScope.launch { sessionRepository.deleteItem(itemId) }
+    fun deleteItem(item: SessionItemWithProduct) {
+        viewModelScope.launch { sessionRepository.deleteItem(item.id) }
+    }
+
+    /** Puts a deleted product back, as a new add on top of whatever the list holds now. */
+    fun undoDelete(item: SessionItemWithProduct) {
+        viewModelScope.launch {
+            try {
+                sessionRepository.addOrIncrementItem(item.sessionId, item.productId, item.quantity)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("SessionViewModel", "Error undoing a delete", e)
+                _uiState.value = _uiState.value.copy(message = "Nu am putut pune produsul înapoi.")
+            }
+        }
     }
 
     fun clearSession() {
         viewModelScope.launch {
             currentSessionId?.let { sessionId ->
                 sessionRepository.clearSession(sessionId)
+                _uiState.value = _uiState.value.copy(message = "Listă golită")
             }
         }
     }
@@ -129,35 +145,58 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     fun generatePdfs() {
         viewModelScope.launch {
             currentSessionId?.let { sessionId ->
+                _uiState.value = _uiState.value.copy(isGeneratingPdfs = true)
+                Log.d("SessionViewModel", "Starting PDF generation for session $sessionId")
+
+                val pdfs = try {
+                    generatePdfsUseCase.execute(sessionId)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The list is still good, so it stays on screen.
+                    Log.e("SessionViewModel", "Error generating PDFs", e)
+                    _uiState.value = _uiState.value.copy(
+                        isGeneratingPdfs = false,
+                        message = "Nu am putut genera PDF-urile. Lista a rămas neschimbată.",
+                    )
+                    return@launch
+                }
+
+                Log.d("SessionViewModel", "Generated ${pdfs.size} PDFs")
+                pdfs.forEach { (distributor, file) ->
+                    Log.d("SessionViewModel", "  - $distributor: ${file.absolutePath}")
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingPdfs = false,
+                    generatedPdfs = pdfs,
+                    shareChooserPending = true,
+                )
                 try {
-                    _uiState.value = _uiState.value.copy(isGeneratingPdfs = true)
-
-                    Log.d("SessionViewModel", "Starting PDF generation for session $sessionId")
-
-                    val pdfs = generatePdfsUseCase.execute(sessionId)
-
-                    Log.d("SessionViewModel", "Generated ${pdfs.size} PDFs")
-                    pdfs.forEach { (distributor, file) ->
-                        Log.d("SessionViewModel", "  - $distributor: ${file.absolutePath}")
-                    }
-
-                    _uiState.value = _uiState.value.copy( isGeneratingPdfs = false, generatedPdfs = pdfs)
                     // Complete (don't clear): clearing would wipe the SHARED
                     // team session for every member. Completing retires it;
                     // the re-resolve below then creates a fresh session for
                     // the whole workspace.
                     sessionRepository.completeSessionWriteThrough(sessionId)
                     refresh()
-
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.e("SessionViewModel", "Error generating PDFs", e)
+                    Log.e("SessionViewModel", "PDFs generated, but the session did not complete", e)
                     _uiState.value = _uiState.value.copy(
-                        isGeneratingPdfs = false,
-                        error = "Failed to generate PDFs: ${e.message}"
+                        message = "PDF-urile sunt gata, dar lista nu s-a putut încheia. Verifică sincronizarea.",
                     )
                 }
             }
         }
+    }
+
+    fun onShareChooserOpened() {
+        _uiState.value = _uiState.value.copy(shareChooserPending = false)
+    }
+
+    fun onMessageShown() {
+        _uiState.value = _uiState.value.copy(message = null)
     }
 
     fun createShareIntent(): Intent? {
@@ -188,6 +227,6 @@ class SessionViewModel(application: Application) : AndroidViewModel(application)
     }
 
     fun clearGeneratedPdfs() {
-        _uiState.value = _uiState.value.copy(generatedPdfs = null)
+        _uiState.value = _uiState.value.copy(generatedPdfs = null, shareChooserPending = false)
     }
 }

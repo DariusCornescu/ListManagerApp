@@ -13,14 +13,13 @@ import com.darius.listmanager.ui.screens.AccountScreen
 import com.darius.listmanager.ui.screens.HomeScreen
 import com.darius.listmanager.ui.screens.LoginScreen
 import com.darius.listmanager.ui.screens.SessionScreen
-import com.darius.listmanager.ui.screens.UnknownProductsScreen
 import com.darius.listmanager.ui.screens.PDFsScreen
 import com.darius.listmanager.ui.screens.CatalogScreen
 import com.darius.listmanager.ui.screens.EditProductScreen
 import com.darius.listmanager.ui.screens.SettingsScreen
 import com.darius.listmanager.ui.screens.AboutScreen
 import com.darius.listmanager.ui.screens.SyncDebugScreen
-import com.darius.listmanager.ui.screens.NeedsReviewScreen
+import com.darius.listmanager.ui.screens.ResolveScreen
 import com.darius.listmanager.ui.screens.InventoryScreen
 import com.darius.listmanager.ui.screens.TeamDetailScreen
 import com.darius.listmanager.ui.screens.TeamsScreen
@@ -63,8 +62,7 @@ fun NavGraph(
             HomeScreen(
                 onOpenDrawer = onOpenDrawer,
                 onNavigateToSession = { navController.navigate("session") },
-                onNavigateToUnknown = { navController.navigate("unknown") },
-                onNavigateToReview = { navController.navigate("review") },
+                onNavigateToResolve = { navController.navigate("resolve") },
                 onNavigateToSettings = { navController.navigate("settings") },
                 onNavigateToAccount = { 
                     // Navigate to account if logged in, login if not
@@ -88,23 +86,30 @@ fun NavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                username = username
+                username = username,
+                onWorkspaceSwitched = {
+                    navController.navigate("session") {
+                        popUpTo("home") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onManageTeams = { navController.navigate("teams") }
             )
         }
         composable("session") {
             SessionScreen(onBack = { navController.popBackStack() })
         }
-        composable("unknown") {
-            UnknownProductsScreen(onBack = { navController.popBackStack() })
-        }
-        composable("review") {
-            NeedsReviewScreen(onBack = { navController.popBackStack() })
+        composable("resolve") {
+            ResolveScreen(onBack = { navController.popBackStack() })
         }
         composable("inventory") {
             InventoryScreen(onBack = { navController.popBackStack() })
         }
         composable("pdfs") {
-            PDFsScreen(onBack = { navController.popBackStack() })
+            PDFsScreen(
+                onBack = { navController.popBackStack() },
+                onGoToList = { navController.navigate("session") }
+            )
         }
         composable("catalog") {
             CatalogScreen(

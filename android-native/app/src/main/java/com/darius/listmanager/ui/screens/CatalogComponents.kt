@@ -1,578 +1,286 @@
 package com.darius.listmanager.ui.screens
 
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.darius.listmanager.data.local.entity.ProductEntity
+import com.darius.listmanager.ui.components.AppEmptyState
+import com.darius.listmanager.ui.components.AppIconButton
+import com.darius.listmanager.ui.components.AppTextButton
+import com.darius.listmanager.ui.components.AppTopBar
 import com.darius.listmanager.ui.viewmodel.DistributorWithProducts
+import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun CatalogSelectionTopBar(
-    selectedCount: Int,
-    onExit: () -> Unit,
-    onDelete: () -> Unit,
-    onSelectAll: () -> Unit,
-    onClearSelection: () -> Unit,
-) {
-    TopAppBar(
-        title = {
-            Text("$selectedCount selectat${if (selectedCount != 1) "e" else ""}")
-        },
-        navigationIcon = {
-            IconButton(
-                onClick = onExit,
-                modifier = Modifier.semantics {
-                    contentDescription = "Ieși din modul selecție"
-                }
-            ) {
-                Icon(Icons.Rounded.Close, "Închide selecția")
-            }
-        },
-        actions = {
-            if (selectedCount > 0) {
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Șterge $selectedCount produse"
-                    }
-                ) {
-                    Icon(
-                        Icons.Rounded.Delete,
-                        "Șterge selectate",
-                        tint = MaterialTheme.colorScheme.error
-                    )
-                }
-            }
-
-            // Optional: Select All / Clear All menu
-            var showMenu by remember { mutableStateOf(false) }
-            IconButton(onClick = { showMenu = true }) {
-                Icon(Icons.Rounded.MoreVert, "Mai multe opțiuni")
-            }
-            DropdownMenu(
-                expanded = showMenu,
-                onDismissRequest = { showMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text("Selectează Tot") },
-                    onClick = {
-                        onSelectAll()
-                        showMenu = false
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Rounded.CheckCircle, null)
-                    }
-                )
-                DropdownMenuItem(
-                    text = { Text("Șterge Selecția") },
-                    onClick = {
-                        onClearSelection()
-                        showMenu = false
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Rounded.Clear, null)
-                    }
-                )
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        )
-    )
+internal fun catalogSubtitle(productCount: Int, distributorCount: Int): String {
+    val locale = Locale.forLanguageTag("ro")
+    val products = if (productCount == 1) "1 produs" else String.format(locale, "%,d produse", productCount)
+    val distributors = if (distributorCount == 1) "1 distribuitor" else "$distributorCount distribuitori"
+    return "$products · $distributors"
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun CatalogTopBar(
+    subtitle: String?,
     isAdmin: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onEnterSelection: () -> Unit,
 ) {
-    TopAppBar(
-        title = { Text("Catalog Produse") },
-        navigationIcon = {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Rounded.ArrowBack, "Înapoi")
-            }
-        },
+    AppTopBar(
+        title = "Catalog",
+        subtitle = subtitle,
+        onBack = onBack,
         actions = {
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Rounded.Refresh, "Reîmprospătează")
-            }
-
-            // Manual selection mode toggle (leads to delete) — doar ADMIN
-            if (isAdmin) {
-                var showMenu by remember { mutableStateOf(false) }
-                IconButton(onClick = { showMenu = true }) {
-                    Icon(Icons.Rounded.MoreVert, "Mai multe opțiuni")
-                }
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Selectează Produse") },
-                        onClick = {
-                            onEnterSelection()
-                            showMenu = false
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Rounded.Checklist, null)
-                        }
-                    )
-                }
-            }
-        }
+            AppIconButton(Icons.Rounded.Refresh, "Reîmprospătează", onRefresh)
+            if (isAdmin) AppIconButton(Icons.Rounded.Checklist, "Selectează produse", onEnterSelection)
+        },
     )
 }
 
 @Composable
-internal fun CatalogError(message: String?, padding: PaddingValues, onRetry: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(padding),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Rounded.CloudOff,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.error
-            )
-            Text(
-                message ?: "A apărut o eroare",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 32.dp)
-            )
-            Button(onClick = onRetry) {
-                Text("Încearcă din nou")
+internal fun CatalogSelectionTopBar(
+    selectedCount: Int,
+    totalCount: Int,
+    onExit: () -> Unit,
+    onDelete: () -> Unit,
+    onSelectAll: () -> Unit,
+    onClearSelection: () -> Unit,
+) {
+    AppTopBar(
+        title = if (selectedCount == 1) "1 selectat" else "$selectedCount selectate",
+        navigationIcon = { AppIconButton(Icons.Rounded.Close, "Închide selecția", onExit) },
+        actions = {
+            if (totalCount > 0 && selectedCount == totalCount) {
+                AppTextButton("Niciunul", onClearSelection)
+            } else {
+                AppTextButton("Toate", onSelectAll)
             }
-        }
-    }
+            AppIconButton(
+                Icons.Rounded.Delete,
+                "Șterge produsele selectate",
+                onDelete,
+                enabled = selectedCount > 0,
+            )
+        },
+    )
 }
 
 @Composable
-internal fun CatalogOfflineBanner() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.tertiaryContainer,
-        tonalElevation = 2.dp
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                Icons.Rounded.CloudOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Mod offline - Se afișează datele salvate local",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-        }
-    }
-}
-
-@Composable
-internal fun CatalogSearchField(query: String, onQueryChange: (String) -> Unit) {
+internal fun CatalogSearchField(query: String, onQueryChange: (String) -> Unit, modifier: Modifier = Modifier) {
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        placeholder = { Text("Caută produse...") },
-        leadingIcon = {
-            Icon(Icons.Rounded.Search, "Caută")
-        },
+        modifier = modifier.fillMaxWidth(),
+        placeholder = { Text("Caută produse…") },
+        leadingIcon = { Icon(Icons.Rounded.Search, contentDescription = null) },
         trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(onClick = { onQueryChange("") }) {
-                    Icon(Icons.Rounded.Clear, "Șterge")
-                }
-            }
+            if (query.isNotEmpty()) AppIconButton(Icons.Rounded.Clear, "Golește căutarea", { onQueryChange("") })
         },
-        singleLine = true
+        singleLine = true,
+        shape = CircleShape,
     )
 }
 
 @Composable
-internal fun CatalogEmptyState(query: String) {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(
-                Icons.Rounded.SearchOff,
-                contentDescription = null,
-                modifier = Modifier.size(64.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                if (query.isEmpty()) "Niciun produs în catalog" else "Nu s-au găsit rezultate",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+internal fun CatalogEmptyState(query: String, modifier: Modifier = Modifier) {
+    if (query.isBlank()) {
+        AppEmptyState(Icons.Rounded.Inventory2, "Niciun produs în catalog", modifier)
+    } else {
+        AppEmptyState(Icons.Rounded.SearchOff, "Niciun rezultat", modifier, message = "Încearcă alt nume sau un sinonim.")
     }
 }
 
+/**
+ * Each product is its own lazy item, so a distributor with thousands of products costs only what's
+ * on screen. Groups start closed, and open by themselves during a search or a selection.
+ */
 @Composable
 internal fun CatalogList(
     catalog: List<DistributorWithProducts>,
-    selectedProductIds: Set<Long>,
+    searchQuery: String,
+    isAdmin: Boolean,
     isSelectionMode: Boolean,
+    selectedProductIds: Set<Long>,
     onProductLongPress: (Long) -> Unit,
     onProductClick: (Long) -> Unit,
     onEditProduct: (Long) -> Unit,
+    modifier: Modifier = Modifier,
 ) {
+    var opened by rememberSaveable { mutableStateOf(emptySet<Long>().toLongArray()) }
+    val searching = searchQuery.isNotBlank()
+    val listState = rememberLazyListState()
+    var lastQuery by rememberSaveable { mutableStateOf(searchQuery) }
+
+    // Only a new search moves the list, so returning from a product keeps the place.
+    LaunchedEffect(searchQuery) {
+        if (searchQuery != lastQuery) {
+            lastQuery = searchQuery
+            listState.scrollToItem(0)
+        }
+    }
+
     LazyColumn(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        modifier = modifier.fillMaxSize(),
+        state = listState,
+        contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 96.dp),
     ) {
-        catalog.forEach { distributorWithProducts ->
-            item(key = "distributor_${distributorWithProducts.distributor.id}") {
-                DistributorCard(
-                    distributorName = distributorWithProducts.distributor.distributorName,
-                    products = distributorWithProducts.products,
-                    selectedProductIds = selectedProductIds,
-                    isSelectionMode = isSelectionMode,
-                    onProductLongPress = { productId ->
-                        onProductLongPress(productId)
-                    },
-                    onProductClick = { productId ->
-                        onProductClick(productId)
-                    },
-                    onEditProduct = { productId ->
-                        onEditProduct(productId)
-                    }
+        catalog.forEach { group ->
+            val id = group.distributor.id
+            val isOpen = searching || isSelectionMode || id in opened
+            val hasRows = isOpen && group.products.isNotEmpty()
+            item(key = "group-$id", contentType = "group") {
+                GroupHeader(
+                    name = group.distributor.distributorName,
+                    count = group.products.size,
+                    isOpen = isOpen,
+                    closedShape = !hasRows,
+                    canToggle = !searching && !isSelectionMode,
+                    onToggle = { opened = if (id in opened) (opened.toSet() - id).toLongArray() else opened + id },
+                    modifier = Modifier
+                        .animateItem()
+                        .padding(bottom = if (hasRows) 0.dp else 8.dp),
                 )
             }
-        }
-    }
-}
-
-@Composable
-internal fun DeleteProductsDialog(selectedCount: Int, onConfirm: () -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Șterge Produse") },
-        text = {
-            Text(
-                "Ștergi $selectedCount produs${if (selectedCount != 1) "e" else ""}? " +
-                        "Această acțiune nu poate fi anulată."
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = onConfirm,
-                colors = ButtonDefaults.textButtonColors(
-                    contentColor = MaterialTheme.colorScheme.error
-                )
-            ) {
-                Text("Șterge")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Anulează")
-            }
-        }
-    )
-}
-
-@Composable
-internal fun DistributorCard(
-    distributorName: String,
-    products: List<ProductEntity>,
-    selectedProductIds: Set<Long>,
-    isSelectionMode: Boolean,
-    onProductLongPress: (Long) -> Unit,
-    onProductClick: (Long) -> Unit,
-    onEditProduct: (Long) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Rounded.Business,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        distributorName,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(
-                        "${products.size}",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            HorizontalDivider()
-
-            products.forEach { product ->
-                ProductItem(
-                    product = product,
-                    isSelected = selectedProductIds.contains(product.id),
-                    isSelectionMode = isSelectionMode,
-                    onLongPress = { onProductLongPress(product.id) },
-                    onClick = { onProductClick(product.id) },
-                    onEdit = { onEditProduct(product.id) }
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun AddProductDialog(
-    distributors: List<String>,
-    onDismiss: () -> Unit,
-    onConfirm: (productName: String, distributorName: String, aliases: String) -> Unit
-) {
-    var productName by remember { mutableStateOf("") }
-    var selectedDistributor by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
-    var aliases by remember { mutableStateOf("") }
-    
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Adaugă Produs Nou") },
-        icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
-        text = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = productName,
-                    onValueChange = { productName = it },
-                    label = { Text("Nume Produs *") },
-                    placeholder = { Text("ex: Lapte") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                // Dropdown pentru distribuitori
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = selectedDistributor,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text("Distribuitor *") },
-                        placeholder = { Text("Selectează distribuitor") },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
-                        },
-                        colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+            if (hasRows) {
+                val last = group.products.last().id
+                items(group.products, key = { "product-${it.id}" }, contentType = { "product" }) { product ->
+                    ProductRow(
+                        product = product,
+                        isLast = product.id == last,
+                        isAdmin = isAdmin,
+                        isSelectionMode = isSelectionMode,
+                        isSelected = product.id in selectedProductIds,
+                        onLongPress = { onProductLongPress(product.id) },
+                        onClick = { onProductClick(product.id) },
+                        onEdit = { onEditProduct(product.id) },
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
+                            .animateItem()
+                            .padding(bottom = if (product.id == last) 8.dp else 0.dp),
                     )
-                    
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
-                    ) {
-                        distributors.forEach { distributor ->
-                            DropdownMenuItem(
-                                text = { Text(distributor) },
-                                onClick = {
-                                    selectedDistributor = distributor
-                                    expanded = false
-                                },
-                                contentPadding = ExposedDropdownMenuDefaults.ItemContentPadding
-                            )
-                        }
-                    }
                 }
-                
-                OutlinedTextField(
-                    value = aliases,
-                    onValueChange = { aliases = it },
-                    label = { Text("Aliasuri (opțional)") },
-                    placeholder = { Text("ex: lapte, milk") },
-                    singleLine = false,
-                    minLines = 2,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                
-                Text(
-                    "* Câmpuri obligatorii",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    if (productName.isNotBlank() && selectedDistributor.isNotBlank()) {
-                        onConfirm(productName.trim(), selectedDistributor.trim(), aliases.trim())
-                    }
-                },
-                enabled = productName.isNotBlank() && selectedDistributor.isNotBlank()
-            ) {
-                Text("Adaugă")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Anulează")
             }
         }
-    )
+    }
+}
+
+@Composable
+private fun GroupHeader(
+    name: String,
+    count: Int,
+    isOpen: Boolean,
+    closedShape: Boolean,
+    canToggle: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val shape: Shape = if (closedShape) RoundedCornerShape(18.dp) else RoundedCornerShape(18.dp, 18.dp, 0.dp, 0.dp)
+    Surface(
+        onClick = onToggle,
+        enabled = canToggle,
+        shape = shape,
+        color = scheme.surface,
+        contentColor = scheme.onSurface,
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { stateDescription = if (isOpen) "Deschis" else "Închis" },
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .heightIn(min = 60.dp)
+                .padding(start = 16.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+        ) {
+            Text(
+                name,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Surface(shape = CircleShape, color = scheme.surfaceVariant) {
+                Text(
+                    "$count",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 3.dp),
+                )
+            }
+            if (canToggle) {
+                Icon(
+                    if (isOpen) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    contentDescription = null,
+                    tint = scheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ProductItem(
+private fun ProductRow(
     product: ProductEntity,
-    isSelected: Boolean,
+    isLast: Boolean,
+    isAdmin: Boolean,
     isSelectionMode: Boolean,
+    isSelected: Boolean,
     onLongPress: () -> Unit,
     onClick: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    val backgroundColor by animateColorAsState(
-        targetValue = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        } else {
-            MaterialTheme.colorScheme.surface
-        },
-        label = "product_bg_animation"
-    )
-
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongPress
-            )
-            .semantics {
-                contentDescription = if (isSelected) {
-                    "${product.name}, selectat"
-                } else {
-                    product.name
-                }
-            },
-        color = backgroundColor,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Checkbox in selection mode
-            if (isSelectionMode) {
-                Checkbox(
-                    checked = isSelected,
-                    onCheckedChange = null, // Handled by parent click
-                    modifier = Modifier.semantics {
-                        contentDescription = if (isSelected) "Selectat" else "Neselectat"
+    val scheme = MaterialTheme.colorScheme
+    val shape = if (isLast) RoundedCornerShape(bottomStart = 18.dp, bottomEnd = 18.dp) else RoundedCornerShape(0.dp)
+    Surface(shape = shape, color = scheme.surface, contentColor = scheme.onSurface, modifier = modifier.fillMaxWidth()) {
+        Column {
+            HorizontalDivider(color = scheme.surfaceVariant)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+                    .semantics {
+                        contentDescription = if (isSelected) "${product.name}, selectat" else product.name
                     }
-                )
-                Spacer(Modifier.width(8.dp))
-            }
-
-            // Product info
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                    .heightIn(min = 58.dp)
+                    .padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
             ) {
-                Text(
-                    product.name,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium
-                )
-                if (!product.aliases.isNullOrBlank()) {
-                    Text(
-                        "Aliasuri: ${product.aliases}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (isSelectionMode) {
+                    Checkbox(checked = isSelected, onCheckedChange = null)
+                    Spacer(Modifier.width(12.dp))
                 }
-            }
-
-            // Edit icon in selection mode
-            if (isSelectionMode) {
-                IconButton(
-                    onClick = onEdit,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Editează ${product.name}"
+                Column(Modifier.weight(1f)) {
+                    Text(product.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+                    if (!product.aliases.isNullOrBlank()) {
+                        Text(
+                            "Sinonime: ${product.aliases}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = scheme.onSurfaceVariant,
+                        )
                     }
-                ) {
-                    Icon(
-                        Icons.Rounded.Edit,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
-                    )
+                }
+                if (isAdmin) {
+                    AppIconButton(Icons.Rounded.Edit, "Editează ${product.name}", onEdit, tint = scheme.onSurfaceVariant)
+                } else {
+                    Spacer(Modifier.width(12.dp))
                 }
             }
         }

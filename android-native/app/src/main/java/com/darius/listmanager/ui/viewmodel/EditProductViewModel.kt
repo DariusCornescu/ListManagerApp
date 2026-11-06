@@ -55,18 +55,18 @@ class EditProductViewModel(application: Application) : AndroidViewModel(applicat
 
                 val product = productRepository.getById(productId)
                 if (product == null) {
-                    _uiState.value = _uiState.value.copy( isLoading = false, error = "Product not found" )
+                    _uiState.value = _uiState.value.copy( isLoading = false, error = "Produsul nu mai există." )
                     return@launch
                 }
 
                 val distributor = distributorRepository.getById(product.distributorId)
                 originalName = product.name
                 originalAliases = product.aliases ?: ""
-                _uiState.value = EditProductUiState( productId = productId, productName = product.name, distributorName = distributor?.distributorName ?: "Unknown", aliases = product.aliases ?: "", isLoading = false, isAdmin = _uiState.value.isAdmin)
+                _uiState.value = EditProductUiState( productId = productId, productName = product.name, distributorName = distributor?.distributorName ?: "Necunoscut", aliases = product.aliases ?: "", isLoading = false, isAdmin = _uiState.value.isAdmin)
 
             } catch (e: Exception) {
                 android.util.Log.e("EditProductViewModel", "Error loading product", e)
-                _uiState.value = _uiState.value.copy( isLoading = false, error = e.message )
+                _uiState.value = _uiState.value.copy( isLoading = false, error = "Nu am putut încărca produsul." )
             }
         }
     }
@@ -84,6 +84,7 @@ class EditProductViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun saveProduct() {
+        if (_uiState.value.productName.isBlank()) return
         viewModelScope.launch {
             try {
                 _uiState.value = _uiState.value.copy(isSaving = true)
@@ -91,15 +92,15 @@ class EditProductViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.value = when (result) {
                     is RepoResult.Success,
                     is RepoResult.QueuedOffline ->
-                        _uiState.value.copy( isSaving = false, message = "Product updated successfully", hasChanges = false, operationSuccess = true )
+                        _uiState.value.copy( isSaving = false, message = "Produs salvat", hasChanges = false, operationSuccess = true )
                     is RepoResult.Forbidden ->
                         _uiState.value.copy( isSaving = false, message = "Doar administratorii pot modifica catalogul" )
                     is RepoResult.Error ->
-                        _uiState.value.copy( isSaving = false, message = "Eroare: ${result.message}" )
+                        _uiState.value.copy( isSaving = false, message = "Nu am putut salva produsul. Încearcă din nou." )
                 }
             } catch (e: Exception) {
                 android.util.Log.e("EditProductViewModel", "Error saving product", e)
-                _uiState.value = _uiState.value.copy( isSaving = false, message = "Eroare: ${e.message}"
+                _uiState.value = _uiState.value.copy( isSaving = false, message = "Nu am putut salva produsul. Încearcă din nou."
                 )
             }
         }
@@ -111,21 +112,21 @@ class EditProductViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.value = _uiState.value.copy(isSaving = true)
                 val product = productRepository.getById(_uiState.value.productId)
                 if (product == null) {
-                    _uiState.value = _uiState.value.copy( isSaving = false, message = "Product not found" )
+                    _uiState.value = _uiState.value.copy( isSaving = false, message = "Produsul nu mai există." )
                     return@launch
                 }
                 _uiState.value = when (val result = productRepository.delete(product)) {
                     is RepoResult.Success,
                     is RepoResult.QueuedOffline ->
-                        _uiState.value.copy( isSaving = false, message = "Product deleted", operationSuccess = true )
+                        _uiState.value.copy( isSaving = false, message = "Produs șters", operationSuccess = true )
                     is RepoResult.Forbidden ->
                         _uiState.value.copy( isSaving = false, message = "Doar administratorii pot modifica catalogul" )
                     is RepoResult.Error ->
-                        _uiState.value.copy( isSaving = false, message = "Eroare: ${result.message}" )
+                        _uiState.value.copy( isSaving = false, message = "Nu am putut șterge produsul. Încearcă din nou." )
                 }
             } catch (e: Exception) {
                 android.util.Log.e("EditProductViewModel", "Error deleting product", e)
-                _uiState.value = _uiState.value.copy( isSaving = false, message = "Eroare: ${e.message}" )
+                _uiState.value = _uiState.value.copy( isSaving = false, message = "Nu am putut șterge produsul. Încearcă din nou." )
             }
         }
     }

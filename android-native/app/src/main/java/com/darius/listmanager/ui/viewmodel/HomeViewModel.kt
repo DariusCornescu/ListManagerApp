@@ -13,26 +13,57 @@ import com.darius.listmanager.data.speech.SpeechState
 import com.darius.listmanager.data.usecase.AddProductUseCase
 import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
+import com.darius.listmanager.data.usecase.UndoAddUseCase
+import com.darius.listmanager.data.workspace.WorkspaceManager
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
 import com.darius.listmanager.util.SensitiveLog
 import com.darius.listmanager.util.SpokenQuantity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+
+/** The most recent add from Home. [token] tells two adds of the same product apart. */
+data class LastAdded(
+    val token: Long,
+    val sessionId: Long,
+    val productId: Long,
+    val name: String,
+    val quantity: Int,
+) {
+    companion object { const val UNDO_WINDOW_MILLIS = 6_000L }
+}
+
+/** A phrase that matched several products. It's already saved in "De rezolvat" as [reviewId]. */
+data class SuggestionPrompt(
+    val reviewId: Long,
+    val spokenText: String,
+    val sessionId: Long,
+    val quantity: Int,
+    val candidates: List<RankedProduct>,
+)
 
 data class HomeUiState(
     val speechState: SpeechState = SpeechState.Idle,
-    val suggestions: List<RankedProduct> = emptyList(),
+    val suggestionPrompt: SuggestionPrompt? = null,
     val message: String? = null,
     val isProcessing: Boolean = false,
     val unknownProductCount: Int = 0,
     val reviewCount: Int = 0,
-    val sessionAddedCount: Int = 0
+    val sessionAddedCount: Int = 0,
+    val sessionItemCount: Int = 0,
+    val lastAdded: LastAdded? = null,
+    val canUndoLastAdded: Boolean = false,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val speechRepository: SpeechRepository = AndroidSpeechProvider(application)
     private val database = AppDatabase.getInstance(application)
@@ -51,11 +82,28 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val embeddingBackfill =
         EmbeddingBackfill(database.productDao(), productEmbeddingRepository, embeddingModel)
     private val addProductUseCase = AddProductUseCase(sessionRepository)
+    private val undoAddUseCase = UndoAddUseCase(sessionRepository)
+    private val workspaceManager = WorkspaceManager.getInstance(application)
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private var nextAddToken = 0L
+    private var undoWindow: Job? = null
+
     init {
+        // Collect how many products the current list holds, for the badge on "Lista"
+        viewModelScope.launch {
+            workspaceManager.currentWorkspace
+                .flatMapLatest { sessionRepository.getActiveSessionFlow(it.teamIdOrNull) }
+                .flatMapLatest { session ->
+                    if (session == null) flowOf(emptyList()) else sessionRepository.getSessionItemsFlow(session.id)
+                }
+                .collect { items ->
+                    _uiState.value = _uiState.value.copy(sessionItemCount = items.size)
+                }
+        }
+
         // Collect speech state
         viewModelScope.launch {
             speechRepository.speechState.collect { state ->
@@ -96,7 +144,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun startListening() {
         speechRepository.startListening()
         _uiState.value = _uiState.value.copy(
-            suggestions = emptyList(),
             message = null,
             sessionAddedCount = 0
         )
@@ -118,7 +165,6 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 // N-best alternatives sharpen matching on single-product utterances.
                 val results = resolveSpokenProductUseCase.resolveMultiple(spokenText, alternatives)
 
-                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
                 val session = sessionRepository.getOrCreateActiveSession(
                     workspaceManager.currentWorkspace.value.teamIdOrNull
                 )
@@ -132,23 +178,35 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             SensitiveLog.d(TAG, "AutoAdd accepted (score: ${result.score})") {
                                 "AutoAdd: ${result.product.name} (score: ${result.score})"
                             }
-                            addProductUseCase.execute(
-                                session.id,
-                                result.product.id,
-                                SpokenQuantity.from(segment)
-                            )
+                            val quantity = SpokenQuantity.from(segment)
+                            addProductUseCase.execute(session.id, result.product.id, quantity)
+                            showLastAdded(session.id, result.product.id, result.product.name, quantity)
                             added++
                         }
                         is ResolveResult.Suggestions -> {
                             SensitiveLog.d(TAG, "Ambiguous result queued for review") {
                                 "Ambiguous -> needs review: '$segment'"
                             }
-                            needsReviewRepository.insert(
+                            // Saved before asking, so closing the app mid-question loses nothing.
+                            val reviewId = needsReviewRepository.insert(
                                 spokenText = segment,
                                 sessionId = session.id,
                                 createdAt = System.currentTimeMillis()
                             )
-                            review++
+                            // One question at a time. Anything else waits in "De rezolvat".
+                            if (_uiState.value.suggestionPrompt == null && result.products.isNotEmpty()) {
+                                _uiState.value = _uiState.value.copy(
+                                    suggestionPrompt = SuggestionPrompt(
+                                        reviewId = reviewId,
+                                        spokenText = segment,
+                                        sessionId = session.id,
+                                        quantity = SpokenQuantity.from(segment),
+                                        candidates = result.products.take(MAX_CANDIDATES),
+                                    )
+                                )
+                            } else {
+                                review++
+                            }
                         }
                         is ResolveResult.Unknown -> {
                             SensitiveLog.d(TAG, "Unknown result stored") {
@@ -160,14 +218,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val parts = mutableListOf<String>()
-                if (added > 0) parts.add("adăugate: $added")
-                if (review > 0) parts.add("de verificat: $review")
-                if (unknown > 0) parts.add("necunoscute: $unknown")
+                val toResolve = review + unknown
+                val nothingHappened = added == 0 && toResolve == 0 && results.none { it.second is ResolveResult.Suggestions }
                 _uiState.value = _uiState.value.copy(
-                    message = if (parts.isEmpty()) "Nimic recunoscut"
-                              else parts.joinToString(", ").replaceFirstChar { it.uppercase() },
-                    suggestions = emptyList(),
+                    // An add already has its own card, so only the rest needs a message.
+                    message = when {
+                        nothingHappened -> "Nu am recunoscut niciun produs"
+                        toResolve > 0 -> "De rezolvat: $toResolve"
+                        else -> null
+                    },
                     isProcessing = false,
                     sessionAddedCount = _uiState.value.sessionAddedCount + added
                 )
@@ -175,39 +234,68 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing spoken text", e)
                 _uiState.value = _uiState.value.copy(
-                    message = "Error: ${e.message}",
-                    suggestions = emptyList(),
+                    message = "Nu am putut procesa ce ai spus. Încearcă din nou.",
                     isProcessing = false
                 )
             }
         }
     }
 
-    fun addSuggestedProduct(productId: Long, productName: String) {
+    private fun showLastAdded(sessionId: Long, productId: Long, name: String, quantity: Int) {
+        _uiState.value = _uiState.value.copy(
+            lastAdded = LastAdded(nextAddToken++, sessionId, productId, name, quantity),
+            canUndoLastAdded = true,
+        )
+        undoWindow?.cancel()
+        undoWindow = viewModelScope.launch {
+            delay(LastAdded.UNDO_WINDOW_MILLIS)
+            _uiState.value = _uiState.value.copy(canUndoLastAdded = false)
+        }
+    }
+
+    fun undoLastAdded() {
+        val last = _uiState.value.lastAdded ?: return
+        undoWindow?.cancel()
+        _uiState.value = _uiState.value.copy(
+            lastAdded = null,
+            canUndoLastAdded = false,
+            sessionAddedCount = (_uiState.value.sessionAddedCount - 1).coerceAtLeast(0),
+        )
         viewModelScope.launch {
             try {
-                val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
-                val session = sessionRepository.getOrCreateActiveSession(
-                    workspaceManager.currentWorkspace.value.teamIdOrNull
-                )
-                addProductUseCase.execute(session.id, productId, 1)
-
-                _uiState.value = _uiState.value.copy( message = "Added: $productName", suggestions = emptyList() )
-                resetSpeechState()
+                undoAddUseCase.execute(last.sessionId, last.productId, last.quantity)
             } catch (e: Exception) {
+                Log.e(TAG, "Error undoing an add", e)
+                _uiState.value = _uiState.value.copy(message = "Nu am putut anula. Verifică lista.")
+            }
+        }
+    }
+
+    fun pickSuggestion(candidate: RankedProduct) {
+        val prompt = _uiState.value.suggestionPrompt ?: return
+        _uiState.value = _uiState.value.copy(suggestionPrompt = null)
+        viewModelScope.launch {
+            try {
+                addProductUseCase.execute(prompt.sessionId, candidate.product.id, prompt.quantity)
+                needsReviewRepository.deleteById(prompt.reviewId)
+                showLastAdded(prompt.sessionId, candidate.product.id, candidate.product.name, prompt.quantity)
                 _uiState.value = _uiState.value.copy(
-                    message = "Error adding product: ${e.message}"
+                    sessionAddedCount = _uiState.value.sessionAddedCount + 1
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Error adding the chosen product", e)
+                _uiState.value = _uiState.value.copy(
+                    message = "Nu am putut adăuga produsul. A rămas la De rezolvat."
                 )
             }
         }
     }
 
-    fun clearSuggestions() {
-        _uiState.value = _uiState.value.copy( suggestions = emptyList(), message = null )
-        resetSpeechState()
+    /** The phrase stays saved in "De rezolvat", so there's nothing to delete. */
+    fun dismissSuggestion() {
+        if (_uiState.value.suggestionPrompt == null) return
+        _uiState.value = _uiState.value.copy(suggestionPrompt = null, message = "L-am pus la De rezolvat")
     }
-
-    private fun resetSpeechState() { speechRepository.stopListening() }
 
     // ==================== Cleanup ====================
 
@@ -217,5 +305,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         Log.d(TAG, "HomeViewModel cleared - resources released")
     }
 
-    companion object { private const val TAG = "HomeViewModel" }
+    companion object {
+        private const val TAG = "HomeViewModel"
+        private const val MAX_CANDIDATES = 4
+    }
 }
