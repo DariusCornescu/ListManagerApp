@@ -5,6 +5,27 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 1 of 7: foundation
+
+**Changed**
+- Theme: Inter gains its 800 weight, error text gets its own readable colors, and the Material
+  surface containers now use the app's palette instead of Material's defaults.
+- New `ui/theme/Motion.kt` holds the shared timings, plus `rememberReducedMotion()` for endless
+  animations. Compose already skips finite animations when the phone turns animations off.
+- New shared components: `AppButtons.kt` (one press response for every button) and
+  `AppScaffolding.kt` (top bar, confirmation sheet, empty state, banner, loading rows).
+- `AppPrimaryButton` moved into `AppButtons.kt` and is now a 56dp pill, so the login button changes.
+- Screens now slide and fade between each other (`ui/navigation/ScreenTransitions.kt`).
+
+**Not done**
+- The other screens don't use the new components yet. Parts 2 to 7 cover them.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 2: the new Home.
+
+---
+
 ## 2026-11-06 - Catalog at scale: imports reach phones without opening Catalog (WP3)
 
 **Changed**
