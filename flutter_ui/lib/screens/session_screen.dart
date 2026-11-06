@@ -232,10 +232,7 @@ class _ProductPickerState extends State<_ProductPicker> {
 
   @override
   Widget build(BuildContext context) {
-    final wanted = CatalogController.normalize(_query.trim());
-    final products = widget.catalog.products
-        .where((p) => CatalogController.normalize('${p.name} ${p.aliases ?? ''}').contains(wanted))
-        .toList();
+    final products = widget.catalog.matching(_query);
     return SafeArea(
       child: SizedBox(
         height: MediaQuery.of(context).size.height * 0.8,

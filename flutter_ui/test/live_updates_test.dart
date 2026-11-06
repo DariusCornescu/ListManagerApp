@@ -13,6 +13,9 @@ class _FakeChannel extends StreamChannelMixin<dynamic> implements WebSocketChann
   Stream<dynamic> get stream => incoming.stream;
 
   @override
+  Future<void> get ready => Future<void>.value();
+
+  @override
   WebSocketSink get sink => _FakeSink(outgoing);
 
   @override
@@ -85,6 +88,32 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 1100));
 
     expect(uris.map((u) => u.queryParameters['token']), ['first', 'second']);
+    await live.dispose();
+  });
+
+  test('announces a reconnect, but not the first connection', () async {
+    final channels = <_FakeChannel>[];
+    final live = LiveUpdates(
+      baseUrl: 'http://server.test',
+      accessToken: () => 't',
+      channelFactory: (_) {
+        final channel = _FakeChannel();
+        channels.add(channel);
+        return channel;
+      },
+    );
+    final seen = <String>[];
+    live.events.listen(seen.add);
+
+    live.start();
+    await pumpEventQueue();
+    expect(seen, isEmpty);
+
+    await channels.single.incoming.close();
+    await Future<void>.delayed(const Duration(milliseconds: 1100));
+
+    expect(channels, hasLength(2));
+    expect(seen, [LiveUpdates.reconnected]);
     await live.dispose();
   });
 
