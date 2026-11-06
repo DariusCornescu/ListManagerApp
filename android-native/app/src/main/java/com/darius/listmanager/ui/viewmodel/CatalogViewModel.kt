@@ -9,10 +9,15 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.DistributorRepository
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.network.RetrofitClient
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.Normalizer
 
 data class CatalogUiState(
     val distributors: List<DistributorWithProducts> = emptyList(),
@@ -31,6 +36,36 @@ data class DistributorWithProducts(
     val products: List<ProductEntity>
 )
 
+private val combiningMarks = Regex("\\p{Mn}+")
+
+/** Lets "paine" find "Pâine". Building these once per load keeps typing fast on a large catalog. */
+internal fun catalogSearchKey(text: String): String =
+    combiningMarks.replace(Normalizer.normalize(text, Normalizer.Form.NFD), "").lowercase()
+
+internal fun productSearchKey(product: ProductEntity): String =
+    catalogSearchKey("${product.name} ${product.aliases.orEmpty()}")
+
+/**
+ * A distributor whose own name matches keeps all its products. Otherwise it keeps only the
+ * products that match, and disappears if none do.
+ */
+internal fun filterCatalog(
+    catalog: List<DistributorWithProducts>,
+    query: String,
+    productKeys: Map<Long, String>,
+): List<DistributorWithProducts> {
+    val wanted = catalogSearchKey(query.trim())
+    if (wanted.isEmpty()) return catalog
+    return catalog.mapNotNull { group ->
+        val matching = group.products.filter { productKeys[it.id]?.contains(wanted) == true }
+        when {
+            catalogSearchKey(group.distributor.distributorName).contains(wanted) -> group
+            matching.isNotEmpty() -> group.copy(products = matching)
+            else -> null
+        }
+    }
+}
+
 class CatalogViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
@@ -40,10 +75,11 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     private val _uiState = MutableStateFlow(CatalogUiState())
     val uiState: StateFlow<CatalogUiState> = _uiState.asStateFlow()
 
-    init {
-        loadCatalog()
-        observeRole()
-    }
+    private var productKeys: Map<Long, String> = emptyMap()
+    private var loadJob: Job? = null
+
+    // The screen asks for the first load when it resumes, so there's no load here as well.
+    init { observeRole() }
 
     private fun observeRole() {
         viewModelScope.launch {
@@ -54,33 +90,41 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
     }
 
     private fun loadCatalog() {
-        viewModelScope.launch {
+        // A newer request replaces one still running, so they can't overwrite each other.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             try {
-                _uiState.value = _uiState.value.copy(isLoading = true)
+                // Keep what's on screen while refreshing. Only a first load shows placeholders.
+                _uiState.value = _uiState.value.copy(
+                    isLoading = _uiState.value.distributors.isEmpty(),
+                    error = null,
+                )
 
-                // Check if we're online
                 val isOnline = com.darius.listmanager.util.NetworkHelper.isNetworkAvailable(getApplication())
-
-                // Load distributors and their products for offline mode
                 val distributors = distributorRepository.getAll()
                 val allProducts = productRepository.getAll()
-                android.util.Log.d("CatalogViewModel", "Loaded ${distributors.size} distributors, ${allProducts.size} products (Online: $isOnline)")
 
-                val distributorsWithProducts = distributors
-                    .sortedBy { it.distributorName.lowercase() }
-                    .map { distributor ->
-                        val products = productRepository.getByDistributor(distributor.id)
-                        android.util.Log.d("CatalogViewModel", "${distributor.distributorName}: ${products.size} products")
-                        DistributorWithProducts(distributor, products)
-                    }
+                val (grouped, keys) = withContext(Dispatchers.Default) {
+                    val byDistributor = allProducts.groupBy { it.distributorId }
+                    val groups = distributors
+                        .sortedBy { it.distributorName.lowercase() }
+                        .map { distributor ->
+                            DistributorWithProducts(
+                                distributor,
+                                byDistributor[distributor.id].orEmpty().sortedBy { it.name.lowercase() },
+                            )
+                        }
+                    groups to allProducts.associate { it.id to productSearchKey(it) }
+                }
 
+                productKeys = keys
                 _uiState.value = _uiState.value.copy(
-                    distributors = distributorsWithProducts,
+                    distributors = grouped,
                     isLoading = false,
                     isOffline = !isOnline
                 )
-
-                android.util.Log.d("CatalogViewModel", "Total products: ${distributorsWithProducts.sumOf { it.products.size }}")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("CatalogViewModel", "Error loading catalog", e)
                 _uiState.value = _uiState.value.copy(
@@ -96,22 +140,8 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
         _uiState.value = _uiState.value.copy(searchQuery = query)
     }
 
-    fun getFilteredCatalog(): List<DistributorWithProducts> {
-        val query = _uiState.value.searchQuery.lowercase()
-        if (query.isBlank()) return _uiState.value.distributors
-
-        return _uiState.value.distributors.mapNotNull { distributorWithProducts ->
-            val filteredProducts = distributorWithProducts.products.filter { product ->
-                product.name.lowercase().contains(query) ||
-                        product.aliases?.lowercase()?.contains(query) == true
-            }
-            // Show distributor if either products match OR distributor name matches
-            if (filteredProducts.isNotEmpty() ||
-                distributorWithProducts.distributor.distributorName.lowercase().contains(query)) {
-                distributorWithProducts.copy(products = filteredProducts)
-            } else null
-        }
-    }
+    fun getFilteredCatalog(): List<DistributorWithProducts> =
+        filterCatalog(_uiState.value.distributors, _uiState.value.searchQuery, productKeys)
 
     fun refresh() { loadCatalog() }
 
@@ -193,8 +223,9 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
 
                 val message = when {
                     forbidden -> "Doar administratorii pot modifica catalogul"
-                    errorMsg != null -> "Eroare: $errorMsg"
-                    else -> "Deleted $successCount product${if (successCount != 1) "s" else ""}"
+                    errorMsg != null -> "Nu am putut șterge toate produsele. Încearcă din nou."
+                    successCount == 1 -> "Produs șters"
+                    else -> "$successCount produse șterse"
                 }
                 _uiState.value = _uiState.value.copy(deleteMessage = message)
 
@@ -207,7 +238,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: Exception) {
                 android.util.Log.e("CatalogViewModel", "Error deleting products", e)
                 _uiState.value = _uiState.value.copy(
-                    deleteMessage = "Eroare: ${e.message}"
+                    deleteMessage = "Nu am putut șterge produsele. Încearcă din nou."
                 )
             }
         }
@@ -253,7 +284,7 @@ class CatalogViewModel(application: Application) : AndroidViewModel(application)
                         throw IllegalStateException(result.message)
                 }
             } else {
-                throw Exception("Failed to create distributor")
+                throw IllegalStateException("Distributor was not created")
             }
         } catch (e: Exception) {
             android.util.Log.e("CatalogViewModel", "Error adding product", e)

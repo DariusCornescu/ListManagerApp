@@ -3,17 +3,24 @@ package com.darius.listmanager.ui.screens
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.darius.listmanager.ui.components.AppEmptyState
+import com.darius.listmanager.ui.components.AppSecondaryButton
+import com.darius.listmanager.ui.components.BannerTone
+import com.darius.listmanager.ui.components.ConfirmSheet
 import com.darius.listmanager.ui.components.ProductFormSheet
+import com.darius.listmanager.ui.components.SkeletonRows
+import com.darius.listmanager.ui.components.StatusBanner
 import com.darius.listmanager.ui.viewmodel.CatalogViewModel
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CatalogScreen(
     onBack: () -> Unit,
@@ -21,30 +28,21 @@ fun CatalogScreen(
     viewModel: CatalogViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var searchQuery by remember { mutableStateOf("") }
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeleteSheet by remember { mutableStateOf(false) }
+    var showAddSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    // Trigger initial load
-    LaunchedEffect(Unit) {
-        viewModel.refresh()
-    }
 
-    // Alternative: Use lifecycle to refresh on resume
+    // Loads when the screen opens, and again on returning from editing a product.
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                viewModel.refresh()
-            }
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) viewModel.refresh()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // Handle delete result message
     LaunchedEffect(uiState.deleteMessage) {
         uiState.deleteMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
@@ -52,39 +50,38 @@ fun CatalogScreen(
         }
     }
 
-    // Handle back press in selection mode
     BackHandler(enabled = uiState.isSelectionMode) {
         viewModel.exitSelectionMode()
     }
 
-    // State for Add Product Dialog
-    var showAddProductDialog by remember { mutableStateOf(false) }
+    val totalProducts = uiState.distributors.sumOf { it.products.size }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            // FAB pentru adăugare manuală de produse (doar ADMIN)
             if (uiState.isAdmin && !uiState.isSelectionMode && !uiState.isLoading) {
-                FloatingActionButton(
-                    onClick = { showAddProductDialog = true },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ) {
-                    Icon(Icons.Rounded.Add, contentDescription = "Adaugă produs manual")
-                }
+                ExtendedFloatingActionButton(
+                    onClick = { showAddSheet = true },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    icon = { Icon(Icons.Rounded.Add, contentDescription = null) },
+                    text = { Text("Produs nou", fontWeight = FontWeight.ExtraBold) },
+                )
             }
         },
         topBar = {
             if (uiState.isSelectionMode) {
                 CatalogSelectionTopBar(
                     selectedCount = uiState.selectedProductIds.size,
+                    totalCount = totalProducts,
                     onExit = viewModel::exitSelectionMode,
-                    onDelete = { showDeleteDialog = true },
+                    onDelete = { showDeleteSheet = true },
                     onSelectAll = viewModel::selectAll,
                     onClearSelection = viewModel::clearSelection,
                 )
             } else {
                 CatalogTopBar(
+                    subtitle = if (uiState.isLoading) null else catalogSubtitle(totalProducts, uiState.distributors.size),
                     isAdmin = uiState.isAdmin,
                     onBack = onBack,
                     onRefresh = viewModel::refresh,
@@ -93,44 +90,48 @@ fun CatalogScreen(
             }
         }
     ) { padding ->
-        when {
-            uiState.isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
-            }
-            uiState.error != null && uiState.distributors.isEmpty() -> {
-                // Only show full-screen error if we have NO data to display
-                CatalogError(uiState.error, padding, onRetry = viewModel::refresh)
-            }
-            else -> {
-                val filteredCatalog = viewModel.getFilteredCatalog()
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    if (uiState.isOffline) CatalogOfflineBanner()
-
-                    if (!uiState.isSelectionMode) {
-                        CatalogSearchField(searchQuery) {
-                            searchQuery = it
-                            viewModel.setSearchQuery(it)
-                        }
+        val filtered = remember(uiState.distributors, uiState.searchQuery) { viewModel.getFilteredCatalog() }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            when {
+                uiState.isLoading -> SkeletonRows(
+                    count = 8,
+                    rowHeight = 60.dp,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+                uiState.error != null && uiState.distributors.isEmpty() -> AppEmptyState(
+                    icon = Icons.Rounded.CloudOff,
+                    title = "Nu am putut încărca catalogul",
+                    message = "Verifică conexiunea și încearcă din nou.",
+                    action = { AppSecondaryButton("Încearcă din nou", viewModel::refresh, Modifier.width(220.dp)) },
+                )
+                else -> {
+                    if (uiState.isOffline) {
+                        StatusBanner(
+                            "Ești offline. Vezi produsele salvate pe telefon.",
+                            tone = BannerTone.Info,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                        )
                     }
-
-                    if (filteredCatalog.isEmpty()) {
-                        CatalogEmptyState(searchQuery)
+                    if (!uiState.isSelectionMode) {
+                        CatalogSearchField(
+                            uiState.searchQuery,
+                            viewModel::setSearchQuery,
+                            Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                        )
+                    }
+                    if (filtered.isEmpty()) {
+                        CatalogEmptyState(uiState.searchQuery)
                     } else {
                         CatalogList(
-                            catalog = filteredCatalog,
-                            selectedProductIds = uiState.selectedProductIds,
+                            catalog = filtered,
+                            searching = uiState.searchQuery.isNotBlank(),
+                            isAdmin = uiState.isAdmin,
                             isSelectionMode = uiState.isSelectionMode,
+                            selectedProductIds = uiState.selectedProductIds,
                             onProductLongPress = viewModel::onProductLongPress,
                             onProductClick = viewModel::onProductClick,
                             onEditProduct = onNavigateToEdit,
@@ -139,36 +140,42 @@ fun CatalogScreen(
                 }
             }
         }
+    }
 
-        if (showDeleteDialog) {
-            DeleteProductsDialog(
-                selectedCount = uiState.selectedProductIds.size,
-                onConfirm = {
-                    viewModel.deleteSelectedProducts()
-                    showDeleteDialog = false
-                },
-                onDismiss = { showDeleteDialog = false },
-            )
-        }
+    if (showDeleteSheet) {
+        val count = uiState.selectedProductIds.size
+        ConfirmSheet(
+            title = if (count == 1) "Ștergi un produs?" else "Ștergi $count produse?",
+            message = "Această acțiune nu poate fi anulată.",
+            confirmLabel = "Șterge",
+            onConfirm = {
+                viewModel.deleteSelectedProducts()
+                showDeleteSheet = false
+            },
+            onDismiss = { showDeleteSheet = false },
+        )
+    }
 
-        // Add Product Dialog
-        if (showAddProductDialog) {
-            ProductFormSheet(
-                title = "Produs nou",
-                distributors = uiState.distributors.map { it.distributor.distributorName }.sorted(),
-                onDismiss = { showAddProductDialog = false },
-                onSave = { productName, distributorName, aliases ->
-                    scope.launch {
-                        try {
-                            viewModel.addProduct(productName, distributorName, aliases)
-                            showAddProductDialog = false
-                            snackbarHostState.showSnackbar("Produs adăugat: $productName")
-                        } catch (e: Exception) {
-                            snackbarHostState.showSnackbar("Eroare: ${e.message}")
-                        }
+    if (showAddSheet) {
+        ProductFormSheet(
+            title = "Produs nou",
+            distributors = uiState.distributors.map { it.distributor.distributorName },
+            onDismiss = { showAddSheet = false },
+            onSave = { productName, distributorName, aliases ->
+                scope.launch {
+                    try {
+                        viewModel.addProduct(productName, distributorName, aliases)
+                        showAddSheet = false
+                        snackbarHostState.showSnackbar("Produs adăugat: $productName")
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: SecurityException) {
+                        snackbarHostState.showSnackbar(e.message ?: "Doar administratorii pot modifica catalogul")
+                    } catch (e: Exception) {
+                        snackbarHostState.showSnackbar("Nu am putut adăuga produsul. Încearcă din nou.")
                     }
                 }
-            )
-        }
+            },
+        )
     }
 }
