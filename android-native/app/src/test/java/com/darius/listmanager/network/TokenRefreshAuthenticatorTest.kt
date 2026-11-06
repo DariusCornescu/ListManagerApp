@@ -122,6 +122,20 @@ class TokenRefreshAuthenticatorTest {
     }
 
     @Test
+    fun `signing out during a refresh does not restore the old tokens`() {
+        val store = FakeStore()
+        val authenticator = TokenRefreshAuthenticator(store) {
+            store.access = null
+            store.refresh = null // Logout happened while this request was on the wire.
+            RefreshResult.Success("late-access", "late-refresh")
+        }
+
+        assertNull(authenticator.authenticate(null, unauthorized()))
+        assertNull(store.access)
+        assertNull(store.refresh)
+    }
+
+    @Test
     fun `http logging never includes bodies and is off in release`() {
         assertEquals(HttpLoggingInterceptor.Level.NONE, RetrofitClient.httpLogLevel(debug = false))
         assertEquals(HttpLoggingInterceptor.Level.BASIC, RetrofitClient.httpLogLevel(debug = true))

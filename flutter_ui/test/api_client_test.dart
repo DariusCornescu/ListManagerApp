@@ -67,6 +67,17 @@ void main() {
     expect(expired, 0);
   });
 
+  test('signing out during a refresh does not restore the old tokens', () async {
+    final tokens = MemoryTokenStore(const Tokens(access: 'expired', refresh: 'refresh-1'));
+    final api = server.api(tokens: tokens);
+
+    final pending = api.get('/api/auth/me');
+    await tokens.clear();
+
+    await expectLater(pending, throwsA(isA<ApiException>()));
+    expect(tokens.current, isNull);
+  });
+
   test('no connection is a network error, not a server error', () async {
     server.offline = true;
     await expectLater(server.api().get('/api/auth/me'), throwsA(isA<NetworkException>()));

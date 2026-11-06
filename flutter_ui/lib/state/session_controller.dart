@@ -33,6 +33,8 @@ class SessionController extends ChangeNotifier {
   String? error;
   QuantityConflict? conflict;
 
+  final _writing = <int>{};
+
   /// Finds the active list, or starts one. Used on opening and after completing.
   Future<void> refresh() async {
     isLoading = items.isEmpty;
@@ -59,6 +61,9 @@ class SessionController extends ChangeNotifier {
 
   Future<void> setQuantity(SessionItem item, int quantity) async {
     if (quantity <= 0) return remove(item);
+    // A second tap would send the version the first is replacing, and then report the
+    // user's own tap as a conflict with someone else.
+    if (!_writing.add(item.id)) return;
     await _guard(() async {
       try {
         await _repository.setQuantity(item.id, quantity, item.version, _repository.newOperationKey());
@@ -75,6 +80,7 @@ class SessionController extends ChangeNotifier {
         }
       }
     });
+    _writing.remove(item.id);
     notifyListeners();
   }
 
@@ -148,6 +154,16 @@ class SessionController extends ChangeNotifier {
     });
     notifyListeners();
     return result;
+  }
+
+  /// Forgets everything on sign-out, so the next account cannot see this one's list.
+  void reset() {
+    session = null;
+    items = const [];
+    error = null;
+    conflict = null;
+    _writing.clear();
+    notifyListeners();
   }
 
   void clearError() {

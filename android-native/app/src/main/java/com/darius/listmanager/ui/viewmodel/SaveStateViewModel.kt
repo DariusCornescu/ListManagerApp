@@ -33,7 +33,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 
-enum class ReviewKind { QUEUED, CONFLICT, HELD }
+enum class ReviewKind {
+    QUEUED,
+    CONFLICT,
+    HELD,
+
+    /** Unknown whether it reached the server, so repeating it blindly could do harm. */
+    OUTCOME_UNKNOWN,
+}
 
 data class ReviewLine(
     val id: Long,
@@ -81,7 +88,17 @@ class SaveStateViewModel(application: Application) : AndroidViewModel(applicatio
     fun keepMine(id: Long) = resolve { resolver.keepMine(id) }
     fun useServer(id: Long) = resolve { resolver.discard(id) }
     fun retry(id: Long) = resolve { resolver.retry(id) }
-    fun syncNow() = SyncWorker.scheduleImmediateSync(getApplication())
+
+    /** The user asked for now, so anything waiting out a retry delay goes too. */
+    fun syncNow() {
+        viewModelScope.launch {
+            database.pendingOperationDao().clearBackoffForUser(
+                AuthState.userId.value ?: PendingOperationRepository.GUEST_ACCOUNT_ID
+            )
+            SyncWorker.scheduleImmediateSync(getApplication())
+        }
+    }
+
     fun clearMessage() { _message.value = null }
 
     private fun resolve(action: suspend () -> ReviewOutcome) {
@@ -100,11 +117,16 @@ class SaveStateViewModel(application: Application) : AndroidViewModel(applicatio
         title = describe(),
         kind = when {
             isVersionConflict -> ReviewKind.CONFLICT
+            isHeldForReview && hasUnknownOutcome -> ReviewKind.OUTCOME_UNKNOWN
             isHeldForReview -> ReviewKind.HELD
             else -> ReviewKind.QUEUED
         },
         operationType = operationType,
     )
+
+    /** See SyncService: a lost reply to a clear, or an interrupted non-keyed request. */
+    private val PendingOperationEntity.hasUnknownOutcome: Boolean
+        get() = lastError?.let { "outcome unknown" in it || it.startsWith("Interrupted request") } == true
 
     private suspend fun PendingOperationEntity.describe(): String {
         val data = runCatching { json.decodeFromString<OperationData>(operationData) }.getOrNull()
@@ -138,7 +160,8 @@ class SaveStateViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun messageFor(outcome: ReviewOutcome): String = when (outcome) {
         ReviewOutcome.RESOLVED -> "Rezolvat"
-        ReviewOutcome.QUEUED -> "Fără conexiune. Se va trimite automat."
+        ReviewOutcome.QUEUED -> "Se va trimite automat."
+        ReviewOutcome.NO_CONNECTION -> "Serverul nu răspunde. Încearcă din nou când revine semnalul."
         ReviewOutcome.ITEM_GONE -> "Altcineva a șters acest produs din listă."
         ReviewOutcome.STILL_CONFLICTED -> "Lista se schimbă chiar acum. Încearcă din nou peste câteva secunde."
         ReviewOutcome.NEEDS_REVIEW -> "Serverul a refuzat modificarea."

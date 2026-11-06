@@ -159,6 +159,16 @@ private fun ReviewLineCard(
                         OutlinedButton(onClick = { onUseServer(line.id) }, enabled = enabled) { Text("Varianta lor") }
                     }
                 }
+                ReviewKind.OUTCOME_UNKNOWN -> {
+                    Text(
+                        "Nu știm dacă a ajuns pe server, iar repetarea ar putea șterge " +
+                            "ce au adăugat alții între timp. Verifică lista de pe server.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    OutlinedButton(onClick = { onUseServer(line.id) }, enabled = enabled) {
+                        Text("Arată lista de pe server")
+                    }
+                }
                 ReviewKind.HELD -> {
                     Text(
                         "Serverul nu a acceptat modificarea.",

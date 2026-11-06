@@ -214,6 +214,15 @@ class HomeAndSaveStateUiTest {
         assertEquals(listOf(6L), retried)
     }
 
+    @Test fun unknownOutcome_doesNotOfferABlindRetry() {
+        val used = mutableListOf<Long>()
+        rule.setContent { Dialog(listOf(line(8, ReviewKind.OUTCOME_UNKNOWN)), onUse = { used += it }) }
+
+        assertEquals(0, rule.onAllNodesWithTextCount("Reîncearcă"))
+        rule.onNodeWithText("Arată lista de pe server").performClick()
+        assertEquals(listOf(8L), used)
+    }
+
     @Test fun queuedWork_reassures_andNeedsNoDecision() {
         rule.setContent { Dialog(listOf(line(7, ReviewKind.QUEUED))) }
 

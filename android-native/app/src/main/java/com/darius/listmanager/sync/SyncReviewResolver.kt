@@ -18,8 +18,11 @@ enum class ReviewOutcome {
     /** The operation reached the server, or was deliberately dropped. */
     RESOLVED,
 
-    /** Released back to the queue; it will retry on its own (e.g. no network now). */
+    /** Released back to the queue; it will retry on its own. */
     QUEUED,
+
+    /** The server could not be asked. The operation is still held, and the user can try later. */
+    NO_CONNECTION,
 
     /** Someone else removed the item, so there is nothing left to overwrite. */
     ITEM_GONE,
@@ -139,11 +142,11 @@ class SyncReviewResolver(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                return@withLock Rebase.Stop(ReviewOutcome.QUEUED)
+                return@withLock Rebase.Stop(ReviewOutcome.NO_CONNECTION)
             }
             val serverItems = response.body()
             if (!response.isSuccessful || serverItems == null) {
-                return@withLock Rebase.Stop(ReviewOutcome.QUEUED)
+                return@withLock Rebase.Stop(ReviewOutcome.NO_CONNECTION)
             }
             val server = serverItems.firstOrNull { it.id == data.itemId }
                 ?: return@withLock Rebase.Stop(ReviewOutcome.ITEM_GONE)
@@ -173,10 +176,10 @@ class SyncReviewResolver(
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            return Rebase.Stop(ReviewOutcome.QUEUED)
+            return Rebase.Stop(ReviewOutcome.NO_CONNECTION)
         }
         val serverItems = response.body()?.items
-        if (!response.isSuccessful || serverItems == null) return Rebase.Stop(ReviewOutcome.QUEUED)
+        if (!response.isSuccessful || serverItems == null) return Rebase.Stop(ReviewOutcome.NO_CONNECTION)
         val server = serverItems.firstOrNull { it.item_uuid == data.itemUuid }
             ?: return Rebase.Stop(ReviewOutcome.ITEM_GONE)
 

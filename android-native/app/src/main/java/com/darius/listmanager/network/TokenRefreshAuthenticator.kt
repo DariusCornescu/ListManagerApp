@@ -52,6 +52,8 @@ class TokenRefreshAuthenticator(
             val refreshToken = store.refreshToken() ?: return null
             return when (val result = refresh(refreshToken)) {
                 is RefreshResult.Success -> {
+                    // Signed out, or someone else signed in, while this was on the wire.
+                    if (store.refreshToken() != refreshToken) return null
                     store.saveTokens(result.accessToken, result.refreshToken)
                     retryWith(response, result.accessToken)
                 }

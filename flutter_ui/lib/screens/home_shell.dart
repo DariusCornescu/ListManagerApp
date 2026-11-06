@@ -28,6 +28,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     widget.services.live.stop();
+    widget.services.session.reset();
     super.dispose();
   }
 

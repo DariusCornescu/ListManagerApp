@@ -110,7 +110,8 @@ object RetrofitClient {
         val request = chain.request()
         val response = chain.proceed(request)
 
-        if (response.code == 401 && request.header("Authorization") != null) {
+        // Only for the login still in use: a late 401 must not end the next account's.
+        if (response.code == 401 && request.header("Authorization") == "Bearer $authToken") {
             // Clear the in-memory token so subsequent requests are unauthenticated (no retry loop).
             authToken = null
             onUnauthorized?.invoke()

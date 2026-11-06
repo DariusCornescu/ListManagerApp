@@ -26,17 +26,18 @@ internal class InventoryOperationSender(
     private val dao = database.inventoryItemDao()
     private val inventoryIds = mutableMapOf<Long?, Long>()
 
-    private suspend fun inventoryId(teamId: Long?): Long? {
-        inventoryIds[teamId]?.let { return it }
+    /**
+     * A failed lookup is reported with its real status. The 404 of someone removed from the
+     * team must be held for the user: as a retryable failure it would block all sync forever.
+     */
+    private suspend inline fun withInventory(teamId: Long?, send: (Long) -> InventorySend): InventorySend {
+        inventoryIds[teamId]?.let { return send(it) }
         val response = api.getInventory(teamId)
         val id = response.body()?.id
-        if (response.isSuccessful && id != null) inventoryIds[teamId] = id
-        return id
-    }
-
-    /** A failure to look the inventory up is reported like the request it blocked. */
-    private suspend inline fun withInventory(teamId: Long?, send: (Long) -> InventorySend): InventorySend {
-        val id = inventoryId(teamId) ?: return InventorySend.Failed(500)
+        if (!response.isSuccessful || id == null) {
+            return InventorySend.Failed(if (response.isSuccessful) 500 else response.code())
+        }
+        inventoryIds[teamId] = id
         return send(id)
     }
 

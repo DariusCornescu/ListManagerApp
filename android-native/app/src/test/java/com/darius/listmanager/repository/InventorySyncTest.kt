@@ -455,6 +455,23 @@ class InventorySyncTest {
         }
     }
 
+    @Test fun removedFromTheTeam_isHeldForTheUser_notRetriedForever() = runBlocking {
+        val server = Server()
+        val removed = object : ListManagerApi by server.api {
+            override suspend fun getInventory(teamId: Long?): Response<InventoryDTO> =
+                Response.error(404, "gone".toResponseBody())
+        }
+        val phone = Phone(server, USER_A)
+        phone.add("Lapte")
+
+        val sync = SyncService(context, phone.db, removed, currentUserId = { USER_A }, now = { Long.MAX_VALUE - 1 })
+        sync.syncPendingOperations()
+
+        assertTrue(phone.held().single().isHeldForReview)
+        phone.resolver.discard(phone.held().single().id)
+        assertTrue(phone.unfinished().isEmpty())
+    }
+
     @Test fun personalAndTeamRows_stayApart() = runBlocking {
         val server = Server()
         val phone = Phone(server, USER_A)

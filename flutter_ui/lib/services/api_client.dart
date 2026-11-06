@@ -75,8 +75,11 @@ class ApiClient {
         case _RefreshResult.unavailable:
           throw const NetworkException();
         case _RefreshResult.rejected:
-          await tokens.clear();
-          onSessionExpired?.call();
+          // Only for the login still in use: a late answer must not end the next one.
+          if (tokens.current?.access == sentAccess) {
+            await tokens.clear();
+            onSessionExpired?.call();
+          }
       }
     }
     return _decode(response);
@@ -133,6 +136,9 @@ class ApiClient {
       return _RefreshResult.rejected;
     }
     if (response.statusCode != 200) return _RefreshResult.unavailable;
+
+    // Signed out, or someone else signed in, while this was on the wire.
+    if (tokens.current?.refresh != refresh) return _RefreshResult.rejected;
 
     final json = jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
     await tokens.save(

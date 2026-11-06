@@ -141,6 +141,25 @@ void main() {
     });
   });
 
+  test('a second tap while the first is sending is not reported as a conflict', () async {
+    final item = await oneItem();
+
+    await Future.wait([
+      controller.setQuantity(item, 2),
+      controller.setQuantity(item, 3),
+    ]);
+
+    expect(controller.conflict, isNull);
+    expect(server.items[item.id]!['quantity'], 2);
+  });
+
+  test('reset forgets the list, so the next account cannot see it', () async {
+    await oneItem();
+    controller.reset();
+    expect(controller.session, isNull);
+    expect(controller.items, isEmpty);
+  });
+
   test('offline, a failed write says it was not saved and keeps the list', () async {
     final item = await oneItem();
     server.offline = true;

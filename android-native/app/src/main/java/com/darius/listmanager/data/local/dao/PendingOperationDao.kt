@@ -16,6 +16,13 @@ interface PendingOperationDao {
     @Query("SELECT * FROM pending_operations WHERE userId = :userId AND status != 'COMPLETED' ORDER BY id ASC")
     fun getUnfinishedFlowForUser(userId: Long): Flow<List<PendingOperationEntity>>
 
+    /** Ends the wait of everything backing off; a hold for review stays a hold. */
+    @Query(
+        """UPDATE pending_operations SET scheduledFor = 0
+           WHERE userId = :userId AND status != 'COMPLETED' AND scheduledFor != :heldForReview"""
+    )
+    suspend fun clearBackoffForUser(userId: Long, heldForReview: Long = Long.MAX_VALUE)
+
     @Query("SELECT * FROM pending_operations WHERE status IN ('PENDING', 'WAITING') ORDER BY createdAt ASC")
     suspend fun getAllPending(): List<PendingOperationEntity>
 

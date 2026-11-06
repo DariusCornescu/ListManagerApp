@@ -205,7 +205,7 @@ class SyncReviewResolverTest {
         val before = db.pendingOperationDao().getById(id)!!
         server.offlineReads = true
 
-        assertEquals(ReviewOutcome.QUEUED, resolver(server.api).keepMine(id))
+        assertEquals(ReviewOutcome.NO_CONNECTION, resolver(server.api).keepMine(id))
 
         assertEquals(before.operationData, db.pendingOperationDao().getById(id)!!.operationData)
         assertTrue(db.pendingOperationDao().getById(id)!!.isHeldForReview)
