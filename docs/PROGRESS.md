@@ -66,9 +66,16 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   17/17, live updates 4/4, and 5/5 contract tests against a real running backend.
 
 **Not verified**
-- Flutter widget tests were not executed. This machine's Application Control policy blocks
-  `dartaotruntime.exe`, which `flutter test` and builds need. The logic ran on the plain Dart
-  VM with a `ChangeNotifier` stand-in, including 5/5 contract tests against a real backend.
+- Flutter widget tests were blocked for most of this work, because this machine refused
+  `dartaotruntime.exe`. Later the same day they started running, with Smart App Control still
+  on and no change we know of, so the block may return. `flutter test`: 51 passed, 5 skipped
+  (the contract tests, which need a running backend and passed 5/5 on the plain Dart VM).
+- The first real runs found two faults that the merged code carried. A widget test tapped a
+  button below the fold (`5f44584`, test only). `flutter build apk --debug` failed because
+  Gradle, AGP and Kotlin were below Flutter 3.47.9's minimums; they are now at those minimums
+  and the debug APK builds. Kotlin 2.2.20 draws a warning that 2.3.20 will soon be required.
+  CI runs analyze and test but no Flutter build, so it would not have caught this.
+- No Flutter build has run on a device or emulator.
 - The PostgreSQL gates, including the new EX-25 and EX-44 variants, were skipped: Docker's
   engine did not start. CI runs them once pushed. M7's earlier real-PostgreSQL pass predates
   the merge with M6.
@@ -96,9 +103,16 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
 removal itself was intended, but `flutter_ui` does not compile between those two commits, which
 matters only when bisecting. History was left as it is.
 
+**VS Code setup (machine-only, nothing in the repo)**
+- `C:\Users\c0rnesky\GitHub\ListManager.code-workspace` holds the folders and build tasks. The
+  user's VS Code settings point Flutter and integrated terminals at `android-native/.tooling`.
+- Added the alpha `JetBrains.kotlin-server` extension, whose Android support is experimental.
+  Compose previews need Android Studio, which is free. No emulator is installed.
+
 **Next**
-- Push `development`. Its first CI run is also the first real run of the Flutter widget tests
-  and the PostgreSQL gates, so read it closely. Then EX-8's branch cleanup.
+- Reach CI. Pushing `development` probably deploys to Render and runs 7 migrations on the live
+  database, so check the service and take a backup first, or run CI from a PR. The first CI
+  run is also the first real run of the PostgreSQL gates. Then EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).

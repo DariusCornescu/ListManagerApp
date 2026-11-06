@@ -104,7 +104,7 @@ These meet their own "Done when" and are in local `development` at `05d767d`. No
 | EX-37 | Profile fields end to end. Android screen not run on a real phone |
 | EX-39, EX-40 | Results on synthetic noise: keep phonetic 0.8, keep N-best 5 |
 | EX-42 | Session 25/36 to 36/36, inventory 11/17 to 17/17, on a hand-written slice |
-| EX-43 | Decided: finish. Flutter runs on the real API; widget tests and builds not yet run |
+| EX-43 | Decided: finish. Flutter runs on the real API; widget tests pass and a debug APK builds, but it has not run on a device |
 | EX-45, EX-46, EX-47 | Token refresh and revocation, CORS (no web origin deployed yet), dependency audit at zero findings |
 
 ### In Review, merged locally, with a real-world check left
