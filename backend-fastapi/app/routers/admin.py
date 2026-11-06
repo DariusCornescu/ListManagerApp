@@ -1,9 +1,9 @@
 import logging
 import os
 from datetime import datetime, timedelta, timezone
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -65,6 +65,44 @@ async def import_catalog(
         unchanged=result.unchanged,
         committed=result.committed,
         errors=[schemas.ImportRowErrorDTO(line=e.line, reason=e.reason) for e in result.errors],
+    )
+
+
+def _like_contains(term: str) -> str:
+    """Build a LIKE pattern that treats the term's own wildcards as text."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+@router.get("/api/admin/catalog/products", response_model=schemas.AdminProductPageDTO)
+def list_catalog_products(
+    q: Optional[str] = Query(default=None, max_length=200),
+    distributor_id: Optional[int] = None,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """One page of the catalog, with purchase prices (admin only)."""
+    query = db.query(models.Product)
+    if distributor_id is not None:
+        query = query.filter(models.Product.distributor_id == distributor_id)
+    term = (q or "").strip()
+    if term:
+        pattern = _like_contains(term)
+        query = query.filter(
+            models.Product.name.ilike(pattern, escape="\\")
+            | models.Product.aliases.ilike(pattern, escape="\\")
+        )
+
+    items = (
+        query.order_by(func.lower(models.Product.name), models.Product.id)
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    return schemas.AdminProductPageDTO(
+        items=items, total=query.count(), limit=limit, offset=offset
     )
 
 

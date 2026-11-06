@@ -82,8 +82,13 @@
       </div>
       <div class="card">
         <h3>Catalog</h3>
-        <input id="search" placeholder="filter…" oninput="renderTable()" />
+        <input id="search" placeholder="search name or alias…" oninput="onSearchInput()" />
         <button onclick="loadProducts()">Refresh</button>
+        <div style="margin-top:8px">
+          <button class="secondary" id="prevPage" onclick="changePage(-1)">Previous</button>
+          <button class="secondary" id="nextPage" onclick="changePage(1)">Next</button>
+          <span id="pageInfo" class="muted" style="margin-left:8px"></span>
+        </div>
         <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody></table>
       </div>
@@ -102,6 +107,11 @@
     let previewedFile = null;
     let editingProductId = null;
     let distributorList = [];
+    const CATALOG_PAGE_SIZE = 50;
+    let catalogOffset = 0;
+    let catalogTotal = 0;
+    let catalogRequest = 0;
+    let searchTimer = null;
 
     function setStatus(msg, isError) {
       const el = document.getElementById("status");
@@ -199,29 +209,64 @@
     }
 
     async function loadProducts() {
+      const request = ++catalogRequest;
+      const params = new URLSearchParams({ limit: CATALOG_PAGE_SIZE, offset: catalogOffset });
+      const q = (document.getElementById("search").value || "").trim();
+      if (q) params.set("q", q);
       try {
         const [pr, dr] = await Promise.all([
-          fetch("/api/catalog/products").then(r => r.json()),
+          fetch("/api/admin/catalog/products?" + params, { headers: authHeaders() }),
           fetch("/api/catalog/distributors").then(r => r.json())
         ]);
-        products = pr;
+        if (request !== catalogRequest) return;   // a newer search or page already started
+        if (pr.status === 401 || pr.status === 403) { showApp(false); return; }
+        if (!pr.ok) throw new Error("catalog " + pr.status);
+        const page = await pr.json();
+        if (request !== catalogRequest) return;
+        if (!page.items.length && page.total > 0 && catalogOffset > 0) {
+          // The last row on this page was deleted, so step back to a page that has rows.
+          catalogOffset = Math.max(0, catalogOffset - CATALOG_PAGE_SIZE);
+          return loadProducts();
+        }
+        products = page.items;
+        catalogTotal = page.total;
         distributors = {};
         dr.forEach(d => distributors[d.id] = d.distributor_name);
         distributorList = dr;
         renderTable();
+        renderPager();
         renderDistributors();
         populateDistributorSelect();
       } catch (e) {
+        if (request !== catalogRequest) return;
         document.getElementById("rows").innerHTML = '<tr><td colspan="5" class="err">Failed to load catalog</td></tr>';
       }
     }
 
+    function onSearchInput() {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { catalogOffset = 0; loadProducts(); }, 250);
+    }
+
+    function changePage(direction) {
+      const next = catalogOffset + direction * CATALOG_PAGE_SIZE;
+      if (next < 0 || next >= catalogTotal) return;
+      catalogOffset = next;
+      loadProducts();
+    }
+
+    function renderPager() {
+      const first = catalogTotal === 0 ? 0 : catalogOffset + 1;
+      const last = catalogOffset + products.length;
+      document.getElementById("pageInfo").textContent = `${first}–${last} of ${catalogTotal}`;
+      document.getElementById("prevPage").disabled = catalogOffset === 0;
+      document.getElementById("nextPage").disabled = last >= catalogTotal;
+    }
+
     function renderTable() {
-      const q = (document.getElementById("search").value || "").toLowerCase();
       const tbody = document.getElementById("rows");
       tbody.innerHTML = "";
       products
-        .filter(p => !q || p.name.toLowerCase().includes(q))
         .forEach(p => {
           const tr = document.createElement("tr");
           const cells = [p.name, distributors[p.distributor_id] || "", p.aliases || "", p.price == null ? "" : p.price];

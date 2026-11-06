@@ -32,8 +32,24 @@ class ProductCreate(ProductBase):
 class ProductDTO(ProductBase):
     id: int
     created_at: datetime
-    
+
     model_config = ConfigDict(from_attributes=True)
+
+class ProductPublicDTO(BaseModel):
+    """A product as anyone may see it. Purchase prices are admin-only."""
+    id: int
+    name: str
+    distributor_id: int
+    aliases: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class AdminProductPageDTO(BaseModel):
+    items: list[ProductDTO]
+    total: int
+    limit: int
+    offset: int
 
 # ===== Session Schemas =====
 class GlobalSessionBase(BaseModel):
