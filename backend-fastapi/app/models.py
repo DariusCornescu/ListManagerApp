@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index, Numeric
+from sqlalchemy import BigInteger, Column, Float, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index, Numeric
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -206,4 +206,60 @@ class CrashReport(Base):
     username = Column(String(50), nullable=True)
     stacktrace = Column(Text, nullable=False)
     signature = Column(String(64), nullable=True, index=True)
+    created_at = Column(DateTime, default=func.now())
+
+
+class Inventory(Base):
+    """The one shared stock-taking list of a person or a team (EX-44)."""
+
+    __tablename__ = "inventories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Exactly one is set. NULLs do not collide, so each owner still has at most one.
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True, unique=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "(owner_user_id IS NULL) != (team_id IS NULL)",
+            name="ck_inventory_one_owner",
+        ),
+    )
+
+
+class InventoryItem(Base):
+    __tablename__ = "inventory_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id"), nullable=False, index=True)
+    # Chosen by the phone before sending, so a retried add finds the row it created.
+    item_uuid = Column(String(36), nullable=False)
+    name = Column(String(200), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    quantity = Column(Float(precision=53), nullable=True)
+    price_bani = Column(BigInteger, nullable=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now())
+    # Kept as a tombstone, so a retried add cannot bring a removed row back.
+    deleted_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("inventory_id", "item_uuid", name="uq_inventory_item_uuid"),
+    )
+
+    @property
+    def deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
+class InventoryAppliedOp(Base):
+    """Idempotency ledger for inventory writes that have no natural identity."""
+
+    __tablename__ = "inventory_applied_ops"
+
+    key = Column(String(64), primary_key=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id"), primary_key=True)
+    result_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=func.now())

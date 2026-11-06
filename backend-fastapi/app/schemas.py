@@ -197,3 +197,53 @@ class AdminDashboardDTO(BaseModel):
     crashes_count: int
     devices_count: int
     activity: list[ActivityDayDTO]
+
+
+# ===== Inventory Schemas =====
+INVENTORY_MAX_QUANTITY = 1_000_000_000
+INVENTORY_MAX_PRICE_BANI = 1_000_000_000_000
+
+
+class InventoryItemFields(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    product_id: Optional[int] = None
+    # Either may be blank: the spoken line was incomplete and is filled in later.
+    quantity: Optional[float] = Field(default=None, ge=0, le=INVENTORY_MAX_QUANTITY)
+    price_bani: Optional[int] = Field(default=None, ge=0, le=INVENTORY_MAX_PRICE_BANI)
+
+
+class InventoryItemCreate(InventoryItemFields):
+    item_uuid: str = Field(min_length=1, max_length=36)
+
+
+class InventoryItemUpdate(InventoryItemFields):
+    version: int = Field(ge=0, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
+
+
+class InventoryClear(BaseModel):
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
+
+
+class InventoryItemDTO(BaseModel):
+    id: int
+    inventory_id: int
+    item_uuid: str
+    name: str
+    product_id: Optional[int] = None
+    quantity: Optional[float] = None
+    price_bani: Optional[int] = None
+    version: int
+    # True only on a retried add whose row has since been removed.
+    deleted: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InventoryDTO(BaseModel):
+    id: int
+    owner_user_id: Optional[int] = None
+    team_id: Optional[int] = None
+    items: list[InventoryItemDTO]
+
+    model_config = ConfigDict(from_attributes=True)

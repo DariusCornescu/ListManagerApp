@@ -103,6 +103,10 @@ class ConnectionManager:
         else:
             recipient_ids = set()
 
+        await self.send_to_users(message, recipient_ids)
+
+    async def send_to_users(self, message: dict, recipient_ids: set[int]):
+        """Send to every connection of the given users, and no one else."""
         for user_id in recipient_ids:
             connections = self.active_connections.get(user_id)
             if not connections:

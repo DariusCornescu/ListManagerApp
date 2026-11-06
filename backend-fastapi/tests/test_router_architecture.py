@@ -11,6 +11,7 @@ EXPECTED_ROUTER_MODULES = {
     "auth.py",
     "catalog.py",
     "crashes.py",
+    "inventory.py",
     "presence.py",
     "sessions.py",
     "speech.py",

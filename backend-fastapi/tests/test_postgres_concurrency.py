@@ -250,3 +250,46 @@ def test_two_writers_converge_through_a_real_409_storm(postgres_api):
     assert item.version == start_version + 2 * writes_per_writer
     assert sequences == list(range(1, len(sequences) + 1))
     print(f"409 responses under real contention: {sum(conflicts)}")
+
+
+def test_two_writers_on_one_inventory_row_lose_nothing(postgres_api):
+    """EX-44 on real connections: concurrent adds and versioned edits of one row."""
+    client, session_factory, _, headers = postgres_api
+    inventory = client.get("/api/inventory/active", headers=headers).json()
+    url = f"/api/inventory/{inventory['id']}/items"
+
+    # The same add from several phones at once creates exactly one row.
+    row = {"item_uuid": "22222222-2222-2222-2222-222222222222", "name": "Lapte", "quantity": 0.0}
+    added = _concurrent(6, lambda _: client.post(url, headers=headers, json=row))
+    assert [response.status_code for response in added] == [200] * 6
+    item_id = added[0].json()["id"]
+    assert {response.json()["id"] for response in added} == {item_id}
+
+    def writer(index):
+        for write in range(15):
+            for attempt in range(200):
+                current = next(
+                    item for item in client.get(url, headers=headers).json() if item["id"] == item_id
+                )
+                response = client.put(
+                    f"{url}/{row['item_uuid']}",
+                    headers=headers,
+                    json={
+                        "name": current["name"],
+                        "quantity": current["quantity"] + 1,
+                        "version": current["version"],
+                        "idempotency_key": f"inv-{index}-{write}",
+                    },
+                )
+                if response.status_code == 200:
+                    break
+                assert response.status_code == 409, response.text
+            else:
+                pytest.fail("Writer never got through")
+
+    _concurrent(2, writer)
+
+    with session_factory() as db:
+        item = db.get(models.InventoryItem, item_id)
+    assert item.quantity == 30.0
+    assert item.version == 31

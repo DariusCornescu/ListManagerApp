@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from .auth import resolve_token_user
 from .config import parse_cors_origins, settings
 from .limiting import limiter
-from .routers import admin, auth, catalog, crashes, presence, sessions, speech, stats, teams
+from .routers import admin, auth, catalog, crashes, inventory, presence, sessions, speech, stats, teams
 from .websocket_manager import manager
 
 
@@ -55,6 +55,7 @@ for router in (
     admin.router,
     presence.router,
     speech.router,
+    inventory.router,
 ):
     app.include_router(router)
 
