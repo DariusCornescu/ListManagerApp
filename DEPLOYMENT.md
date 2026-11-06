@@ -1,4 +1,4 @@
-# Deployment — hosting the backend on Render (free tier)
+# Deployment — hosting the backend on Render
 
 This guide gets the FastAPI backend running publicly (HTTPS) with a Postgres
 database, so the Android app works across phones anywhere — not just on the
@@ -22,7 +22,7 @@ The repo already contains everything needed:
    - `ADMIN_PASSWORD` — the password for the seeded `admin` account (pick a strong one).
    - *(optional)* `GROQ_API_KEY` — only if you use server-side transcription.
    `SECRET_KEY` is generated automatically; `DATABASE_URL` is wired from the DB.
-5. Click **Apply**. Render provisions the free Postgres, builds, runs migrations
+5. Click **Apply**. Render provisions the paid Postgres, builds, runs migrations
    at startup, and starts the service.
 6. Wait for the service to go **Live**, then verify:
    ```
@@ -48,14 +48,19 @@ The WebSocket URL (`wss://…/ws`) is derived automatically from this.
 2. Add a product to the session on phone A → it appears on phone B in real time (WebSocket).
 3. Toggle airplane mode on A, add offline, reconnect → the offline queue syncs.
 
-## Free-tier caveats
+## Plans and cost
+`render.yaml` uses paid plans, on a free Hobby workspace (estimates, November 2026;
+check Render's pricing page):
+- Web service `0.5c-512mb`: $7/month.
+- Postgres `0.1c-256mb`: about $6/month, plus 5 GB of disk at $0.30/GB. Disk can
+  only grow.
+
+Avoid the free plans for real use:
 - The free web service **sleeps after ~15 min idle**; the first request after
-  that takes ~30–60s to wake (cold start).
+  that takes 50s or more to wake, and live updates drop.
 - The free Postgres **expires after 30 days, with a 14-day grace period before it
   is deleted** (per Render's articles in November 2026). The data is lost and the
-  service then crashes at startup. Use a paid database for anything you need to keep.
-- Cost: **$0**, no top-up. For always-on without cold starts later, the same
-  `Procfile` works on a DigitalOcean Droplet (~$5/mo) or App Platform (~$12/mo).
+  service then crashes at startup.
 
 ## Local development
 Runs on SQLite by default (`sqlite:///./listmanager.db`) — copy
