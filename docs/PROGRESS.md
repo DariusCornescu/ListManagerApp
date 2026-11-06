@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 6 of 7: account, menu and teams
+
+**Changed**
+- **Workspace** moved from the menu to **Contul meu**, as requested. A new
+  `WorkspaceSwitcherViewModel` loads the teams when that screen opens. The current team stays listed
+  if the team list can't load. Switching still opens the list for that workspace.
+- **Menu:** all entries are in Romanian and the current page is highlighted. It shows the active
+  workspace as text only, and the connection row now has a color for each state.
+- **Teams:** both screens are in Romanian, including server messages and the invite text. Create, join
+  and "switch now?" use bottom sheets.
+- **Removing a team member now asks first.** It used to happen on one tap.
+- Roles read "Administrator" and "Membru" instead of the raw `admin` and `member`.
+
+**Behavior change**
+- Someone who chose "Continue offline" has no **Contul meu**, so they stay on Personal. The old menu
+  offered them the switcher, but it only held Personal without an account.
+
+**Not done**
+- Members still show as "Utilizator 12". Real names need the API to return them.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 7: login, settings, PDFs, sync, About and cleanup.
+
+---
+
 ## 2026-11-06 - Android redesign, part 5 of 7: catalog, product editing and inventory
 
 **Changed**
