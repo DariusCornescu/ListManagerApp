@@ -1,5 +1,7 @@
 package com.darius.listmanager.data.repository
 
+import androidx.room.withTransaction
+import com.darius.listmanager.data.local.AppDatabase
 import android.content.Context
 import android.util.Log
 import com.darius.listmanager.data.local.dao.ProductDao
@@ -7,6 +9,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.model.*
 import com.darius.listmanager.network.*
 import com.darius.listmanager.util.NetworkHelper
+import com.darius.listmanager.util.SensitiveLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
@@ -16,7 +19,9 @@ class ProductRepository(
     private val dao: ProductDao,
     private val pendingOperationRepository: PendingOperationRepository,
     private val context: Context,
-    private val api: ListManagerApi
+    private val api: ListManagerApi,
+    private val database: AppDatabase = AppDatabase.getInstance(context),
+    private val isOnline: () -> Boolean = { NetworkHelper.isNetworkAvailable(context) }
 )   {
 
     companion object { const val TAG = "ProductRepository" }
@@ -30,7 +35,7 @@ class ProductRepository(
      * OFFLINE: Returnează din cache local
      */
     suspend fun getAll(): List<ProductEntity> = withContext(Dispatchers.IO) {
-        if (NetworkHelper.isNetworkAvailable(context)) {
+        if (isOnline()) {
             try {
                 Log.d(TAG, "ONLINE: Fetching products from server...")
                 val response = api.getProducts()
@@ -39,8 +44,18 @@ class ProductRepository(
                     val products = response.body()!!.map { it.toEntity() }
                     
                     // Salvează în cache local
-                    dao.deleteAll()
-                    dao.insertAll(products)
+                    // Fresh installations need distributor parents before products.
+                    // Fetch both halves before touching the cache; never delete
+                    // parents referenced by sessions or pending offline work.
+                    val distributorResponse = api.getDistributors()
+                    val distributors = distributorResponse.body()
+                    if (!distributorResponse.isSuccessful || distributors == null) {
+                        return@withContext dao.getAll()
+                    }
+                    database.withTransaction {
+                        database.distributorDao().insertAll(distributors.map { it.toEntity() })
+                        dao.insertAll(products)
+                    }
                     
                     Log.d(TAG, "Fetched ${products.size} products from server")
                     return@withContext products
@@ -63,12 +78,12 @@ class ProductRepository(
     suspend fun getByDistributor(distributorId: Long): List<ProductEntity> = withContext(Dispatchers.IO) { return@withContext dao.getByDistributor(distributorId) }
 
     suspend fun searchFts(query: String): List<ProductEntity> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Searching products: $query")
+        SensitiveLog.d(TAG, "Searching products") { "Searching products: $query" }
         return@withContext dao.searchFts(query)
     }
     
     suspend fun searchFtsRaw(query: String): List<ProductEntity> = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Searching products (raw): $query")
+        SensitiveLog.d(TAG, "Searching products (raw query)") { "Searching products (raw): $query" }
         return@withContext dao.searchFtsRaw(query)
     }
         

@@ -3,6 +3,9 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from typing import Optional
 from datetime import datetime
 
+# Match PostgreSQL INTEGER and Android's signed 32-bit quantity/version fields.
+SESSION_INT_MAX = 2**31 - 1
+
 # ===== Distributor Schemas =====
 class DistributorBase(BaseModel):
     distributor_name: str
@@ -39,6 +42,7 @@ class GlobalSessionBase(BaseModel):
 class GlobalSessionCreate(GlobalSessionBase):
     # Optional: when set, creates a team-owned session (caller must be a member).
     team_id: Optional[int] = None
+    client_uuid: Optional[str] = Field(default=None, max_length=36)
 
 class GlobalSessionDTO(GlobalSessionBase):
     id: int
@@ -48,6 +52,7 @@ class GlobalSessionDTO(GlobalSessionBase):
     version: int
     owner_user_id: Optional[int] = None
     team_id: Optional[int] = None
+    client_uuid: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -59,13 +64,14 @@ class GlobalSessionItemBase(BaseModel):
 
 class GlobalSessionItemCreate(BaseModel):
     product_id: int
-    quantity: int = 1
-    idempotency_key: Optional[str] = None
+    quantity: int = Field(default=1, ge=1, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
 
 class GlobalSessionItemUpdate(BaseModel):
-    quantity: int
-    version: int
-    idempotency_key: Optional[str] = None
+    # Preserve legacy zero PUT behavior; Android removes rows using DELETE.
+    quantity: int = Field(ge=0, le=SESSION_INT_MAX)
+    version: int = Field(ge=0, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
 
 class GlobalSessionItemDTO(GlobalSessionItemBase):
     id: int
@@ -92,10 +98,19 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None
+    # Profile: a missing field is left alone, a blank one clears the value.
+    full_name: Optional[str] = Field(default=None, max_length=100)
+    company: Optional[str] = Field(default=None, max_length=100)
+    address: Optional[str] = Field(default=None, max_length=255)
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    # Additive: clients predating refresh ignore it and re-login after expiry.
+    refresh_token: Optional[str] = None
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(max_length=128)
 
 class UserDTO(BaseModel):
     id: int
@@ -103,6 +118,9 @@ class UserDTO(BaseModel):
     email: str
     role: str
     is_active: bool
+    full_name: Optional[str] = None
+    company: Optional[str] = None
+    address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -122,6 +140,7 @@ class ImportResultDTO(BaseModel):
 
 # ===== Crash Reporting Schemas =====
 class CrashReportCreate(BaseModel):
+    event_id: Optional[str] = Field(default=None, max_length=100)
     app_version: Optional[str] = Field(default=None, max_length=50)
     android_version: Optional[str] = Field(default=None, max_length=50)
     device: Optional[str] = Field(default=None, max_length=100)
@@ -131,9 +150,22 @@ class CrashReportCreate(BaseModel):
 
 class CrashReportDTO(CrashReportCreate):
     id: int
+    signature: str
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class CrashGroupDTO(BaseModel):
+    signature: str
+    count: int
+    affected_users: int
+    triage_score: int
+    first_seen: datetime
+    last_seen: datetime
+    app_versions: list[str]
+    devices: list[str]
+    reports: list[CrashReportDTO]
 
 
 # ===== Presence Schemas =====
@@ -165,3 +197,53 @@ class AdminDashboardDTO(BaseModel):
     crashes_count: int
     devices_count: int
     activity: list[ActivityDayDTO]
+
+
+# ===== Inventory Schemas =====
+INVENTORY_MAX_QUANTITY = 1_000_000_000
+INVENTORY_MAX_PRICE_BANI = 1_000_000_000_000
+
+
+class InventoryItemFields(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    product_id: Optional[int] = None
+    # Either may be blank: the spoken line was incomplete and is filled in later.
+    quantity: Optional[float] = Field(default=None, ge=0, le=INVENTORY_MAX_QUANTITY)
+    price_bani: Optional[int] = Field(default=None, ge=0, le=INVENTORY_MAX_PRICE_BANI)
+
+
+class InventoryItemCreate(InventoryItemFields):
+    item_uuid: str = Field(min_length=1, max_length=36)
+
+
+class InventoryItemUpdate(InventoryItemFields):
+    version: int = Field(ge=0, le=SESSION_INT_MAX)
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
+
+
+class InventoryClear(BaseModel):
+    idempotency_key: Optional[str] = Field(default=None, max_length=64)
+
+
+class InventoryItemDTO(BaseModel):
+    id: int
+    inventory_id: int
+    item_uuid: str
+    name: str
+    product_id: Optional[int] = None
+    quantity: Optional[float] = None
+    price_bani: Optional[int] = None
+    version: int
+    # True only on a retried add whose row has since been removed.
+    deleted: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class InventoryDTO(BaseModel):
+    id: int
+    owner_user_id: Optional[int] = None
+    team_id: Optional[int] = None
+    items: list[InventoryItemDTO]
+
+    model_config = ConfigDict(from_attributes=True)

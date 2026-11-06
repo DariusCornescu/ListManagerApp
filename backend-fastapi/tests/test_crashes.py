@@ -16,12 +16,38 @@ def test_report_crash_no_auth_needed(client):
     assert body["device"] == "Samsung SM-X000"
     assert "boom" in body["stacktrace"]
     assert "id" in body and "created_at" in body
+    assert len(body["signature"]) == 64
 
 
 def test_report_crash_minimal_fields(client):
     resp = client.post("/api/crashes", json={"stacktrace": "x"})
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["app_version"] is None
+
+
+def test_report_crash_retry_with_same_event_id_is_idempotent(client, db_session):
+    payload = {**CRASH, "event_id": "crash-7c905d24-7f67-48eb-9169-13d63fbc70ac"}
+
+    first = client.post("/api/crashes", json=payload)
+    retry = client.post("/api/crashes", json=payload)
+
+    assert first.status_code == status.HTTP_200_OK
+    assert retry.status_code == status.HTTP_200_OK
+    assert retry.json()["id"] == first.json()["id"]
+    assert retry.json()["event_id"] == payload["event_id"]
+    from app.models import CrashReport
+
+    assert db_session.query(CrashReport).count() == 1
+
+
+def test_same_crash_signature_with_different_event_ids_keeps_both(client, db_session):
+    for event_id in ("crash-event-one", "crash-event-two"):
+        response = client.post("/api/crashes", json={**CRASH, "event_id": event_id})
+        assert response.status_code == status.HTTP_200_OK
+
+    from app.models import CrashReport
+
+    assert db_session.query(CrashReport).count() == 2
 
 
 def test_oversize_stacktrace_rejected(client):
@@ -57,3 +83,113 @@ def test_admin_list_newest_first(client, admin_headers):
 def test_admin_list_limit_capped(client, admin_headers):
     resp = client.get("/api/admin/crashes?limit=999999", headers=admin_headers)
     assert resp.status_code == status.HTTP_200_OK
+
+
+def test_signature_groups_messages_and_line_number_changes(client):
+    traces = [
+        "java.lang.RuntimeException: first message\n"
+        "\tat com.darius.listmanager.SyncWorker.run(SyncWorker.kt:42)\n"
+        "\tat com.darius.listmanager.App.start(App.kt:10)",
+        "java.lang.RuntimeException: another message\n"
+        "\tat com.darius.listmanager.SyncWorker.run(SyncWorker.kt:999)\n"
+        "\tat com.darius.listmanager.App.start(App.kt:11)",
+    ]
+
+    signatures = [
+        client.post("/api/crashes", json={"stacktrace": trace}).json()["signature"]
+        for trace in traces
+    ]
+
+    assert signatures[0] == signatures[1]
+
+
+def test_signature_distinguishes_exception_type_and_top_frame(client):
+    base = "\n\tat com.darius.listmanager.SyncWorker.run(SyncWorker.kt:42)"
+    runtime = client.post(
+        "/api/crashes", json={"stacktrace": "java.lang.RuntimeException: x" + base}
+    ).json()["signature"]
+    illegal = client.post(
+        "/api/crashes", json={"stacktrace": "java.lang.IllegalStateException: x" + base}
+    ).json()["signature"]
+    other_frame = client.post(
+        "/api/crashes",
+        json={
+            "stacktrace": "java.lang.RuntimeException: x\n"
+            "\tat com.darius.listmanager.HomeScreen.render(HomeScreen.kt:42)"
+        },
+    ).json()["signature"]
+
+    assert len({runtime, illegal, other_frame}) == 3
+
+
+def test_grouped_crashes_require_admin(client, auth_headers):
+    anonymous = client.get("/api/admin/crashes/groups")
+    regular_user = client.get("/api/admin/crashes/groups", headers=auth_headers)
+
+    assert anonymous.status_code in (
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+    )
+    assert regular_user.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_grouped_crashes_return_aggregate_and_instances(client, admin_headers):
+    common_frame = "\tat com.darius.listmanager.SyncWorker.run(SyncWorker.kt:{line})"
+    reports = [
+        {
+            "stacktrace": "java.lang.RuntimeException: one\n" + common_frame.format(line=10),
+            "app_version": "2.0",
+            "device": "Samsung S25",
+        },
+        {
+            "stacktrace": "java.lang.RuntimeException: two\n" + common_frame.format(line=99),
+            "app_version": "2.1",
+            "device": "Samsung S25",
+        },
+        {
+            "stacktrace": (
+                "java.lang.IllegalStateException: separate\n"
+                + common_frame.format(line=10)
+            ),
+            "app_version": "2.1",
+            "device": "Pixel 9",
+        },
+    ]
+    for report in reports:
+        assert client.post("/api/crashes", json=report).status_code == status.HTTP_200_OK
+
+    response = client.get("/api/admin/crashes/groups", headers=admin_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    groups = response.json()
+    assert [group["count"] for group in groups] == [2, 1]
+    repeated = groups[0]
+    assert repeated["signature"] == repeated["reports"][0]["signature"]
+    assert repeated["affected_users"] == 1
+    assert repeated["triage_score"] == 2
+    assert repeated["app_versions"] == ["2.0", "2.1"]
+    assert repeated["devices"] == ["Samsung S25"]
+    assert len(repeated["reports"]) == 2
+    assert repeated["first_seen"] <= repeated["last_seen"]
+
+
+def test_grouped_crashes_rank_by_count_times_affected_users(client, admin_headers):
+    frequent = "java.lang.RuntimeException: frequent\n\tat app.Frequent.run(F.kt:1)"
+    widespread = "java.lang.IllegalStateException: widespread\n\tat app.Wide.run(W.kt:1)"
+    for _ in range(3):
+        client.post(
+            "/api/crashes",
+            json={"stacktrace": frequent, "username": "same-user"},
+        )
+    for username in ("user-a", "user-b"):
+        client.post(
+            "/api/crashes",
+            json={"stacktrace": widespread, "username": username},
+        )
+
+    groups = client.get("/api/admin/crashes/groups", headers=admin_headers).json()
+
+    assert [(group["count"], group["affected_users"], group["triage_score"]) for group in groups] == [
+        (2, 2, 4),
+        (3, 1, 3),
+    ]

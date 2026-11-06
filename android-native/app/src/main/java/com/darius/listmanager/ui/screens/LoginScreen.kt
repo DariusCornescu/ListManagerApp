@@ -29,6 +29,19 @@ import com.darius.listmanager.ui.components.AppPrimaryButton
 import com.darius.listmanager.ui.components.AppTextField
 import com.darius.listmanager.ui.viewmodel.AuthViewModel
 
+internal fun isAuthSubmitEnabled(
+    isRegisterMode: Boolean,
+    username: String,
+    email: String,
+    password: String,
+    confirmPassword: String
+): Boolean = username.isNotBlank() && password.isNotBlank() &&
+    (!isRegisterMode || (
+        email.isNotBlank() &&
+            confirmPassword.isNotBlank() &&
+            password == confirmPassword
+        ))
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LoginScreen(
@@ -142,23 +155,31 @@ fun LoginScreen(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            // Email (both login and register mode)
-            AppTextField(
-                value = email,
-                onValueChange = { email = it },
-                label = "Email",
-                enabled = !uiState.isLoading,
-                keyboardType = KeyboardType.Email,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = KeyboardType.Email,
-                    imeAction = ImeAction.Next
-                ),
-                keyboardActions = KeyboardActions(
-                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
-                )
-            )
+            // Email is required only when creating an account. Login uses username + password.
+            AnimatedVisibility(
+                visible = isRegisterMode,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Column {
+                    AppTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = "Email",
+                        enabled = !uiState.isLoading,
+                        keyboardType = KeyboardType.Email,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                        )
+                    )
 
-            Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
+                }
+            }
 
             // Password
             AppTextField(
@@ -279,9 +300,13 @@ fun LoginScreen(
                 text = if (isRegisterMode) "Create account" else "Sign in",
                 onClick = { submit() },
                 loading = uiState.isLoading,
-                enabled = username.isNotBlank() && password.isNotBlank() &&
-                    email.isNotBlank() &&
-                    (!isRegisterMode || (confirmPassword.isNotBlank() && password == confirmPassword))
+                enabled = isAuthSubmitEnabled(
+                    isRegisterMode = isRegisterMode,
+                    username = username,
+                    email = email,
+                    password = password,
+                    confirmPassword = confirmPassword
+                )
             )
 
             Spacer(modifier = Modifier.height(16.dp))

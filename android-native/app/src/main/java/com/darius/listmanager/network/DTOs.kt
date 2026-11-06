@@ -6,16 +6,17 @@ data class DistributorCreate( val distributor_name: String )
 data class ProductCreate( val name: String, val distributor_id: Long, val aliases: String?)
 
 data class LoginRequest( val username: String, val password: String )
-data class LoginResponse( val access_token: String, val token_type: String )
-data class UpdateUserRequest( val email: String? = null, val password: String? = null )
-data class GlobalSessionDTO( val id: Long, val name: String, val is_active: Boolean, val created_at: String, val completed_at: String?, val version: Int, val owner_user_id: Long?, val team_id: Long? )
+data class LoginResponse( val access_token: String, val token_type: String, val refresh_token: String? = null )
+data class RefreshTokenRequest( val refresh_token: String )
+data class UpdateUserRequest( val email: String? = null, val password: String? = null, val full_name: String? = null, val company: String? = null, val address: String? = null )
+data class GlobalSessionDTO( val id: Long, val name: String, val is_active: Boolean, val created_at: String, val completed_at: String?, val version: Int, val owner_user_id: Long?, val team_id: Long?, val client_uuid: String? = null )
 data class GlobalSessionItemDTO( val id: Long, val session_id: Long, val product_id: Long, val quantity: Int, val version: Int, val created_at: String, val updated_at: String, val product_name: String?, val distributor_name: String?)
-data class UserDTO( val id: Long, val username: String, val email: String, val role: String, val is_active: Boolean )
+data class UserDTO( val id: Long, val username: String, val email: String, val role: String, val is_active: Boolean, val full_name: String? = null, val company: String? = null, val address: String? = null )
 data class StatsDTO( val distributors_count: Int, val products_count: Int, val sessions_count: Int, val active_sessions_count: Int, val total_session_items: Int, val active_session: ActiveSessionInfo? )
 
-data class CreateSessionRequest( val name: String, val team_id: Long? = null )
-data class AddItemRequest( val product_id: Long, val quantity: Int )
-data class UpdateItemRequest( val quantity: Int, val version: Int )
+data class CreateSessionRequest( val name: String, val team_id: Long? = null, val client_uuid: String? = null )
+data class AddItemRequest( val product_id: Long, val quantity: Int, val idempotency_key: String? = null )
+data class UpdateItemRequest( val quantity: Int, val version: Int, val idempotency_key: String? = null )
 data class CompleteSessionResponse( val session: GlobalSessionDTO, val items_by_distributor: Map<String, List<GlobalSessionItemDTO>>, val distributor_count: Int, val total_items: Int )
 
 data class ActiveSessionInfo( val id: Long, val name: String, val items_count: Int, val created_at: String )
@@ -31,6 +32,7 @@ data class InviteDTO( val code: String, val expires_at: String, val role: String
 
 // ===== Crash reporting =====
 data class CrashReportRequest(
+    val event_id: String?,
     val app_version: String?,
     val android_version: String?,
     val device: String?,
@@ -40,3 +42,10 @@ data class CrashReportRequest(
 
 // ===== Presence =====
 data class PresenceUserDTO( val user_id: Long, val username: String )
+
+// ===== Inventory =====
+data class InventoryItemDTO( val id: Long, val inventory_id: Long, val item_uuid: String, val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long?, val version: Int, val deleted: Boolean = false )
+data class InventoryDTO( val id: Long, val owner_user_id: Long?, val team_id: Long?, val items: List<InventoryItemDTO> )
+data class InventoryItemCreate( val item_uuid: String, val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long? )
+data class InventoryItemUpdate( val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long?, val version: Int, val idempotency_key: String )
+data class InventoryClearRequest( val idempotency_key: String )

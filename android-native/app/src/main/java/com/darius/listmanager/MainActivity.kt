@@ -12,6 +12,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.websocket.WebSocketService
+import com.darius.listmanager.data.workspace.InventoryEvents
 import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.data.websocket.WebSocketMessage
 import com.darius.listmanager.data.websocket.WebSocketState
@@ -49,7 +50,8 @@ class MainActivity : ComponentActivity() {
             val authPrefs = getSharedPreferences("auth", 0)
             com.darius.listmanager.data.repository.AuthState.setLoggedIn(
                 true,
-                authPrefs.getString("saved_username", null)
+                authPrefs.getString("saved_username", null),
+                syncService.getAuthenticatedUserId(),
             )
             // Last-known role so role-gated UI (catalog editing) works offline
             // too; the server refresh overwrites it as soon as we're reachable.
@@ -69,6 +71,9 @@ class MainActivity : ComponentActivity() {
             webSocketService.disconnect()
             com.darius.listmanager.data.repository.AuthState.notifySessionExpired()
         }
+
+        // A refresh on a cold start may follow a socket refused for its expired token.
+        RetrofitClient.onTokenRefreshed = { token -> webSocketService.connect(token) }
 
         SyncWorkManager.initialize(applicationContext)
         Log.d(TAG, "SyncWorkManager initialized")
@@ -168,6 +173,8 @@ class MainActivity : ComponentActivity() {
                         completeLocalSession(message.sessionId)
                     }
 
+                    is WebSocketMessage.InventoryChanged -> InventoryEvents.requestRefresh()
+
                     is WebSocketMessage.SessionCreated -> {
                         Log.d(TAG, "WS: Session created - ${message.sessionName}")
                         SessionEvents.requestRefresh()
@@ -242,40 +249,29 @@ class MainActivity : ComponentActivity() {
     // ===== SESSION ITEM UPDATE FUNCTIONS FOR WEBSOCKET =====
     
     private fun updateLocalSessionItem(sessionId: Long, itemId: Long, productId: Long, quantity: Int, version: Int) {
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    val entity = SessionItemEntity(
-                        id = itemId,
-                        sessionId = sessionId,
-                        productId = productId,
-                        quantity = quantity,
-                        // Preserve the server's optimistic-lock version; REPLACE
-                        // insert would otherwise reset it to the default (1).
-                        version = version
-                    )
-                    database.sessionItemDao().insert(entity)
-                    Log.d(TAG, "Local DB: Upserted session item $itemId (product $productId, qty $quantity)")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to update local session item: ${e.message}", e)
-                }
-            }
-        }
+        refreshSessionItems(sessionId)
     }
-    
+
     private fun deleteLocalSessionItem(itemId: Long) {
         lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    database.sessionItemDao().deleteById(itemId)
-                    Log.d(TAG, "Local DB: Deleted session item $itemId")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to delete local session item: ${e.message}", e)
+            database.sessionItemDao().getById(itemId)?.let { refreshSessionItems(it.sessionId) }
+        }
+    }
+
+    private fun refreshSessionItems(sessionId: Long) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                com.darius.listmanager.data.workspace.SessionSnapshotStore(database).refresh(sessionId) {
+                    com.darius.listmanager.network.RetrofitClient.api.getSessionItems(sessionId)
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Session refresh deferred", e)
             }
         }
     }
-    
+
     private fun completeLocalSession(sessionId: Long) {
         lifecycleScope.launch {
             withContext(Dispatchers.IO) {
@@ -293,18 +289,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun clearLocalSession(sessionId: Long) {
-        lifecycleScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    database.sessionItemDao().deleteAllInSession(sessionId)
-                    Log.d(TAG, "Local DB: Cleared all items from session $sessionId")
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to clear local session: ${e.message}", e)
-                }
-            }
-        }
+        refreshSessionItems(sessionId)
     }
-    
+
     private fun getAuthToken(): String? {        
         return syncService.getAuthToken()
     }

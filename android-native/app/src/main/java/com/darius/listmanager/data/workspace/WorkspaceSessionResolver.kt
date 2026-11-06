@@ -1,14 +1,18 @@
 package com.darius.listmanager.data.workspace
 
-import android.database.sqlite.SQLiteConstraintException
 import android.util.Log
 import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
-import com.darius.listmanager.data.local.entity.SessionItemEntity
+import com.darius.listmanager.data.local.entity.DistributorEntity
+import com.darius.listmanager.data.local.entity.ProductEntity
+import com.darius.listmanager.data.local.entity.SessionEntity
+import com.darius.listmanager.data.model.OperationData
+import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.network.CreateSessionRequest
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
 import java.io.IOException
+import kotlinx.serialization.json.Json
 
 /**
  * Resolves the SERVER active session for a workspace and mirrors it into Room
@@ -22,6 +26,7 @@ import java.io.IOException
 class WorkspaceSessionResolver(
     private val database: AppDatabase,
     private val api: ListManagerApi = RetrofitClient.api,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
 ) {
     sealed class ResolveResult {
         data class Resolved(val sessionId: Long) : ResolveResult()
@@ -32,6 +37,17 @@ class WorkspaceSessionResolver(
 
     suspend fun resolve(workspace: Workspace): ResolveResult {
         val teamId = workspace.teamIdOrNull
+        val accountUserId = currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID
+        val hasOfflineCreation = database.pendingOperationDao()
+            .getUnfinishedForUser(accountUserId)
+            .any { operation ->
+                val data = runCatching {
+                    Json { ignoreUnknownKeys = true }
+                        .decodeFromString<OperationData>(operation.operationData)
+                }.getOrNull()
+                data is OperationData.CreateSession && data.teamId == teamId
+            }
+        if (hasOfflineCreation) return ResolveResult.Offline
         return try {
             var response = api.getActiveSession(teamId)
 
@@ -49,7 +65,11 @@ class WorkspaceSessionResolver(
                         return ResolveResult.Offline
                     }
                     database.sessionDao().activateServerSession(
-                        serverId = dto.id, name = dto.name, teamId = teamId
+                        serverId = dto.id,
+                        name = dto.name,
+                        accountUserId = accountUserId,
+                        teamId = teamId,
+                        clientUuid = dto.client_uuid,
                     )
                     pullItems(dto.id)
                     ResolveResult.Resolved(dto.id)
@@ -70,33 +90,15 @@ class WorkspaceSessionResolver(
         }
     }
 
-    /** Replace local items with the server's (server is source of truth when online). */
+    /** Refresh only when no local session intent would be overwritten. */
     private suspend fun pullItems(sessionId: Long) {
         try {
-            val response = api.getSessionItems(sessionId)
-            if (response.isSuccessful) {
-                val dao = database.sessionItemDao()
-                database.withTransaction {
-                    dao.deleteAllInSession(sessionId)
-                    response.body().orEmpty().forEach { item ->
-                        try {
-                            dao.insert(
-                                SessionItemEntity(
-                                    id = item.id,
-                                    sessionId = sessionId,
-                                    productId = item.product_id,
-                                    quantity = item.quantity,
-                                    version = item.version,
-                                )
-                            )
-                        } catch (e: SQLiteConstraintException) {
-                            // Product not yet in local catalog — skip and keep going.
-                            Log.w(TAG, "skipping item ${item.id}: product ${item.product_id} not in local catalog")
-                        }
-                    }
-                }
-            } else {
-                Log.w(TAG, "getSessionItems returned HTTP ${response.code()}; keeping cached items")
+            if (!refreshCatalog()) {
+                Log.w(TAG, "catalog refresh failed; keeping cached session items")
+                return
+            }
+            SessionSnapshotStore(database, currentUserId).refresh(sessionId) {
+                api.getSessionItems(sessionId)
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -105,6 +107,34 @@ class WorkspaceSessionResolver(
         } catch (e: Exception) {
             Log.e(TAG, "pullItems failed: ${e.javaClass.simpleName}")
         }
+    }
+
+    /** Session items reference products, which reference distributors. A fresh
+     * install must cache those parents before Room can accept the item rows. */
+    private suspend fun refreshCatalog(): Boolean {
+        val distributorResponse = api.getDistributors()
+        val productResponse = api.getProducts()
+        val distributors = distributorResponse.body()
+        val products = productResponse.body()
+        if (!distributorResponse.isSuccessful || distributors == null ||
+            !productResponse.isSuccessful || products == null
+        ) {
+            return false
+        }
+        database.withTransaction {
+            database.distributorDao().insertAll(distributors.map {
+                DistributorEntity(id = it.id, distributorName = it.distributor_name)
+            })
+            database.productDao().insertAll(products.map {
+                ProductEntity(
+                    id = it.id,
+                    name = it.name,
+                    distributorId = it.distributor_id,
+                    aliases = it.aliases,
+                )
+            })
+        }
+        return true
     }
 
     private companion object { const val TAG = "WorkspaceSessionResolver" }

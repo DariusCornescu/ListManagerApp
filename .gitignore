@@ -19,6 +19,8 @@ Thumbs.db
 # ===== Build Artifacts =====
 build/
 dist/
+__pycache__/
+*.py[cod]
 *.apk
 *.aab
 *.ipa

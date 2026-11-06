@@ -77,6 +77,7 @@ fun InventoryScreen(
                     IconButton(onClick = onBack) { Icon(Icons.Rounded.ArrowBack, "Back") }
                 },
                 actions = {
+                    com.darius.listmanager.ui.components.SaveStateChip()
                     IconButton(onClick = { showClearConfirm = true }) {
                         Icon(Icons.Rounded.DeleteSweep, "Listă nouă")
                     }
@@ -122,7 +123,7 @@ fun InventoryScreen(
                         InventoryRow(
                             item = item,
                             onClick = { editingItem = item },
-                            onDelete = { viewModel.deleteItem(item.id) }
+                            onDelete = { viewModel.deleteItem(item) }
                         )
                         HorizontalDivider()
                     }

@@ -16,10 +16,19 @@ class Settings(BaseSettings):
 
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+    # A used refresh token may be presented again for this long, because the phone
+    # may never have received its successor on a flaky shop network.
+    REFRESH_REUSE_GRACE_SECONDS: int = 300
 
     DATABASE_URL: str = "sqlite:///./listmanager.db"
 
     RATE_LIMIT_ENABLED: bool = True
+
+    # Comma-separated browser origins allowed by CORS, e.g.
+    # "https://app.example.com,http://localhost:5000". Empty means no browser
+    # origin is allowed; native mobile clients are unaffected by CORS.
+    CORS_ORIGINS: str = ""
 
     # ===== Speech transcription (server-side, audio -> text only) =====
     # Groq API key for the OpenAI-compatible transcription endpoint. Optional:
@@ -39,6 +48,14 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+
+def parse_cors_origins(raw: str) -> list[str]:
+    """Split the comma-separated setting, refusing the "*" wildcard."""
+    origins = [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
+    if "*" in origins:
+        raise ValueError("CORS_ORIGINS must list explicit origins, not '*'")
+    return origins
 
 
 # Singleton settings instance. Importing this module with no SECRET_KEY set

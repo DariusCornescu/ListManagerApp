@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.rememberNavController
 import com.darius.listmanager.data.repository.AuthState
+import com.darius.listmanager.network.AuthTokenStore
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.data.websocket.WebSocketState
@@ -20,6 +21,7 @@ import com.darius.listmanager.sync.SyncWorkManager
 import com.darius.listmanager.ui.components.DrawerContent
 import com.darius.listmanager.ui.navigation.NavGraph
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.flowOf
 
 class ListManagerApp : Application() {
     override fun onCreate() {
@@ -43,8 +45,16 @@ class ListManagerApp : Application() {
         // stays logged in across app restarts. Without this, the token lives only
         // in encrypted prefs; RetrofitClient starts null, authenticated calls go
         // out without a Bearer header -> 401 -> forced re-login.
-        SyncService(this).getAuthToken()?.let { token ->
+        val tokenService = SyncService(this)
+        RetrofitClient.tokenStore = object : AuthTokenStore {
+            override fun accessToken() = tokenService.getAuthToken()
+            override fun refreshToken() = tokenService.getRefreshToken()
+            override fun saveTokens(accessToken: String, refreshToken: String) =
+                tokenService.saveRotatedTokens(accessToken, refreshToken)
+        }
+        tokenService.getAuthToken()?.let { token ->
             RetrofitClient.setAuthToken(token)
+            tokenService.getAuthenticatedUserId()?.let(AuthState::setUserId)
             Log.d("ListManagerApp", "Restored saved auth token")
         }
 
@@ -87,7 +97,12 @@ fun AppContent() {
 
     // Get pending operations count from database
     val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
-    val pendingCount by database.pendingOperationDao().getPendingCountFlow().collectAsState(initial = 0)
+    val accountUserId by AuthState.userId.collectAsState()
+    val pendingCountFlow = remember(accountUserId) {
+        accountUserId?.let { database.pendingOperationDao().getPendingCountFlowForUser(it) }
+            ?: flowOf(0)
+    }
+    val pendingCount by pendingCountFlow.collectAsState(initial = 0)
     
     // ===== OBSERVABLE LOGIN STATE (single source of truth, no disk polling) =====
     val isLoggedIn by AuthState.isLoggedIn.collectAsState()
@@ -134,6 +149,12 @@ fun AppContent() {
                 Log.d("AppContent", "Presence refresh failed: ${e.message}")
             }
         }
+    }
+
+    // Queued work and a live connection are both reasons to replay now. The network
+    // constraint holds the request until a connection exists; KEEP removes duplicates.
+    LaunchedEffect(pendingCount, webSocketState is WebSocketState.Connected, isLoggedIn) {
+        if (isLoggedIn && pendingCount > 0) SyncWorker.scheduleImmediateSync(context)
     }
 
     // Decide where to start once, based on the persisted token at first composition.

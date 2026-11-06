@@ -15,6 +15,8 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SensitiveLog
+import com.darius.listmanager.util.SpokenQuantity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,7 +38,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val database = AppDatabase.getInstance(application)
     private val pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao())
     private val productRepository = ProductRepository( database.productDao(), pendingOperationRepository, application.applicationContext, RetrofitClient.api )
-    private val sessionRepository = SessionRepository( database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository )
+    private val sessionRepository = SessionRepository(
+        database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepository,
+        transaction = com.darius.listmanager.data.repository.SessionTransaction.room(database),
+    )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val embeddingModel = EmbeddingModel.getInstance(application)
@@ -104,7 +109,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(isProcessing = true)
 
             try {
-                Log.d(TAG, "Processing spoken text: '$spokenText' (+${alternatives.size} alternatives)")
+                SensitiveLog.d(TAG, "Processing spoken result (+${alternatives.size} alternatives)") {
+                    "Processing spoken text: '$spokenText' (+${alternatives.size} alternatives)"
+                }
 
                 // Segment the utterance so several products said in one breath
                 // ("lalele pâine albă ouă") are each matched and added. Recognizer
@@ -122,12 +129,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 for ((segment, result) in results) {
                     when (result) {
                         is ResolveResult.AutoAdd -> {
-                            Log.d(TAG, "AutoAdd: ${result.product.name} (score: ${result.score})")
-                            addProductUseCase.execute(session.id, result.product.id, 1)
+                            SensitiveLog.d(TAG, "AutoAdd accepted (score: ${result.score})") {
+                                "AutoAdd: ${result.product.name} (score: ${result.score})"
+                            }
+                            addProductUseCase.execute(
+                                session.id,
+                                result.product.id,
+                                SpokenQuantity.from(segment)
+                            )
                             added++
                         }
                         is ResolveResult.Suggestions -> {
-                            Log.d(TAG, "Ambiguous -> needs review: '$segment'")
+                            SensitiveLog.d(TAG, "Ambiguous result queued for review") {
+                                "Ambiguous -> needs review: '$segment'"
+                            }
                             needsReviewRepository.insert(
                                 spokenText = segment,
                                 sessionId = session.id,
@@ -136,7 +151,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                             review++
                         }
                         is ResolveResult.Unknown -> {
-                            Log.d(TAG, "Unknown: '${result.spokenText}'")
+                            SensitiveLog.d(TAG, "Unknown result stored") {
+                                "Unknown: '${result.spokenText}'"
+                            }
                             unknownRepository.insert(result.spokenText)
                             unknown++
                         }

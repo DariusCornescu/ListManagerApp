@@ -9,25 +9,27 @@ import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.model.OperationType
 import com.darius.listmanager.data.model.ResourceType
-import com.darius.listmanager.network.AddItemRequest
+import com.darius.listmanager.data.model.withOperationIdentity
+import com.darius.listmanager.network.SessionItemOperationSender
 import com.darius.listmanager.network.GlobalSessionItemDTO
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
-import com.darius.listmanager.network.UpdateItemRequest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.IOException
+import java.util.UUID
 
 /**
  * Room is the local source of truth (instant UI); item mutations are then
  * written through to the server so other devices see them (WS fan-out).
  *
  * - Sessions/items with POSITIVE ids are server-mirrored → write through.
- * - NEGATIVE ids are local offline fallbacks → local-only (no network, no queue).
- * - Offline (IOException) → enqueue a pending op for SyncService replay.
- * - Other failures (409/404/5xx/parse) → log and rely on WS/pull self-heal.
+ * - NEGATIVE ids are local offline fallbacks whose writes wait behind CREATE_SESSION.
+ * - Adds/updates persist an operation together with the local edit BEFORE sending.
+ * - A successful response atomically updates Room and acknowledges the operation.
+ * - Deletes/clears also persist before sending; ambiguous clears require review.
+ * - Later edits and completion queue behind unresolved writes.
  *
  * Item mutations are serialized through [mutex] so two rapid taps can't both
  * capture the same optimistic-lock version (the second would silently 409).
@@ -36,44 +38,118 @@ class SessionRepository(
     private val sessionDao: SessionDao,
     private val sessionItemDao: SessionItemDao,
     private val api: ListManagerApi = RetrofitClient.api,
-    private val pendingOps: PendingOperationRepository? = null,
+    private val pendingOps: PendingOperationRepository,
+    private val transaction: SessionTransaction,
+    private val currentUserId: () -> Long? = { AuthState.userId.value },
 ) {
-    private val mutex = Mutex()
+    private val mutex = SessionWriteCoordinator.mutex
+    private val itemSender = SessionItemOperationSender(api)
 
-    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> = sessionDao.getActiveSessionFlow(teamId)
+    private fun accountScope(): Long =
+        currentUserId() ?: SessionEntity.GUEST_ACCOUNT_ID
 
-    suspend fun getActiveSession(teamId: Long?): SessionEntity? = sessionDao.getActiveSession(teamId)
+    fun getActiveSessionFlow(teamId: Long?): Flow<SessionEntity?> =
+        sessionDao.getActiveSessionFlow(accountScope(), teamId)
 
-    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity {
-        return sessionDao.getOrCreateActiveSession(teamId)
+    suspend fun getActiveSession(teamId: Long?): SessionEntity? =
+        sessionDao.getActiveSession(accountScope(), teamId)
+
+    suspend fun getOrCreateActiveSession(teamId: Long?): SessionEntity = mutex.withLock {
+        var resolved: SessionEntity? = null
+        transaction.run {
+            val accountUserId = accountScope()
+            var session = sessionDao.getActiveSession(accountUserId, teamId)
+                ?: sessionDao.getOrCreateActiveSession(
+                    accountUserId,
+                    teamId,
+                    UUID.randomUUID().toString(),
+                )
+
+            if (session.id < 0) {
+                val clientUuid = session.clientUuid ?: UUID.randomUUID().toString()
+                if (session.clientUuid == null) {
+                    session = session.copy(clientUuid = clientUuid)
+                    sessionDao.update(session)
+                }
+                val alreadyQueued = pendingOps.getUnfinished().any {
+                    it.operationType == OperationType.CREATE_SESSION.name &&
+                        it.resourceId == session.id
+                }
+                if (!alreadyQueued) {
+                    val hadPreviousWork = pendingOps.getUnfinished().isNotEmpty()
+                    val createId = pendingOps.queueOperation(
+                        OperationType.CREATE_SESSION,
+                        ResourceType.SESSION,
+                        session.id,
+                        OperationData.CreateSession(
+                            localSessionId = session.id,
+                            clientUuid = clientUuid,
+                            name = session.name,
+                            teamId = session.teamId,
+                        ),
+                    )
+                    if (hadPreviousWork) pendingOps.markAsWaiting(createId)
+
+                    // Version-8 and older offline sessions had local rows but
+                    // no durable item intents. Seed them behind CREATE_SESSION.
+                    sessionItemDao.getItems(session.id).forEach { item ->
+                        val addId = pendingOps.queueOperation(
+                            OperationType.ADD_SESSION_ITEM,
+                            ResourceType.SESSION_ITEM,
+                            item.id,
+                            OperationData.AddSessionItem(
+                                session.id,
+                                item.productId,
+                                item.quantity,
+                            ),
+                        )
+                        pendingOps.markAsWaiting(addId)
+                    }
+                }
+            }
+            resolved = session
+        }
+        requireNotNull(resolved)
     }
 
     suspend fun activateServerSession(serverId: Long, name: String, teamId: Long?) {
-        sessionDao.activateServerSession(serverId, name, teamId)
+        sessionDao.activateServerSession(serverId, name, accountScope(), teamId)
     }
 
     suspend fun getSessionById(id: Long): SessionEntity? = sessionDao.getById(id)
 
     suspend fun completeSession(sessionId: Long) = sessionDao.completeSession(sessionId)
 
-    /**
-     * Complete the session locally AND on the server. No pending op on
-     * IOException — SyncService has no COMPLETE_SESSION handler.
-     */
+    /** Complete locally and persist an idempotent completion intent first. */
     suspend fun completeSessionWriteThrough(sessionId: Long) = mutex.withLock {
-        sessionDao.completeSession(sessionId)
-        if (sessionId <= 0) return@withLock
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || sessionId <= 0
+        var operationId = 0L
+        transaction.run {
+            sessionDao.completeSession(sessionId)
+            operationId = pendingOps.queueOperation(
+                OperationType.COMPLETE_SESSION,
+                ResourceType.SESSION,
+                sessionId,
+                OperationData.CompleteSession(sessionId),
+            )
+            if (waiting) pendingOps.markAsWaiting(operationId)
+        }
+        if (waiting) return@withLock
+
+        pendingOps.markAsInProgress(operationId)
         try {
             val response = api.completeSession(sessionId)
-            if (!response.isSuccessful) Log.w(TAG, "completeSession HTTP ${response.code()}")
+            if (response.isSuccessful) {
+                pendingOps.deleteById(operationId)
+            } else if (response.code() == 408 || response.code() == 429 || response.code() >= 500) {
+                pendingOps.markAsFailed(operationId, "Server returned ${response.code()}")
+            } else {
+                pendingOps.holdForReview(operationId, "Server returned ${response.code()}; review required")
+            }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            // Offline completion stays local-only: the server session remains
-            // active and the next resolve restores it (documented edge).
-            Log.w(TAG, "completeSession offline; server session still active")
         } catch (e: Exception) {
-            Log.w(TAG, "completeSession failed", e)
+            pendingOps.markAsFailed(operationId, e.message ?: "Network failure")
         }
     }
 
@@ -87,132 +163,136 @@ class SessionRepository(
     }
 
     suspend fun addOrIncrementItem(sessionId: Long, productId: Long, quantity: Int = 1) = mutex.withLock {
-        sessionItemDao.addOrIncrement(sessionId, productId, quantity)
-        if (sessionId <= 0) return@withLock
-        try {
-            val response = api.addSessionItem(sessionId, AddItemRequest(product_id = productId, quantity = quantity))
-            val dto = response.body()
-            if (response.isSuccessful && dto != null) {
-                upsertFromServer(dto)
-            } else if (!response.isSuccessful) {
-                Log.w(TAG, "addSessionItem HTTP ${response.code()}; relying on next pull")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            pendingOps?.queueOperation(
-                OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM, null,
-                OperationData.AddSessionItem(sessionId, productId, quantity)
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "addSessionItem failed", e)
+        val operation = OperationData.AddSessionItem(sessionId, productId, quantity).withOperationIdentity()
+        persistAndSend(operation, forceWaiting = sessionId < 0) {
+            sessionItemDao.addOrIncrement(sessionId, productId, quantity)
         }
     }
 
     suspend fun setItemQuantity(sessionId: Long, productId: Long, quantity: Int) = mutex.withLock {
-        // Capture pre-state BEFORE the local write: we need the server item id
-        // and optimistic-lock version of the row being changed.
         val existing = sessionItemDao.getItem(sessionId, productId)
-        sessionItemDao.setQuantity(sessionId, productId, quantity)
-        if (sessionId <= 0) return@withLock
-        try {
-            when {
-                quantity <= 0 && existing != null -> {
-                    val response = api.deleteSessionItem(existing.id)
-                    // 404 = already gone on the server: that's the state we want.
-                    if (!response.isSuccessful && response.code() != 404) {
-                        Log.w(TAG, "deleteSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                quantity > 0 && existing != null -> {
-                    val response = api.updateSessionItem(
-                        existing.id,
-                        UpdateItemRequest(quantity = quantity, version = existing.version)
-                    )
-                    val dto = response.body()
-                    if (response.isSuccessful && dto != null) {
-                        upsertFromServer(dto)
-                    } else if (!response.isSuccessful) {
-                        // 409 stale version / 404 gone — WS event or next pull self-heals.
-                        Log.w(TAG, "updateSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                existing == null && quantity > 0 -> {
-                    val response = api.addSessionItem(
-                        sessionId, AddItemRequest(product_id = productId, quantity = quantity)
-                    )
-                    val dto = response.body()
-                    if (response.isSuccessful && dto != null) {
-                        upsertFromServer(dto)
-                    } else if (!response.isSuccessful) {
-                        Log.w(TAG, "addSessionItem HTTP ${response.code()}; relying on next pull")
-                    }
-                }
-                // existing == null && quantity <= 0 → nothing to do anywhere.
+        if (quantity > 0) {
+            val operation = if (existing == null) {
+                OperationData.AddSessionItem(sessionId, productId, quantity)
+            } else {
+                OperationData.UpdateSessionItem(existing.id, quantity, existing.version)
+            }.withOperationIdentity()
+            persistAndSend(operation, forceWaiting = sessionId < 0) {
+                sessionItemDao.setQuantity(sessionId, productId, quantity)
             }
+            return@withLock
+        }
+        if (existing == null) return@withLock
+        persistRemoval(
+            OperationData.DeleteSessionItem(existing.id),
+            forceWaiting = sessionId < 0,
+        ) {
+            sessionItemDao.setQuantity(sessionId, productId, quantity)
+        }
+    }
+
+    private suspend fun persistAndSend(
+        operation: OperationData,
+        forceWaiting: Boolean = false,
+        localWrite: suspend () -> Unit,
+    ) {
+        var operationId = 0L
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || forceWaiting
+        transaction.run {
+            localWrite()
+            operationId = when (operation) {
+                is OperationData.AddSessionItem -> pendingOps.queueOperation(
+                    OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM,
+                    sessionItemDao.getItem(operation.sessionId, operation.productId)?.id, operation
+                )
+                is OperationData.UpdateSessionItem -> pendingOps.queueOperation(
+                    OperationType.UPDATE_SESSION_ITEM, ResourceType.SESSION_ITEM, operation.itemId, operation
+                )
+                else -> error("Not an item write")
+            }
+            if (waiting) pendingOps.markAsWaiting(operationId)
+        }
+        // WAITING explicitly proves this payload has never been sent.
+        if (waiting) return
+        // The transaction has committed before network I/O. A process death or
+        // cancellation cannot leave a local edit without its replayable intent.
+        try {
+            val response = itemSender.send(operation)
+            val dto = response.body()
+            if (response.isSuccessful && dto != null) {
+                transaction.run {
+                    upsertFromServer(dto)
+                    pendingOps.deleteById(operationId)
+                }
+            }
+            // Non-success (including 5xx), or an empty body: retain the outbox
+            // entry. Conflict/backoff policy is handled by the replay worker.
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            when {
-                quantity <= 0 && existing != null -> pendingOps?.queueOperation(
-                    OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, existing.id,
-                    OperationData.DeleteSessionItem(existing.id)
-                )
-                quantity > 0 && existing != null -> pendingOps?.queueOperation(
-                    OperationType.UPDATE_SESSION_ITEM, ResourceType.SESSION_ITEM, existing.id,
-                    OperationData.UpdateSessionItem(existing.id, quantity, existing.version)
-                )
-                existing == null && quantity > 0 -> pendingOps?.queueOperation(
-                    OperationType.ADD_SESSION_ITEM, ResourceType.SESSION_ITEM, null,
-                    OperationData.AddSessionItem(sessionId, productId, quantity)
-                )
-            }
+        } catch (_: IOException) {
+            // Includes a response lost AFTER server commit. Replay uses the
+            // already-persisted key, so it does not apply the mutation twice.
         } catch (e: Exception) {
-            Log.w(TAG, "setItemQuantity failed", e)
+            Log.w(TAG, "Item write remains queued", e)
         }
     }
 
     suspend fun deleteItem(itemId: Long) = mutex.withLock {
-        // Item rows always have positive autogenerated ids — even in negative-id
-        // (offline fallback) sessions — so the item id alone can't tell us
-        // whether the row is server-mirrored. Check its SESSION id instead.
-        val row = sessionItemDao.getById(itemId)
-        sessionItemDao.deleteById(itemId)
-        if (row == null || row.sessionId <= 0) return@withLock
-        try {
-            val response = api.deleteSessionItem(itemId)
-            if (!response.isSuccessful && response.code() != 404) {
-                Log.w(TAG, "deleteSessionItem HTTP ${response.code()}; relying on next pull")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: IOException) {
-            pendingOps?.queueOperation(
-                OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, itemId,
-                OperationData.DeleteSessionItem(itemId)
-            )
-        } catch (e: Exception) {
-            Log.w(TAG, "deleteSessionItem failed", e)
-        }
+        val row = sessionItemDao.getById(itemId) ?: return@withLock
+        persistRemoval(
+            OperationData.DeleteSessionItem(itemId),
+            forceWaiting = row.sessionId < 0,
+        ) { sessionItemDao.deleteById(itemId) }
     }
 
     suspend fun clearSession(sessionId: Long) = mutex.withLock {
-        sessionItemDao.deleteAllInSession(sessionId)
-        if (sessionId <= 0) return@withLock
+        persistRemoval(
+            OperationData.ClearSession(sessionId),
+            forceWaiting = sessionId < 0,
+        ) { sessionItemDao.deleteAllInSession(sessionId) }
+    }
+
+    private suspend fun persistRemoval(
+        operation: OperationData,
+        forceWaiting: Boolean = false,
+        localWrite: suspend () -> Unit,
+    ) {
+        var id = 0L
+        val waiting = pendingOps.getUnfinished().isNotEmpty() || forceWaiting
+        transaction.run {
+            localWrite()
+            id = when (operation) {
+                is OperationData.DeleteSessionItem -> pendingOps.queueOperation(
+                    OperationType.DELETE_SESSION_ITEM, ResourceType.SESSION_ITEM, operation.itemId, operation)
+                is OperationData.ClearSession -> pendingOps.queueOperation(
+                    OperationType.CLEAR_SESSION, ResourceType.SESSION, operation.sessionId, operation)
+                else -> error("Not a removal")
+            }
+            if (waiting) pendingOps.markAsWaiting(id)
+        }
+        if (waiting) return
+        // Unlike item DELETE, repeating CLEAR after a lost reply could delete
+        // newly added remote items. Leave ambiguous clears for review.
+        pendingOps.markAsInProgress(id)
         try {
-            val response = api.clearSession(sessionId)
-            if (!response.isSuccessful) {
-                Log.w(TAG, "clearSession HTTP ${response.code()}; relying on next pull")
+            val response = when (operation) {
+                is OperationData.DeleteSessionItem -> api.deleteSessionItem(operation.itemId)
+                is OperationData.ClearSession -> api.clearSession(operation.sessionId)
+                else -> error("Not a removal")
+            }
+            if (response.isSuccessful || (operation is OperationData.DeleteSessionItem && response.code() == 404)) {
+                pendingOps.deleteById(id)
+            } else if ((operation is OperationData.ClearSession && (response.code() == 408 || response.code() >= 500)) ||
+                (response.code() in 400..499 && response.code() !in listOf(401, 408, 429))) {
+                pendingOps.holdForReview(id, "Server returned ${response.code()}; review required")
+            } else {
+                pendingOps.markAsFailed(id, "Server returned ${response.code()}")
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (e: IOException) {
-            pendingOps?.queueOperation(
-                OperationType.CLEAR_SESSION, ResourceType.SESSION, sessionId,
-                OperationData.ClearSession(sessionId)
-            )
         } catch (e: Exception) {
-            Log.w(TAG, "clearSession failed", e)
+            if (operation is OperationData.ClearSession) pendingOps.holdForReview(id, "Clear outcome unknown; review server state")
+            else pendingOps.markAsFailed(id, e.message ?: "Network failure")
         }
     }
 

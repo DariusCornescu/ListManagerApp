@@ -103,6 +103,10 @@ class ConnectionManager:
         else:
             recipient_ids = set()
 
+        await self.send_to_users(message, recipient_ids)
+
+    async def send_to_users(self, message: dict, recipient_ids: set[int]):
+        """Send to every connection of the given users, and no one else."""
         for user_id in recipient_ids:
             connections = self.active_connections.get(user_id)
             if not connections:
@@ -112,6 +116,14 @@ class ConnectionManager:
                     await connection.send_json(message)
                 except Exception as e:
                     logger.error(f"Error broadcasting to user {user_id}: {e}")
+
+    async def close_user(self, user_id: int):
+        """Close a user's sockets after a revocation; each endpoint then cleans up after itself."""
+        for connection in list(self.active_connections.get(user_id, [])):
+            try:
+                await connection.close(code=4003, reason="Token revoked")
+            except Exception as e:
+                logger.error(f"Error closing socket of user {user_id}: {e}")
 
     def get_total_connections(self) -> int:
         """Get total number of active connections"""

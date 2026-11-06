@@ -12,8 +12,9 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 
+from app.crash_signatures import crash_signature
 from app.database import Base
 import app.models  # noqa: F401  (register all models on Base.metadata)
 
@@ -53,3 +54,95 @@ def test_migrations_downgrade_upgrade_roundtrip(tmp_path):
     command.upgrade(cfg, "head")
     command.downgrade(cfg, "base")
     command.upgrade(cfg, "head")
+
+
+def test_crash_signature_migration_backfills_existing_reports(tmp_path):
+    url = f"sqlite:///{tmp_path / 'crash-backfill.db'}"
+    cfg = _config_for(url)
+    command.upgrade(cfg, "9819cacf8390")
+    stacktrace = (
+        "java.lang.RuntimeException: old report\n"
+        "\tat com.darius.listmanager.MainActivity.onCreate(MainActivity.kt:42)"
+    )
+
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("INSERT INTO crash_reports (stacktrace) VALUES (:stacktrace)"),
+                {"stacktrace": stacktrace},
+            )
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            signature = conn.execute(
+                text("SELECT signature FROM crash_reports")
+            ).scalar_one()
+    finally:
+        engine.dispose()
+
+    assert signature == crash_signature(stacktrace)
+
+
+def test_session_sequence_migration_backfills_next_value(tmp_path):
+    url = f"sqlite:///{tmp_path / 'session-sequence-backfill.db'}"
+    cfg = _config_for(url)
+    command.upgrade(cfg, "d5e6f7a8b902")
+
+    engine = create_engine(url)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO users
+                        (username, email, hashed_password, role, is_active)
+                    VALUES
+                        ('sequence-owner', 'sequence@example.com', 'hash', 'USER', 1)
+                    """
+                )
+            )
+            owner_id = conn.execute(
+                text("SELECT id FROM users WHERE username = 'sequence-owner'")
+            ).scalar_one()
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO global_sessions
+                        (name, is_active, version, owner_user_id)
+                    VALUES
+                        ('Backfill', 1, 0, :owner_id)
+                    """
+                ),
+                {"owner_id": owner_id},
+            )
+            session_id = conn.execute(
+                text("SELECT id FROM global_sessions WHERE name = 'Backfill'")
+            ).scalar_one()
+            conn.execute(
+                text(
+                    """
+                    INSERT INTO session_ops (session_id, seq, op_type)
+                    VALUES (:session_id, 3, 'AddItem'),
+                           (:session_id, 7, 'ChangeQty')
+                    """
+                ),
+                {"session_id": session_id},
+            )
+
+        command.upgrade(cfg, "head")
+        with engine.connect() as conn:
+            next_op_seq = conn.execute(
+                text(
+                    "SELECT next_op_seq FROM global_sessions WHERE id = :session_id"
+                ),
+                {"session_id": session_id},
+            ).scalar_one()
+            unique_constraints = {
+                constraint["name"]
+                for constraint in inspect(conn).get_unique_constraints("session_ops")
+            }
+    finally:
+        engine.dispose()
+
+    assert next_op_seq == 8
+    assert "uq_session_ops_session_id_seq" in unique_constraints

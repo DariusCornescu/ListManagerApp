@@ -1,5 +1,6 @@
-# Render Blueprint — provisions a free Postgres database and the FastAPI web
-# service in one shot. Deploy via Render dashboard: New -> Blueprint -> connect
+# Render Blueprint — provisions a paid Postgres database and the FastAPI web
+# service in one shot. Free Postgres is deleted about 44 days after creation, so
+# do not use it here. Deploy via Render dashboard: New -> Blueprint -> connect
 # this repo. See DEPLOYMENT.md for the full guide.
 #
 # The service is named "listmanager-api" so its URL becomes
@@ -8,7 +9,10 @@
 
 databases:
   - name: listmanager-db
-    plan: free
+    plan: 0.1c-256mb
+    # Can only grow, and each GB is billed. Autoscaling stays off because crash
+    # ingest is anonymous and unbounded, so it could be used to inflate the bill.
+    diskSizeGB: 5
     databaseName: listmanager
     user: listmanager
 
@@ -16,7 +20,7 @@ services:
   - type: web
     name: listmanager-api
     runtime: python
-    plan: free
+    plan: 0.5c-512mb
     rootDir: backend-fastapi
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"

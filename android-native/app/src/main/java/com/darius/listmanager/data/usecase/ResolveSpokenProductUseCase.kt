@@ -6,6 +6,8 @@ import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SensitiveLog
+import com.darius.listmanager.util.SpokenQuantity
 import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.repository.ProductEmbeddingRepository
 import com.darius.listmanager.util.EmbeddingSearch
@@ -49,7 +51,31 @@ class ResolveSpokenProductUseCase(
         // Minimum fuzzy score for a word-window to be cut out as its own product
         // during multi-product segmentation. Tunable.
         private const val SEGMENT_THRESHOLD = 0.62
-        private const val SEGMENT_MAX_WINDOW = 4
+        private const val SEGMENT_MAX_WINDOW = 7
+
+        internal fun mergeAdjacentAutoAdds(
+            results: List<Pair<String, ResolveResult>>,
+        ): List<Pair<String, ResolveResult>> {
+            val merged = mutableListOf<Pair<String, ResolveResult>>()
+            for ((segment, result) in results) {
+                val previous = merged.lastOrNull()
+                val previousMatch = previous?.second as? ResolveResult.AutoAdd
+                val currentMatch = result as? ResolveResult.AutoAdd
+                val sameProduct = previousMatch != null && currentMatch != null &&
+                    previousMatch.product.id == currentMatch.product.id
+                if (sameProduct && !SpokenQuantity.hasExplicitPrefix(segment)) {
+                    val bestMatch = if (currentMatch.score > previousMatch.score) {
+                        currentMatch
+                    } else {
+                        previousMatch
+                    }
+                    merged[merged.lastIndex] = "${previous.first} $segment" to bestMatch
+                } else {
+                    merged += segment to result
+                }
+            }
+            return merged
+        }
     }
 
     /**
@@ -86,15 +112,18 @@ class ResolveSpokenProductUseCase(
             }.ifEmpty { listOf(spokenText) }
         }
 
-        android.util.Log.d("ResolveUseCase", "Segmented '$spokenText' -> $segments")
+        SensitiveLog.d("ResolveUseCase", "Segmented utterance into ${segments.size} part(s)") {
+            "Segmented '$spokenText' -> $segments"
+        }
         // N-best alternatives are alternate transcripts of the WHOLE utterance, so
         // they only align with a single-product utterance. When the phrase splits
         // into several products, resolve each segment on its own.
-        return if (segments.size == 1) {
+        val resolved = if (segments.size == 1) {
             listOf(segments.first() to execute(segments.first(), alternatives))
         } else {
             segments.map { segment -> segment to execute(segment) }
         }
+        return mergeAdjacentAutoAdds(resolved)
     }
 
     suspend fun execute(spokenText: String, alternatives: List<String> = emptyList()): ResolveResult {
@@ -106,12 +135,14 @@ class ResolveSpokenProductUseCase(
         // Blank/duplicate guesses are dropped; a single hypothesis reproduces the
         // old single-transcript behavior exactly.
         val hypotheses = (listOf(spokenText) + alternatives)
-            .map { it.trim() }
+            .map { SpokenQuantity.productText(it) }
             .filter { it.isNotEmpty() }
             .distinct()
 
         android.util.Log.d("ResolveUseCase", "=== Starting Resolution ===")
-        android.util.Log.d("ResolveUseCase", "Hypotheses: $hypotheses")
+        SensitiveLog.d("ResolveUseCase", "Prepared ${hypotheses.size} hypothesis/hypotheses") {
+            "Hypotheses: $hypotheses"
+        }
 
         // Step 1+2: gather FTS candidates for EVERY hypothesis (union), so the
         // right product can still be found when the top guess is garbled.
@@ -120,7 +151,9 @@ class ResolveSpokenProductUseCase(
             try {
                 productRepository.searchFtsRaw(ftsQuery)
             } catch (e: Exception) {
-                android.util.Log.e("ResolveUseCase", "FTS query failed for '$hypothesis': ${e.message}", e)
+                SensitiveLog.e("ResolveUseCase", "FTS query failed", e) {
+                    "FTS query failed for '$hypothesis': ${e.message}"
+                }
                 emptyList()
             }
         }.distinctBy { it.id }
@@ -168,7 +201,9 @@ class ResolveSpokenProductUseCase(
         android.util.Log.d("ResolveUseCase", "Ranked ${rankedProducts.size} products")
 
         rankedProducts.take(5).forEach {
-            android.util.Log.d("ResolveUseCase", "  ${it.product.name}: ${it.score}")
+            SensitiveLog.d("ResolveUseCase", "Candidate score: ${it.score}") {
+                "  ${it.product.name}: ${it.score}"
+            }
         }
 
         if (rankedProducts.isEmpty()) {
@@ -178,7 +213,9 @@ class ResolveSpokenProductUseCase(
 
         // Step 5: Make decision based on top score
         val topMatch = rankedProducts.first()
-        android.util.Log.d("ResolveUseCase", "Top match: ${topMatch.product.name} = ${topMatch.score}")
+        SensitiveLog.d("ResolveUseCase", "Top match score: ${topMatch.score}") {
+            "Top match: ${topMatch.product.name} = ${topMatch.score}"
+        }
 
         return when {
             topMatch.score >= AUTO_ADD_THRESHOLD -> {

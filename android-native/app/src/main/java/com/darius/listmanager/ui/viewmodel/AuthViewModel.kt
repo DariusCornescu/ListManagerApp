@@ -6,9 +6,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.data.workspace.WorkspaceManager
+import com.darius.listmanager.network.LoginRequest
+import com.darius.listmanager.network.RefreshTokenRequest
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.network.UpdateUserRequest
 import com.darius.listmanager.sync.SyncService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,6 +24,9 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val username: String? = null,
     val email: String? = null,
+    val fullName: String? = null,
+    val company: String? = null,
+    val address: String? = null,
     val role: String? = null,
     val error: String? = null,
     val registrationSuccess: Boolean = false,
@@ -27,6 +35,23 @@ data class AuthUiState(
     val isSavingProfile: Boolean = false,
     val profileMessage: String? = null
 )
+
+/** What the profile form holds; the password travels separately and is never stored. */
+data class ProfileInput(
+    val email: String,
+    val fullName: String,
+    val company: String,
+    val address: String,
+) {
+    /** A blank profile field is sent so the server clears it; a blank email or password means no change. */
+    fun toRequest(newPassword: String) = UpdateUserRequest(
+        email = email.trim().ifBlank { null },
+        password = newPassword.ifBlank { null },
+        full_name = fullName.trim(),
+        company = company.trim(),
+        address = address.trim(),
+    )
+}
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     
@@ -53,7 +78,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         if (token != null) {
             RetrofitClient.setAuthToken(token)
             val savedUsername = getSavedUsername()
-            AuthState.setLoggedIn(true, savedUsername)
+            AuthState.setLoggedIn(true, savedUsername, syncService.getAuthenticatedUserId())
             // Last-known role so role-gated UI works offline; guarded so a role
             // already loaded from the server this process is never overwritten.
             if (AuthState.role.value == null) {
@@ -89,6 +114,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     
                     // Save token
                     syncService.saveAuthToken(loginResponse.access_token)
+                    syncService.saveRefreshToken(loginResponse.refresh_token)
+                    syncService.clearAuthenticatedUserId()
                     saveUsername(username)
                     // A different account may be logging in — drop the previous
                     // account's role until loadCurrentUser() confirms the new one.
@@ -96,7 +123,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     
                     Log.d(TAG, "Login successful for: $username")
 
-                    AuthState.setLoggedIn(true, username)
+                    AuthState.setLoggedIn(true, username, userId = null)
 
                     _uiState.value = _uiState.value.copy(
                         isLoggedIn = true,
@@ -183,6 +210,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     }
     
     fun logout() {
+        revokeOnServer(syncService.getRefreshToken())
         syncService.clearAuthToken()
         clearSavedRole()
         AuthState.clear()
@@ -191,6 +219,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         WorkspaceManager.getInstance(getApplication()).fallbackToPersonal()
         _uiState.value = AuthUiState()
         Log.d(TAG, "User logged out")
+    }
+
+    /**
+     * Best effort, and outlives this ViewModel because logout navigates away. Offline
+     * the local logout still stands; the token then simply expires on the server.
+     */
+    private fun revokeOnServer(refreshToken: String?) {
+        if (refreshToken == null) return
+        CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+            runCatching { RetrofitClient.api.logout(RefreshTokenRequest(refreshToken)) }
+                .onFailure { Log.w(TAG, "Server logout failed") }
+        }
+    }
+
+    /**
+     * A password change revokes every token, including this device's. Signing straight
+     * back in with the new password keeps the user working here.
+     */
+    private suspend fun signBackIn(username: String, password: String) {
+        val response = RetrofitClient.api.login(LoginRequest(username, password))
+        val tokens = response.body()
+        if (response.isSuccessful && tokens != null) {
+            syncService.saveAuthToken(tokens.access_token)
+            syncService.saveRefreshToken(tokens.refresh_token)
+        }
     }
 
     fun clearError() {
@@ -207,6 +260,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 val response = RetrofitClient.api.getCurrentUser()
                 if (response.isSuccessful && response.body() != null) {
                     val user = response.body()!!
+                    AuthState.setUserId(user.id)
+                    syncService.saveAuthenticatedUserId(user.id)
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
                     saveUsername(user.username)
@@ -215,6 +270,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         isProfileLoading = false,
                         username = user.username,
                         email = user.email,
+                        fullName = user.full_name,
+                        company = user.company,
+                        address = user.address,
                         role = user.role
                     )
                     Log.d(TAG, "Loaded current user: ${user.username} (role=${user.role})")
@@ -229,20 +287,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Updates the current account. [email] and/or [newPassword] may be blank to leave unchanged.
-     */
-    fun updateProfile(email: String, newPassword: String) {
+    /** Updates the current account. A blank [newPassword] leaves the password unchanged. */
+    fun updateProfile(input: ProfileInput, newPassword: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSavingProfile = true, profileMessage = null)
             try {
-                val request = UpdateUserRequest(
-                    email = email.trim().ifBlank { null },
-                    password = newPassword.ifBlank { null }
-                )
-                val response = RetrofitClient.api.updateCurrentUser(request)
+                val response = RetrofitClient.api.updateCurrentUser(input.toRequest(newPassword))
                 if (response.isSuccessful && response.body() != null) {
                     val user = response.body()!!
+                    if (newPassword.isNotBlank()) signBackIn(user.username, newPassword)
                     AuthState.setRole(user.role)
                     AuthState.setUsername(user.username)
                     saveRole(user.role)
@@ -250,6 +303,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         isSavingProfile = false,
                         username = user.username,
                         email = user.email,
+                        fullName = user.full_name,
+                        company = user.company,
+                        address = user.address,
                         role = user.role,
                         profileMessage = "Profil actualizat cu succes"
                     )

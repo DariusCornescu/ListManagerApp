@@ -166,14 +166,12 @@ class InventoryLineParserTest {
     }
 
     @Test
-    fun numberWord_pinnedMisattribution() {
-        // "cinci" is not a digit token: it breaks the trailing region, the
-        // stranded "lei" is swallowed by the region scan, and "50" becomes the
-        // quantity. Pinned so a refactor can't silently change this mode.
+    fun numberWord_isReadAsAPrice() {
+        // "cinci lei 50" is a price said in words.
         val p = InventoryLineParser.parse("lapte cinci lei 50")!!
-        assertEquals("lapte cinci", p.nameText)
-        assertEquals(50.0, p.quantity!!, 0.0)
-        assertNull(p.priceBani)
+        assertEquals("lapte", p.nameText)
+        assertEquals(null, p.quantity)
+        assertEquals(550L, p.priceBani)
     }
 
     // ===== catalog-aware split (v1.1) =====
@@ -295,5 +293,27 @@ class InventoryLineParserTest {
     @Test
     fun parseMultiple_blankReturnsEmpty() {
         assertEquals(0, InventoryLineParser.parseMultiple("   ").size)
+    }
+
+    @Test
+    fun numberWord_followedByAPlainWord_staysInTheName() {
+        val p = InventoryLineParser.parse("cafea cinci stele")!!
+        assertEquals("cafea cinci stele", p.nameText)
+        assertNull(p.quantity)
+    }
+
+    @Test
+    fun wordThatAlsoMeansNew_staysInTheName() {
+        val p = InventoryLineParser.parse("pâine nouă")!!
+        assertEquals("pâine nouă", p.nameText)
+        assertNull(p.quantity)
+    }
+
+    @Test
+    fun compoundNumberWords_areOneAmount() {
+        val p = InventoryLineParser.parse("ouă douăzeci și cinci 3 lei")!!
+        assertEquals("ouă", p.nameText)
+        assertEquals(25.0, p.quantity!!, 0.0)
+        assertEquals(300L, p.priceBani)
     }
 }

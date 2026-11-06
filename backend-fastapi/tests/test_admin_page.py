@@ -8,3 +8,7 @@ def test_admin_page_served(client):
     body = resp.text
     assert "Catalog" in body
     assert "Import CSV" in body
+    assert "Distributors" in body
+    assert "Add / edit product" in body
+    assert "/api/admin/crashes/groups" in body
+    assert "Semnături de crash" in body

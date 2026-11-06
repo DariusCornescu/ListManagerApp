@@ -35,3 +35,36 @@ object ListeningLoopPolicy {
         }
     }
 }
+
+/**
+ * Gives every explicit start its own generation. Callbacks and delayed retries
+ * from an older recognizer cannot affect a stopped or newly started session.
+ */
+internal class RecognitionSessionGate {
+    private var generation = 0L
+    private var active = false
+
+    @Synchronized
+    fun start(): Long {
+        generation += 1
+        active = true
+        return generation
+    }
+
+    @Synchronized
+    fun stop() {
+        active = false
+        generation += 1
+    }
+
+    @Synchronized
+    fun isCurrent(candidate: Long): Boolean = active && candidate == generation
+
+    @Synchronized
+    fun stopIfCurrent(candidate: Long): Boolean {
+        if (!active || candidate != generation) return false
+        active = false
+        generation += 1
+        return true
+    }
+}

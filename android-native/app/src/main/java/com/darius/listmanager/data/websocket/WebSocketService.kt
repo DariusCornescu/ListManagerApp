@@ -54,7 +54,8 @@ class WebSocketService private constructor() {
         val wsProtocol = if (ApiConfig.USE_PRODUCTION) "wss" else "ws"
         val wsUrl = "$wsProtocol://$httpUrl/ws?token=$token"
         
-        Log.d(TAG, "Connecting to WebSocket: $wsUrl")
+        // The URL carries the access token, so it must not be logged.
+        Log.d(TAG, "Connecting to WebSocket")
         
         val request = Request.Builder()
             .url(wsUrl)
@@ -219,6 +220,10 @@ class WebSocketService private constructor() {
                             )
                         }
                         
+                        "inventory_changed" -> WebSocketMessage.InventoryChanged(
+                            inventoryId = json.getJSONObject("data").getLong("inventory_id")
+                        )
+
                         // Pong
                         "pong" -> WebSocketMessage.Pong
                         

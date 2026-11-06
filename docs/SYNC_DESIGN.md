@@ -1,12 +1,10 @@
 # ListManager — Sync Design (Phase 3: Multi-Writer Hardening)
 
-Status: **accepted** — scope = Option C (backend op-log, backend-first; Android rework deferred).
-Constraints: **no Alembic** (additive tables / nullable columns only, picked up by
-`Base.metadata.create_all()`); **existing mobile endpoints keep their request/response shapes**
-(the shipped Android client must keep working). New behavior is opt-in via optional fields and
-new endpoints.
+Status: **implemented and hardened through M7** — scope = Option C (backend
+op-log plus durable Android outbox). Alembic now manages the schema; existing
+mobile endpoint request/response shapes remain compatible.
 
-## 1. Current mechanism (cited)
+## 1. Original mechanism before hardening (historical baseline)
 - **Add item** `POST /api/session/{id}/items` (`main.py`): if `(session_id, product_id)` exists,
   increments quantity + bumps `version`; else inserts. Add-add of the same product already
   **merges (sums)** server-side. IDs are server-generated ints; **no client UUIDs, no
@@ -70,10 +68,36 @@ true broadcast — documented choice. Recompute recipients per send (membership 
 - **F7:** non-member's socket receives nothing for a team-session event; a member's does.
 - **Matrix-under-concurrency:** the Phase-2 authz matrix still holds with an interleaved op.
 
-## 6. Deferred (separate follow-on, needs device/emulator)
-Android queue rework: add `idempotencyKey` (Room migration), send it on replay, switch reads to
-the `?since=` pull endpoint, and replace drop-on-409 with a reconcile loop. Not done in this
-phase; the backend remains backward-compatible until then.
+EX-24 adds a reproducible randomized matrix over eight seeds. Each seed applies
+36 add/update/delete/clear operations from two team members, injects duplicate
+delivery for idempotent mutations, and lets three replicas pull the op-log at
+different points. The final assertions require contiguous sequence numbers,
+one op per logical mutation, agreement between both members' HTTP snapshots,
+and convergence of every folded replica with the server. The matrix uses the
+sequential in-memory SQLite TestClient and does not claim concurrent database
+transaction coverage; that remains the PostgreSQL gate in M7.
+
+## 6. Android follow-on
+
+The Android outbox now persists operation identity, preserves it across retries,
+and retains unresolved conflicts for review. Full automatic 409 reconciliation
+and the dedicated resolution UI remain follow-up work; the backend stays
+backward-compatible with older clients.
 
 **Done when:** the §5 tests are green, the full suite stays green, this doc matches what shipped,
 and existing endpoints are unchanged in shape.
+
+## 7. PostgreSQL multi-writer serialization (M7)
+
+The original `MAX(seq) + 1` allocator and read-modify-write endpoints were safe
+only in sequential SQLite tests. M7 serializes add, update, delete, clear, and
+completion transactions with a `FOR UPDATE` lock on the owning session. A
+`next_op_seq` value on `global_sessions` is incremented with one atomic
+`UPDATE ... RETURNING`, while a unique `(session_id, seq)` constraint rejects
+any allocator regression. The migration backfills each counter from existing
+history and refuses to add the constraint if duplicate history already exists.
+
+`tests/test_postgres_concurrency.py` is an opt-in destructive test restricted to
+a PostgreSQL database whose name ends in `_test`. Separate connections begin at
+a synchronization barrier and verify summed increments, concurrent idempotent
+delivery, one-winner optimistic updates, and contiguous unique sequences.

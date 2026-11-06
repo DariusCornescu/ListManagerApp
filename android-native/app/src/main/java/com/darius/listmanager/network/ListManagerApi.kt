@@ -51,6 +51,9 @@ interface ListManagerApi {
     @POST("/api/auth/login")
     suspend fun login(@Body request: LoginRequest): Response<LoginResponse>
     
+    @POST("/api/auth/logout")
+    suspend fun logout(@Body request: RefreshTokenRequest): Response<okhttp3.ResponseBody>
+
     @POST("/api/auth/register")
     suspend fun register(@Body request: RegisterRequest): Response<RegisterResponse>
     
@@ -61,6 +64,34 @@ interface ListManagerApi {
     suspend fun updateCurrentUser(@Body request: UpdateUserRequest): Response<UserDTO>
 
     // ===== Session - Management =====
+    @GET("/api/inventory/active")
+    suspend fun getInventory(@Query("team_id") teamId: Long? = null): Response<InventoryDTO>
+
+    @POST("/api/inventory/{inventory_id}/items")
+    suspend fun addInventoryItem(
+        @Path("inventory_id") inventoryId: Long,
+        @Body request: InventoryItemCreate,
+    ): Response<InventoryItemDTO>
+
+    @PUT("/api/inventory/{inventory_id}/items/{item_uuid}")
+    suspend fun updateInventoryItem(
+        @Path("inventory_id") inventoryId: Long,
+        @Path("item_uuid") itemUuid: String,
+        @Body request: InventoryItemUpdate,
+    ): Response<InventoryItemDTO>
+
+    @DELETE("/api/inventory/{inventory_id}/items/{item_uuid}")
+    suspend fun deleteInventoryItem(
+        @Path("inventory_id") inventoryId: Long,
+        @Path("item_uuid") itemUuid: String,
+    ): Response<okhttp3.ResponseBody>
+
+    @POST("/api/inventory/{inventory_id}/clear")
+    suspend fun clearInventory(
+        @Path("inventory_id") inventoryId: Long,
+        @Body request: InventoryClearRequest,
+    ): Response<okhttp3.ResponseBody>
+
     @GET("/api/session/active")
     suspend fun getActiveSession(@Query("team_id") teamId: Long? = null): Response<GlobalSessionDTO>
     

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.darius.listmanager.data.local.dao.*
 import com.darius.listmanager.data.local.entity.*
@@ -25,7 +26,7 @@ import kotlinx.coroutines.launch
         ProductEmbeddingEntity::class,
         InventoryItemEntity::class
     ],
-    version = 7,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -50,6 +51,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "list_manager_db"
                 )
+                    .addMigrations(MIGRATION_7_8)
+                    .addMigrations(MIGRATION_8_9)
+                    .addMigrations(MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -65,6 +69,43 @@ abstract class AppDatabase : RoomDatabase() {
                     .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing rows cannot be attributed safely. Keep them on disk
+                // under a quarantine scope rather than assigning them to the
+                // next account that signs in.
+                db.execSQL(
+                    "ALTER TABLE sessions ADD COLUMN accountUserId INTEGER NOT NULL DEFAULT -1"
+                )
+            }
+        }
+
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE sessions ADD COLUMN clientUuid TEXT")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_clientUuid " +
+                        "ON sessions(clientUuid)"
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing rows keep every value and stay unclaimed until an account opens the
+                // inventory; see InventoryRepository.adoptLegacyRows.
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN itemUuid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN accountUserId INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN teamId INTEGER")
+                db.execSQL("UPDATE inventory_items SET itemUuid = lower(hex(randomblob(16)))")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_inventory_items_itemUuid " +
+                        "ON inventory_items(itemUuid)"
+                )
             }
         }
     }

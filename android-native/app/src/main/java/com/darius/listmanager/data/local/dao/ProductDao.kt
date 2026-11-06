@@ -21,10 +21,12 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE distributorId = :distributorId ORDER BY name ASC")
     suspend fun getByDistributor(distributorId: Long): List<ProductEntity>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Update existing parents in place; REPLACE cascades into session items.
+    @Upsert
     suspend fun insert(product: ProductEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    // Update existing parents in place; REPLACE cascades into session items.
+    @Upsert
     suspend fun insertAll(products: List<ProductEntity>)
 
     @Update

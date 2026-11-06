@@ -1,5 +1,5 @@
 # app/models.py
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index, Numeric
+from sqlalchemy import BigInteger, Column, Float, Integer, String, Boolean, ForeignKey, DateTime, Text, func, UniqueConstraint, CheckConstraint, Index, Numeric
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -13,6 +13,29 @@ class User(Base):
     role = Column(String(20), default="USER")   # Possible roles: USER, ADMIN
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=func.now())
+    # Bumped to revoke every access token already issued to this user.
+    token_version = Column(Integer, nullable=False, default=0, server_default="0")
+    full_name = Column(String(100), nullable=True)
+    company = Column(String(100), nullable=True)
+    address = Column(String(255), nullable=True)
+
+
+class RefreshToken(Base):
+    """One rotating refresh token. Tokens from one login share a family_id."""
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    family_id = Column(String(36), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now())
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+
 
 class Distributor(Base):
     __tablename__ = "distributors"
@@ -87,6 +110,12 @@ class GlobalSession(Base):
     created_at = Column(DateTime, default=func.now())
     completed_at = Column(DateTime, nullable=True)
     version = Column(Integer, default=0)
+    # The next per-session operation-log sequence. Mutations reserve a value
+    # with one atomic UPDATE, which also serializes writers for this session on
+    # PostgreSQL.
+    next_op_seq = Column(Integer, nullable=False, default=1, server_default="1")
+    # Stable client identity for idempotent offline-session promotion.
+    client_uuid = Column(String(36), nullable=True, unique=True, index=True)
 
     # Exactly one of these is set: owner_user_id => personal, team_id => team session.
     # The exactly-one rule is enforced at app level in Wave 2 (no DB CHECK here).
@@ -157,7 +186,11 @@ class SessionOp(Base):
     created_at = Column(DateTime, default=func.now())
 
     __table_args__ = (
-        Index("ix_session_ops_session_id_seq", "session_id", "seq"),
+        UniqueConstraint(
+            "session_id",
+            "seq",
+            name="uq_session_ops_session_id_seq",
+        ),
     )
 
 class CrashReport(Base):
@@ -166,9 +199,67 @@ class CrashReport(Base):
     __tablename__ = "crash_reports"
 
     id = Column(Integer, primary_key=True, index=True)
+    event_id = Column(String(100), nullable=True, unique=True, index=True)
     app_version = Column(String(50), nullable=True)
     android_version = Column(String(50), nullable=True)
     device = Column(String(100), nullable=True)
     username = Column(String(50), nullable=True)
     stacktrace = Column(Text, nullable=False)
+    signature = Column(String(64), nullable=True, index=True)
+    created_at = Column(DateTime, default=func.now())
+
+
+class Inventory(Base):
+    """The one shared stock-taking list of a person or a team (EX-44)."""
+
+    __tablename__ = "inventories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Exactly one is set. NULLs do not collide, so each owner still has at most one.
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, unique=True)
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "(owner_user_id IS NULL) != (team_id IS NULL)",
+            name="ck_inventory_one_owner",
+        ),
+    )
+
+
+class InventoryItem(Base):
+    __tablename__ = "inventory_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Chosen by the phone before sending, so a retried add finds the row it created.
+    item_uuid = Column(String(36), nullable=False)
+    name = Column(String(200), nullable=False)
+    product_id = Column(Integer, ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
+    quantity = Column(Float(precision=53), nullable=True)
+    price_bani = Column(BigInteger, nullable=True)
+    version = Column(Integer, nullable=False, default=1, server_default="1")
+    created_at = Column(DateTime, default=func.now())
+    updated_at = Column(DateTime, default=func.now())
+    # Kept as a tombstone, so a retried add cannot bring a removed row back.
+    deleted_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("inventory_id", "item_uuid", name="uq_inventory_item_uuid"),
+    )
+
+    @property
+    def deleted(self) -> bool:
+        return self.deleted_at is not None
+
+
+class InventoryAppliedOp(Base):
+    """Idempotency ledger for inventory writes that have no natural identity."""
+
+    __tablename__ = "inventory_applied_ops"
+
+    key = Column(String(64), primary_key=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id", ondelete="CASCADE"), primary_key=True)
+    result_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=func.now())

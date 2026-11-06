@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.darius.listmanager.ui.components.SaveStateChip
 import com.darius.listmanager.ui.components.SessionItemRow
 import com.darius.listmanager.ui.viewmodel.SessionViewModel
 import kotlinx.coroutines.launch
@@ -68,6 +69,7 @@ fun SessionScreen(
                     }
                 },
                 actions = {
+                    SaveStateChip()
                     if (uiState.items.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
                             Icon(Icons.Rounded.Delete, "Șterge Sesiunea")

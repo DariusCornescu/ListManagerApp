@@ -21,9 +21,9 @@ data class ParsedInventoryLine(
  * tokens like "2l" or "1.5%" are not pure numbers, so numbers inside product
  * names never leak into the amounts. First trailing amount = quantity, second
  * = price; a single amount carrying a money marker (lei/bani) is the price.
- * Number WORDS ("cinci") are out of scope: they break the trailing region and
- * can misattribute a later digit (e.g. "lapte cinci lei 50" -> qty 50) — the
- * row stays editable, so the operator corrects it; this is pinned by tests.
+ * Number WORDS in the trailing region count as digits ("lapte cinci 4 lei"), because the
+ * recognizer often returns them that way. Words that are also ordinary Romanian ("o", "un",
+ * "nouă" as in "pâine nouă") stay part of the name.
  *
  * With a [nameScorer] (catalog match score in 0..1), the split becomes
  * catalog-aware: the name may swallow leading tokens of the numeric region
@@ -46,7 +46,9 @@ object InventoryLineParser {
     private data class Amount(val value: Double, val money: Boolean)
 
     fun parse(text: String, nameScorer: ((String) -> Double)? = null): ParsedInventoryLine? {
-        val tokens = text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        val tokens = withTrailingNumberWordsAsDigits(
+            text.trim().lowercase().split(Regex("\\s+")).filter { it.isNotBlank() }
+        )
         if (tokens.isEmpty()) return null
 
         // 1. Trailing numeric region: scan from the end while tokens are pure
@@ -141,6 +143,44 @@ object InventoryLineParser {
             priceBani = priceLei?.let { (it * 100).roundToLong() }
         )
     }
+
+    /**
+     * Rewrites number words at the end of a line as digits, leaving the name alone. A number
+     * word followed by a plain word ("lapte cinci stele") is part of the name.
+     */
+    private fun withTrailingNumberWordsAsDigits(tokens: List<String>): List<String> {
+        fun isRegionWord(t: String) =
+            isNumber(t) || t in FILLER || t in CURRENCY || t in SUBUNIT || t in COMMA_WORD
+
+        val result = mutableListOf<String>()
+        var i = 0
+        while (i < tokens.size) {
+            val normalized = tokens.subList(i, tokens.size).map(TextNorm::normalize)
+            val spoken = SpokenQuantity.unambiguousNumberWords(normalized)
+            if (spoken != null) {
+                val (value, used) = spoken
+                val after = tokens.subList(i + used, tokens.size)
+                val restIsRegion = after.indices.all { index ->
+                    val rest = normalized.subList(used + index, normalized.size)
+                    isRegionWord(after[index]) || SpokenQuantity.unambiguousNumberWords(rest) != null ||
+                        isInsideSpokenNumber(normalized, used + index)
+                }
+                if (restIsRegion) {
+                    result += value.toString()
+                    i += used
+                    continue
+                }
+            }
+            result += tokens[i]
+            i++
+        }
+        return result
+    }
+
+    /** "si" or a word that continues a number, such as the "cinci" in "douazeci si cinci". */
+    private fun isInsideSpokenNumber(normalized: List<String>, index: Int): Boolean =
+        normalized[index] == "si" && index + 1 < normalized.size &&
+            SpokenQuantity.unambiguousNumberWords(normalized.subList(index + 1, normalized.size)) != null
 
     /**
      * Split one fluently-spoken utterance into raw line segments, so dictation

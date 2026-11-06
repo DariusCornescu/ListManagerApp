@@ -38,6 +38,82 @@ class PhraseSegmenterTest {
     }
 
     @Test
+    fun leadingQuantityStaysWithTheFollowingProductName() {
+        val out = PhraseSegmenter.segment(
+            "două lapte Zuzu",
+            threshold = 0.6,
+            scoreOf = scorer("lapte", "lapte Zuzu", "Zuzu")
+        )
+        assertEquals(listOf("două lapte Zuzu"), out)
+    }
+
+    @Test
+    fun eachLeadingQuantityStaysWithItsProduct() {
+        val out = PhraseSegmenter.segment(
+            "două lapte trei ouă",
+            threshold = 0.6,
+            scoreOf = scorer("lapte", "ouă")
+        )
+        assertEquals(listOf("două lapte", "trei ouă"), out)
+    }
+
+    @Test
+    fun naturalConnectorsAndCommandsDoNotBecomeUnknownProducts() {
+        val out = PhraseSegmenter.segment(
+            "te rog pune două lapte Zuzu și trei ouă, apoi adaugă o pâine albă plus patru ape",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = scorer("lapte Zuzu", "ouă", "pâine albă", "ape")
+        )
+        assertEquals(
+            listOf("două lapte Zuzu", "trei ouă", "o pâine albă", "patru ape"),
+            out,
+        )
+    }
+
+    @Test
+    fun conversationalRequestAndCountUnitsAreRemovedAroundProducts() {
+        val out = PhraseSegmenter.segment(
+            "aș vrea să adaug două baxuri de apă și trei bucăți de săpun",
+            threshold = 0.6,
+            scoreOf = scorer("apă", "săpun")
+        )
+        assertEquals(listOf("două apă", "trei săpun"), out)
+    }
+
+    @Test
+    fun connectorInsideCatalogProductNameIsPreserved() {
+        val out = PhraseSegmenter.segment(
+            "sare și piper apoi ouă",
+            threshold = 0.6,
+            scoreOf = scorer("sare și piper", "ouă")
+        )
+        assertEquals(listOf("sare și piper", "ouă"), out)
+    }
+
+    @Test
+    fun punctuationSeparatesProductsAndIsNotKeptInTheirNames() {
+        val out = PhraseSegmenter.segment(
+            "lapte; ouă, pâine!",
+            threshold = 0.6,
+            scoreOf = scorer("lapte", "ouă", "pâine")
+        )
+        assertEquals(listOf("lapte", "ouă", "pâine"), out)
+    }
+
+    @Test
+    fun catalogNamesCanUseSevenWordWindows() {
+        val longName = "detergent lichid pentru rufe colorate parfum floral"
+        val out = PhraseSegmenter.segment(
+            "$longName ouă",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = scorer(longName, "ouă")
+        )
+        assertEquals(listOf(longName, "ouă"), out)
+    }
+
+    @Test
     fun unmatchedWordsBetweenProductsGroupedAsLeftover() {
         val out = PhraseSegmenter.segment(
             "lapte xyz abc",
@@ -56,5 +132,18 @@ class PhraseSegmenterTest {
     @Test
     fun blankInput_returnsEmpty() {
         assertEquals(emptyList<String>(), PhraseSegmenter.segment("   ", threshold = 0.6, scoreOf = scorer()))
+    }
+
+    @Test
+    fun aCompoundCount_staysWithItsProduct() {
+        val catalog = setOf("oua", "cutii", "lapte")
+        val segments = PhraseSegmenter.segment(
+            text = "douazeci si cinci de cutii si doua sute de oua",
+            threshold = 0.62,
+            maxWindow = 7,
+        ) { window -> if (TextNorm.normalize(window) in catalog) 1.0 else 0.0 }
+
+        assertEquals(listOf(25, 200), segments.map(SpokenQuantity::from))
+        assertEquals(listOf("cutii", "oua"), segments.map(SpokenQuantity::productText))
     }
 }

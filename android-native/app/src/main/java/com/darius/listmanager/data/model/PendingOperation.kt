@@ -16,18 +16,25 @@ enum class OperationType {
     ADD_SESSION_ITEM,
     UPDATE_SESSION_ITEM,
     DELETE_SESSION_ITEM,
-    CLEAR_SESSION
+    CLEAR_SESSION,
+
+    ADD_INVENTORY_ITEM,
+    UPDATE_INVENTORY_ITEM,
+    DELETE_INVENTORY_ITEM,
+    CLEAR_INVENTORY
 }
 
 enum class ResourceType {
     DISTRIBUTOR,
     PRODUCT,
     SESSION,
-    SESSION_ITEM
+    SESSION_ITEM,
+    INVENTORY_ITEM
 }
 
 enum class OperationStatus {
-    PENDING,      // Waiting to be synced
+    PENDING,      // May already have been sent; payload is immutable
+    WAITING,      // Persisted behind an earlier operation; never sent
     IN_PROGRESS,  // Currently being synced
     FAILED,       // Failed to sync (will retry)
     COMPLETED     // Successfully synced
@@ -56,16 +63,49 @@ sealed class OperationData {
     data class UpdateProduct( val productId: Long, val name: String, val distributorId: Long, val aliases: String? ) : OperationData()
     @Serializable  
     data class DeleteProduct( val productId: Long ) : OperationData()
-    
+
+    @Serializable
+    data class CreateSession(
+        val localSessionId: Long,
+        val clientUuid: String,
+        val name: String,
+        val teamId: Long?,
+    ) : OperationData()
+
+    @Serializable
+    data class CompleteSession(val sessionId: Long) : OperationData()
 
     @Serializable  
-    data class AddSessionItem( val sessionId: Long, val productId: Long, val quantity: Int ) : OperationData()
+    data class AddSessionItem( val sessionId: Long, val productId: Long, val quantity: Int,
+        val idempotencyKey: String? = null ) : OperationData()
     @Serializable 
-    data class UpdateSessionItem( val itemId: Long, val quantity: Int, val version: Int ) : OperationData()
+    data class UpdateSessionItem( val itemId: Long, val quantity: Int, val version: Int,
+        val idempotencyKey: String? = null ) : OperationData()
     @Serializable 
     data class DeleteSessionItem( val itemId: Long ) : OperationData()  
     @Serializable  
     data class ClearSession( val sessionId: Long ) : OperationData()
+
+    @Serializable
+    data class AddInventoryItem(
+        val itemUuid: String,
+        val teamId: Long? = null,
+        val name: String,
+        val productId: Long? = null,
+        val quantity: Double? = null,
+        val priceBani: Long? = null,
+    ) : OperationData()
+    /** The values to send are the row's current ones, read when this is sent. */
+    @Serializable
+    data class UpdateInventoryItem(
+        val itemUuid: String,
+        val teamId: Long? = null,
+        val idempotencyKey: String,
+    ) : OperationData()
+    @Serializable
+    data class DeleteInventoryItem( val itemUuid: String, val teamId: Long? = null ) : OperationData()
+    @Serializable
+    data class ClearInventory( val teamId: Long? = null, val idempotencyKey: String ) : OperationData()
 }
 
 sealed class SyncResult {

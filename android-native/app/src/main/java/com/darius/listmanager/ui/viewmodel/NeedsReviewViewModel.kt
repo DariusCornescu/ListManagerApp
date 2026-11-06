@@ -11,6 +11,7 @@ import com.darius.listmanager.data.usecase.ResolveResult
 import com.darius.listmanager.data.usecase.ResolveSpokenProductUseCase
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.SpokenQuantity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -34,7 +35,10 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
     private val productRepository = ProductRepository(
         database.productDao(), pendingOperationRepo, application.applicationContext, RetrofitClient.api
     )
-    private val sessionRepository = SessionRepository(database.sessionDao(), database.sessionItemDao())
+    private val sessionRepository = SessionRepository(
+        database.sessionDao(), database.sessionItemDao(), pendingOps = pendingOperationRepo,
+        transaction = com.darius.listmanager.data.repository.SessionTransaction.room(database),
+    )
     private val unknownRepository = UnknownRepository(database.unknownDao())
     private val needsReviewRepository = NeedsReviewRepository(database.needsReviewDao())
     private val resolveSpokenProductUseCase = ResolveSpokenProductUseCase(productRepository)
@@ -61,14 +65,18 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun addCandidate(reviewId: Long, productId: Long, productName: String) {
+    fun addCandidate(reviewId: Long, spokenText: String, productId: Long, productName: String) {
         viewModelScope.launch {
             try {
                 val workspaceManager = com.darius.listmanager.data.workspace.WorkspaceManager.getInstance(getApplication())
                 val session = sessionRepository.getOrCreateActiveSession(
                     workspaceManager.currentWorkspace.value.teamIdOrNull
                 )
-                addProductUseCase.execute(session.id, productId, 1)
+                addProductUseCase.execute(
+                    session.id,
+                    productId,
+                    SpokenQuantity.from(spokenText)
+                )
                 needsReviewRepository.deleteById(reviewId)
                 _uiState.value = _uiState.value.copy(message = "Adăugat: $productName")
             } catch (e: Exception) {

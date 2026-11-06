@@ -10,8 +10,8 @@ Monorepo layout:
 - `backend-fastapi/` — FastAPI backend (Python). App package in `backend-fastapi/app/`.
 - `android-native/` — Android app (Kotlin, Jetpack Compose, Room). The primary, most
   complete client. Holds the voice + similarity-ranking code.
-- `flutter_ui/` — Flutter client. Currently an early prototype: product CRUD screens
-  backed by `lib/services/fake_product_service.dart` (no real API/auth/sync wiring yet).
+- `flutter_ui/` — Flutter client on the real API: login, catalog, shared list, live updates.
+  No voice, offline queue or PDFs; see `flutter_ui/README.md`.
 
 > There is **no** `vendor/listmanager-speech/` package and **no** backend similarity
 > ranker. The ranker and speech handling live on-device in `android-native/`. See
@@ -49,7 +49,7 @@ PowerShell on Windows. Run each from its own subdirectory.
   so it's unaffected).
 - Auth: JWT (HS256, `python-jose`) via `Authorization: Bearer` header; passwords hashed
   with `bcrypt`; roles `USER` / `ADMIN`. Token expiry 24h (`ACCESS_TOKEN_EXPIRE_MINUTES`),
-  **no refresh or revocation**. `SECRET_KEY` from env with an **insecure dev fallback** in
+  with rotating refresh tokens and revocation (`token_version`, `/api/auth/refresh`). `SECRET_KEY` from env with an **insecure dev fallback** in
   `app/auth.py`. Several catalog/distributor/product endpoints are deliberately
   unauthenticated ("no auth required for demo") — see `app/main.py`.
 - Sessions model: **one global shared session at a time** (`GlobalSession` +

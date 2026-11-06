@@ -41,6 +41,12 @@ class FakeListManagerApi : ListManagerApi {
 
     // ===== Authentication =====
     override suspend fun login(request: LoginRequest): Response<LoginResponse> = offline()
+    override suspend fun logout(request: RefreshTokenRequest): Response<okhttp3.ResponseBody> = offline()
+    override suspend fun getInventory(teamId: Long?): Response<InventoryDTO> = offline()
+    override suspend fun addInventoryItem(inventoryId: Long, request: InventoryItemCreate): Response<InventoryItemDTO> = offline()
+    override suspend fun updateInventoryItem(inventoryId: Long, itemUuid: String, request: InventoryItemUpdate): Response<InventoryItemDTO> = offline()
+    override suspend fun deleteInventoryItem(inventoryId: Long, itemUuid: String): Response<okhttp3.ResponseBody> = offline()
+    override suspend fun clearInventory(inventoryId: Long, request: InventoryClearRequest): Response<okhttp3.ResponseBody> = offline()
     override suspend fun register(request: RegisterRequest): Response<RegisterResponse> = offline()
     override suspend fun getCurrentUser(): Response<UserDTO> = offline()
     override suspend fun updateCurrentUser(request: UpdateUserRequest): Response<UserDTO> = offline()

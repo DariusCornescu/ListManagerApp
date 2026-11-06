@@ -21,7 +21,7 @@ object ProductRanker {
         embeddingScores: Map<Long, Double> = emptyMap(),
         weights: ScoringWeights = ScoringWeights()
     ): List<RankedProduct> {
-        val normalizedSpoken = TextNorm.normalize(spokenText)
+        val normalizedSpoken = SpokenQuantity.productText(spokenText)
 
         return products.map { product ->
             val embeddingSim = embeddingScores[product.id] ?: 0.0

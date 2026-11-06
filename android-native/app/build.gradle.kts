@@ -72,6 +72,11 @@ android {
             matchingFallbacks += "debug"
         }
     }
+    testBuildType = "preview"
+    // Compose UI tests render real screens under Robolectric, without a device.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -101,6 +106,11 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     testImplementation(libs.junit)
+    // Native SQLite tests exercise Room persistence and rollback without a device.
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    // Debug only: the host activity comes from the debug-only ui-test-manifest.
+    testDebugImplementation(platform(libs.androidx.compose.bom))
+    testDebugImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -115,7 +125,9 @@ dependencies {
     ksp("androidx.room:room-compiler:2.8.1")
 
     // On-device sentence embeddings (ONNX Runtime + HF tokenizer)
-    implementation("io.gitlab.shubham0204:sentence-embeddings:0.0.6")
+    implementation("io.gitlab.shubham0204:sentence-embeddings:v6")
+    // v6 still declares 1.17.0; this release supplies 16 KB-aligned JNI libraries.
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
 
     // Coroutines (if not already added)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
