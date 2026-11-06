@@ -11,7 +11,9 @@ object SyncWorkManager {
 
     fun initialize(context: Context) {
         // The safety net when no screen is open; AppContent syncs as soon as work appears.
-        SyncWorker.schedulePeriodicSync(context)
+        // Runs during app start, where a scheduling failure must never become a crash.
+        runCatching { SyncWorker.schedulePeriodicSync(context) }
+            .onFailure { android.util.Log.e("SyncWorkManager", "Periodic sync not scheduled", it) }
     }
 
     fun syncNow(context: Context) { SyncWorker.scheduleImmediateSync(context) }
