@@ -1,11 +1,19 @@
 package com.darius.listmanager.ui
 
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.test.assertIsEnabled
@@ -14,6 +22,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import com.darius.listmanager.ui.components.AppDangerButton
 import com.darius.listmanager.ui.components.AppDangerSoftButton
 import com.darius.listmanager.ui.components.AppEmptyState
@@ -44,14 +53,73 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xxhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class AppComponentsUiTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
     private fun show(dark: Boolean = false, content: @Composable () -> Unit) {
         rule.setContent { AppTheme(darkTheme = dark, content = content) }
+    }
+
+    /** A visual record for pull requests, when the platform can render one. Never fails a test. */
+    private fun shoot(name: String) {
+        rule.waitForIdle()
+        runCatching {
+            val view = rule.activity.window.decorView
+            val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+            view.draw(Canvas(bitmap))
+            val dir = File("build/ui-snapshots").apply { mkdirs() }
+            File(dir, "$name.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }.onFailure { println("Snapshot skipped: ${it.message}") }
+    }
+
+    @Composable
+    private fun Gallery() {
+        Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+            Column {
+                AppTopBar("Catalog", subtitle = "3 produse", onBack = {})
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                ) {
+                    AppPrimaryButton("Acțiunea principală", {})
+                    AppPrimaryButton("Indisponibil", {}, enabled = false)
+                    AppPrimaryButton("Salvează", {}, loading = true, loadingText = "Se salvează…")
+                    AppSecondaryButton("Acțiune secundară", {})
+                    AppDangerSoftButton("Deconectare", {})
+                    AppDangerButton("Confirmă ștergerea", {})
+                    StatusBanner("Ești offline. Vezi datele salvate pe telefon.")
+                    StatusBanner("Cont creat. Te poți autentifica.", tone = BannerTone.Success)
+                    StatusBanner(
+                        "Nu se poate conecta la server.",
+                        tone = BannerTone.Error,
+                        actionLabel = "Încearcă din nou",
+                    )
+                    SkeletonRows(count = 2)
+                }
+            }
+        }
+    }
+
+    @Test fun gallery_lightTheme() {
+        show(dark = false) { Gallery() }
+
+        rule.onNodeWithText("Acțiunea principală").assertExists()
+        shoot("components-light")
+    }
+
+    @Test fun gallery_darkTheme() {
+        show(dark = true) { Gallery() }
+
+        rule.onNodeWithText("Acțiunea principală").assertExists()
+        shoot("components-dark")
     }
 
     @Test fun primaryButton_clicksWhenEnabled() {
