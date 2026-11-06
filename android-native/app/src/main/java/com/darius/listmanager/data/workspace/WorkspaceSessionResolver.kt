@@ -1,16 +1,14 @@
 package com.darius.listmanager.data.workspace
 
 import android.util.Log
-import androidx.room.withTransaction
 import com.darius.listmanager.data.local.AppDatabase
-import com.darius.listmanager.data.local.entity.DistributorEntity
-import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.SessionEntity
 import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.network.CreateSessionRequest
 import com.darius.listmanager.network.ListManagerApi
 import com.darius.listmanager.network.RetrofitClient
+import com.darius.listmanager.sync.CatalogRefresher
 import java.io.IOException
 import kotlinx.serialization.json.Json
 
@@ -27,6 +25,7 @@ class WorkspaceSessionResolver(
     private val database: AppDatabase,
     private val api: ListManagerApi = RetrofitClient.api,
     private val currentUserId: () -> Long? = { AuthState.userId.value },
+    private val catalogRefresher: CatalogRefresher = CatalogRefresher(database, api),
 ) {
     sealed class ResolveResult {
         data class Resolved(val sessionId: Long) : ResolveResult()
@@ -111,31 +110,8 @@ class WorkspaceSessionResolver(
 
     /** Session items reference products, which reference distributors. A fresh
      * install must cache those parents before Room can accept the item rows. */
-    private suspend fun refreshCatalog(): Boolean {
-        val distributorResponse = api.getDistributors()
-        val productResponse = api.getProducts()
-        val distributors = distributorResponse.body()
-        val products = productResponse.body()
-        if (!distributorResponse.isSuccessful || distributors == null ||
-            !productResponse.isSuccessful || products == null
-        ) {
-            return false
-        }
-        database.withTransaction {
-            database.distributorDao().insertAll(distributors.map {
-                DistributorEntity(id = it.id, distributorName = it.distributor_name)
-            })
-            database.productDao().insertAll(products.map {
-                ProductEntity(
-                    id = it.id,
-                    name = it.name,
-                    distributorId = it.distributor_id,
-                    aliases = it.aliases,
-                )
-            })
-        }
-        return true
-    }
+    private suspend fun refreshCatalog(): Boolean =
+        catalogRefresher.refresh() != CatalogRefresher.Result.Failed
 
     private companion object { const val TAG = "WorkspaceSessionResolver" }
 }

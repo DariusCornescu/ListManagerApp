@@ -27,6 +27,10 @@ class FakeListManagerApi : ListManagerApi {
 
     private fun offline(): Nothing = throw IOException("FakeListManagerApi: no backend in tests")
 
+    // ===== Catalog refresh =====
+    override suspend fun getProductsIfChanged(etag: String?): Response<List<ProductDTO>> = offline()
+    override suspend fun getDistributorsIfChanged(etag: String?): Response<List<DistributorDTO>> = offline()
+
     // ===== Products =====
     override suspend fun getProducts(search: String?): Response<List<ProductDTO>> = offline()
     override suspend fun createProduct(request: ProductCreate): Response<ProductDTO> = offline()

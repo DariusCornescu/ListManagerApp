@@ -14,6 +14,9 @@ object SyncWorkManager {
         // Runs during app start, where a scheduling failure must never become a crash.
         runCatching { SyncWorker.schedulePeriodicSync(context) }
             .onFailure { android.util.Log.e("SyncWorkManager", "Periodic sync not scheduled", it) }
+        // Waits for a connection, so a phone opened offline still catches up once it has one.
+        runCatching { SyncWorker.scheduleImmediateSync(context) }
+            .onFailure { android.util.Log.e("SyncWorkManager", "Startup sync not scheduled", it) }
     }
 
     fun syncNow(context: Context) { SyncWorker.scheduleImmediateSync(context) }

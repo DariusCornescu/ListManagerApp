@@ -24,6 +24,9 @@ interface InventoryItemDao {
     )
     suspend fun getAll(accountUserId: Long, teamId: Long?): List<InventoryItemEntity>
 
+    @Query("SELECT DISTINCT productId FROM inventory_items WHERE productId IS NOT NULL")
+    suspend fun getReferencedProductIds(): List<Long>
+
     @Query("SELECT * FROM inventory_items WHERE itemUuid = :itemUuid LIMIT 1")
     suspend fun getByUuid(itemUuid: String): InventoryItemEntity?
 

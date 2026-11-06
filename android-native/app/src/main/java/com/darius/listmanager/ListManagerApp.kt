@@ -15,6 +15,7 @@ import com.darius.listmanager.network.AuthTokenStore
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.data.websocket.WebSocketState
+import com.darius.listmanager.sync.CatalogEtags
 import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorker
 import com.darius.listmanager.sync.SyncWorkManager
@@ -39,6 +40,7 @@ class ListManagerApp : Application() {
         }
 
         Log.d("ListManagerApp", "Application starting...")
+        CatalogEtags.initialize(this)
         SyncWorkManager.initialize(this)
 
         // Restore the saved auth token into the in-memory HTTP client so the user
@@ -154,7 +156,8 @@ fun AppContent() {
     // Queued work and a live connection are both reasons to replay now. The network
     // constraint holds the request until a connection exists; KEEP removes duplicates.
     LaunchedEffect(pendingCount, webSocketState is WebSocketState.Connected, isLoggedIn) {
-        if (isLoggedIn && pendingCount > 0) SyncWorker.scheduleImmediateSync(context)
+        val connected = webSocketState is WebSocketState.Connected
+        if (isLoggedIn && (pendingCount > 0 || connected)) SyncWorker.scheduleImmediateSync(context)
     }
 
     // Decide where to start once, based on the persisted token at first composition.

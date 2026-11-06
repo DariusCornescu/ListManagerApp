@@ -3,7 +3,9 @@ package com.darius.listmanager.sync
 import android.content.Context
 import android.util.Log
 import androidx.work.*
+import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.model.SyncResult
+import com.darius.listmanager.data.workspace.SessionEvents
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.TimeUnit
@@ -86,6 +88,20 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
         }
     }
 
+    /** Best effort: a catalog failure must not change the outcome of replaying pending work. */
+    private suspend fun refreshCatalog() {
+        try {
+            val database = AppDatabase.getInstance(applicationContext)
+            val outcome = CatalogRefresher(database).refresh()
+            Log.d(TAG, "Catalog refresh: $outcome")
+            if (outcome is CatalogRefresher.Result.Updated) SessionEvents.requestRefresh()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Catalog refresh failed: ${e.javaClass.simpleName}")
+        }
+    }
+
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         Log.d(TAG, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
         Log.d(TAG, "Starting sync work...")
@@ -99,6 +115,9 @@ class SyncWorker( context: Context, params: WorkerParameters ) : CoroutineWorker
             Log.d(TAG, "Calling syncPendingOperations()...")
             val result = syncService.syncPendingOperations()
             Log.d(TAG, "Sync result: $result")
+
+            // After replay, so finished offline work no longer holds rows back.
+            refreshCatalog()
 
             when (result) {
                 is SyncResult.Success -> {

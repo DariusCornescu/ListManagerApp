@@ -17,6 +17,9 @@ sealed class WebSocketMessage {
     data class DistributorUpdated( val distributorId: Long, val distributorName: String ) : WebSocketMessage()
     data class DistributorDeleted( val distributorId: Long ) : WebSocketMessage()
     
+    /** The catalog changed in bulk. A new id each time, because a StateFlow drops equal values. */
+    data class CatalogChanged( val changeId: String ) : WebSocketMessage()
+
     data class ProductCreated( val productId: Long, val productName: String, val distributorId: Long, val aliases: String? ) : WebSocketMessage()
     data class ProductUpdated( val productId: Long, val productName: String, val distributorId: Long, val aliases: String? ) : WebSocketMessage()
     data class ProductDeleted( val productId: Long ) : WebSocketMessage()

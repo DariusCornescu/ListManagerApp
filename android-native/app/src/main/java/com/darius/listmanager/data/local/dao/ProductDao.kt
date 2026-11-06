@@ -12,6 +12,12 @@ interface ProductDao {
     @Query("SELECT COUNT(*) FROM products")
     fun getCountFlow(): Flow<Int>
 
+    @Query("SELECT COUNT(*) FROM products")
+    suspend fun count(): Int
+
+    @Query("UPDATE products SET distributorId = :toId WHERE distributorId = :fromId")
+    suspend fun moveToDistributor(fromId: Long, toId: Long)
+
     @Query("SELECT * FROM products ORDER BY name ASC")
     suspend fun getAll(): List<ProductEntity>
 
