@@ -1,47 +1,62 @@
 package com.darius.listmanager.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.network.ApiConfig
+import com.darius.listmanager.ui.components.AppDangerSoftButton
+import com.darius.listmanager.ui.components.AppPrimaryButton
+import com.darius.listmanager.ui.components.AppSecondaryButton
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val Success = Color(0xFF4CAF50)
-private val Info = Color(0xFF2196F3)
-private val Warning = Color(0xFFFF9800)
-private val Failure = Color(0xFFF44336)
+internal fun operationStatusLabel(status: String): String = when (status) {
+    "PENDING" -> "În așteptare"
+    "IN_PROGRESS" -> "În curs"
+    "FAILED" -> "Eșuat"
+    "COMPLETED" -> "Finalizat"
+    else -> status
+}
 
 @Composable
-private fun SectionCard(
-    title: String,
-    containerColor: Color,
-    spacing: Int = 8,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Card(colors = CardDefaults.cardColors(containerColor = containerColor)) {
+internal fun DiagnosticHeading(title: String, count: Int? = null) {
+    Text(
+        if (count == null) title else "$title ($count)",
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 10.dp),
+    )
+}
+
+@Composable
+private fun DiagnosticCard(content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(spacing.dp),
-        ) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            HorizontalDivider()
-            content()
-        }
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            content = content,
+        )
     }
 }
 
@@ -52,28 +67,15 @@ internal fun NetworkStatusCard(
     isCheckingServer: Boolean,
     onCheckServer: () -> Unit,
 ) {
-    SectionCard("📡 Network Status", MaterialTheme.colorScheme.surfaceVariant) {
-        StatusRow("Network Available", isNetworkAvailable)
-        StatusRow("Server Reachable", isServerReachable, isLoading = isCheckingServer)
+    DiagnosticCard {
+        StatusRow("Internet", isNetworkAvailable)
+        StatusRow("Server", isServerReachable, isLoading = isCheckingServer)
         Text(
-            "Base URL: ${ApiConfig.BASE_URL}",
+            "${ApiConfig.BASE_URL} · ${ApiConfig.getCurrentEnvironment()}",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            "Environment: ${ApiConfig.getCurrentEnvironment()}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        OutlinedButton(onClick = onCheckServer, enabled = !isCheckingServer) {
-            if (isCheckingServer) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Rounded.Refresh, null, Modifier.size(16.dp))
-            }
-            Spacer(Modifier.width(8.dp))
-            Text("Check Server")
-        }
+        AppSecondaryButton("Verifică serverul", onCheckServer, enabled = !isCheckingServer, icon = Icons.Rounded.Refresh)
     }
 }
 
@@ -84,12 +86,14 @@ internal fun LocalDatabaseCard(
     pendingCount: Int,
     failedCount: Int,
 ) {
-    SectionCard("💾 Local Database", MaterialTheme.colorScheme.secondaryContainer) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            StatBox("Products", productCount.toString(), Success)
-            StatBox("Distributors", distributorCount.toString(), Info)
-            StatBox("Pending Ops", pendingCount.toString(), Warning)
-            StatBox("Failed Ops", failedCount.toString(), Failure)
+    DiagnosticCard {
+        Row(Modifier.fillMaxWidth()) {
+            StatBox("Produse", productCount, Modifier.weight(1f))
+            StatBox("Distribuitori", distributorCount, Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth()) {
+            StatBox("În așteptare", pendingCount, Modifier.weight(1f))
+            StatBox("Eșuate", failedCount, Modifier.weight(1f))
         }
     }
 }
@@ -101,236 +105,158 @@ internal fun SyncControlsCard(
     onSync: () -> Unit,
     onClearAll: () -> Unit,
 ) {
-    SectionCard("🔄 Sync Controls", MaterialTheme.colorScheme.primaryContainer, spacing = 12) {
-        Button(onClick = onSync, enabled = !isSyncing, modifier = Modifier.fillMaxWidth()) {
-            if (isSyncing) {
-                CircularProgressIndicator(
-                    Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
-            } else {
-                Icon(Icons.Rounded.Sync, null)
-            }
-            Spacer(Modifier.width(8.dp))
-            Text(if (isSyncing) "Syncing..." else "Sync Pending Operations")
+    DiagnosticCard {
+        AppPrimaryButton(
+            text = "Sincronizează operațiunile",
+            onClick = onSync,
+            loading = isSyncing,
+            loadingText = "Se sincronizează…",
+        )
+        lastSyncResult?.let {
+            Text(it, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
         }
-
-        lastSyncResult?.let { result ->
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = when {
-                        result.contains("SUCCESS") -> Success.copy(alpha = 0.2f)
-                        result.contains("ERROR") || result.contains("EXCEPTION") -> Failure.copy(alpha = 0.2f)
-                        else -> Warning.copy(alpha = 0.2f)
-                    }
-                )
-            ) {
-                Text(text = result, modifier = Modifier.padding(12.dp), fontWeight = FontWeight.Bold)
-            }
-        }
-
-        OutlinedButton(
-            onClick = onClearAll,
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Rounded.DeleteForever, null)
-            Spacer(Modifier.width(8.dp))
-            Text("Clear All Pending Operations")
-        }
+        AppDangerSoftButton("Golește operațiunile", onClearAll)
     }
 }
 
 @Composable
 internal fun NoPendingOperationsCard() {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Rounded.CheckCircle, null, tint = Success)
-            Spacer(Modifier.width(8.dp))
-            Text("No pending operations")
-        }
-    }
-}
-
-@Composable
-internal fun SyncLogCard(logs: List<String>) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = 300.dp)
-                .padding(12.dp)
-                .verticalScroll(rememberScrollState())
-        ) {
-            if (logs.isEmpty()) {
-                Text(
-                    "No logs yet. Press 'Sync Pending Operations' to see logs.",
-                    color = Color.Gray,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                )
-            } else {
-                logs.forEach { log ->
-                    Text(
-                        text = log,
-                        color = when {
-                            log.contains("ERROR") || log.contains("EXCEPTION") || log.contains("❌") -> Failure
-                            log.contains("SUCCESS") || log.contains("✅") -> Success
-                            log.contains("STARTED") || log.contains("FINISHED") -> Info
-                            else -> Color(0xFFCCCCCC)
-                        },
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 11.sp,
-                        modifier = Modifier.padding(vertical = 1.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusRow(label: String, value: Boolean, isLoading: Boolean = false) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.bodyMedium)
-        if (isLoading) {
-            CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-        } else {
-            Text(if (value) "✅ Yes" else "❌ No", fontWeight = FontWeight.Bold)
-        }
-    }
-}
-
-@Composable
-private fun StatBox(label: String, value: String, color: Color) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    DiagnosticCard {
         Text(
-            text = value,
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            color = color,
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
+            "Nu există operațiuni în așteptare.",
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
 
 @Composable
-internal fun OperationDetailCard(operation: PendingOperationEntity) {
-    val dateFormat = remember { SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault()) }
-    val now = System.currentTimeMillis()
-
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = when (operation.status) {
-                "PENDING" -> MaterialTheme.colorScheme.tertiaryContainer
-                "IN_PROGRESS" -> MaterialTheme.colorScheme.primaryContainer
-                "FAILED" -> MaterialTheme.colorScheme.errorContainer
-                "COMPLETED" -> Success.copy(alpha = 0.2f)
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
-    ) {
+internal fun SyncLogCard(logs: List<String>) {
+    val scheme = MaterialTheme.colorScheme
+    Surface(color = scheme.surface, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
         Column(
-            modifier = Modifier.fillMaxWidth().padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            modifier = Modifier
+                .heightIn(max = 300.dp)
+                .padding(14.dp)
+                .verticalScroll(rememberScrollState())
+                .horizontalScroll(rememberScrollState()),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "ID: ${operation.id}",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.labelLarge,
-                )
-                Badge(
-                    containerColor = when (operation.status) {
-                        "PENDING" -> Warning
-                        "IN_PROGRESS" -> Info
-                        "FAILED" -> Failure
-                        "COMPLETED" -> Success
-                        else -> Color.Gray
-                    }
-                ) {
-                    Text(operation.status, color = Color.White)
+            if (logs.isEmpty()) {
+                LogLine("Jurnalul este gol.", scheme.onSurfaceVariant)
+            } else {
+                logs.forEach { log ->
+                    LogLine(log, if (log.contains("Eroare") || log.contains("Conflict")) scheme.error else scheme.onSurfaceVariant)
                 }
             }
-
-            HorizontalDivider()
-
-            DetailRow("Type", operation.operationType)
-            DetailRow("Resource", operation.resourceType)
-            operation.resourceId?.let { DetailRow("Resource ID", it.toString()) }
-            DetailRow("Created", dateFormat.format(Date(operation.createdAt)))
-            DetailRow("Updated", dateFormat.format(Date(operation.updatedAt)))
-
-            val scheduledFor = operation.scheduledFor
-            val isReadyForSync = scheduledFor <= now
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Scheduled For", style = MaterialTheme.typography.bodySmall)
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(
-                        dateFormat.format(Date(scheduledFor)),
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        if (isReadyForSync) "✅ Ready for sync" else "⏳ Waiting ${(scheduledFor - now) / 1000}s",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isReadyForSync) Success else Warning,
-                    )
-                }
-            }
-
-            DetailRow("Retry Count", operation.retryCount.toString())
-            DetailRow("Conflict Strategy", operation.conflictStrategy)
-
-            operation.lastError?.let { error ->
-                Spacer(Modifier.height(4.dp))
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
-                    )
-                ) {
-                    Text(
-                        "Error: $error",
-                        modifier = Modifier.padding(8.dp),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Data: ${operation.operationData.take(100)}${if (operation.operationData.length > 100) "..." else ""}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 10.sp,
-            )
         }
     }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+private fun LogLine(text: String, color: androidx.compose.ui.graphics.Color) {
+    Text(
+        text,
+        color = color,
+        fontFamily = FontFamily.Monospace,
+        fontSize = 12.sp,
+        modifier = Modifier.padding(vertical = 1.dp),
+    )
+}
+
+@Composable
+private fun StatusRow(label: String, value: Boolean, isLoading: Boolean = false) {
+    val scheme = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+        when {
+            isLoading -> CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+            else -> Surface(
+                shape = CircleShape,
+                color = if (value) scheme.secondaryContainer else scheme.errorContainer,
+                contentColor = if (value) scheme.onSecondaryContainer else scheme.onErrorContainer,
+            ) {
+                Text(
+                    if (value) "Da" else "Nu",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatBox(label: String, value: Int, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(value.toString(), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+internal fun OperationDetailCard(operation: PendingOperationEntity) {
+    val scheme = MaterialTheme.colorScheme
+    val dateFormat = remember { SimpleDateFormat("dd/MM HH:mm:ss", Locale.getDefault()) }
+    val now = System.currentTimeMillis()
+    val failed = operation.status == "FAILED"
+
+    DiagnosticCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("ID ${operation.id}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            Surface(
+                shape = CircleShape,
+                color = if (failed) scheme.errorContainer else scheme.primaryContainer,
+                contentColor = if (failed) scheme.onErrorContainer else scheme.onPrimaryContainer,
+            ) {
+                Text(
+                    operationStatusLabel(operation.status),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp),
+                )
+            }
+        }
+        DetailRow("Tip", operation.operationType)
+        DetailRow("Resursă", operation.resourceType)
+        operation.resourceId?.let { DetailRow("ID resursă", it.toString()) }
+        DetailRow("Creată", dateFormat.format(Date(operation.createdAt)))
+        DetailRow("Modificată", dateFormat.format(Date(operation.updatedAt)))
+        DetailRow(
+            "Programată",
+            if (operation.scheduledFor <= now) "Gata de trimis"
+            else "Peste ${(operation.scheduledFor - now) / 1000} s",
+        )
+        DetailRow("Reîncercări", operation.retryCount.toString())
+        DetailRow("Conflicte", operation.conflictStrategy)
+        operation.lastError?.let {
+            Text("Eroare: $it", style = MaterialTheme.typography.bodySmall, color = scheme.error)
+        }
+        Text(
+            "Date: ${operation.operationData.take(100)}${if (operation.operationData.length > 100) "…" else ""}",
+            color = scheme.onSurfaceVariant,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 11.sp,
+        )
+    }
+}
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
     }
 }
