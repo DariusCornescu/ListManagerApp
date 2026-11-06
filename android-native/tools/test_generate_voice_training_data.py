@@ -80,19 +80,19 @@ class GenerateVoiceTrainingDataTest(unittest.TestCase):
             self.assertEqual(dataset, saved)
             self.assertNotIn(str(output), output.read_text(encoding="utf-8"))
 
-    def test_checked_in_2500_pair_dataset_matches_generator(self):
+    def test_full_dataset_generates_from_the_benchmark_fixture(self):
         android_root = Path(__file__).resolve().parent.parent
         catalog = load_catalog(
             android_root / "app/src/test/resources/voice-benchmark/corpus.json"
         )
-        expected = generate_dataset(catalog)
-        checked_in = json.loads(
-            (android_root / "training-data/voice/synthetic-v1.json").read_text(
-                encoding="utf-8"
-            )
-        )
 
-        self.assertEqual(expected, checked_in)
+        first = generate_dataset(catalog)
+        second = generate_dataset(catalog)
+
+        self.assertEqual(first, second)
+        self.assertEqual(2500, first["positive_count"])
+        self.assertEqual(5000, first["hard_negative_count"])
+        self.assertEqual(7500, len(first["examples"]))
 
 
 if __name__ == "__main__":

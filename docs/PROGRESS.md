@@ -8,8 +8,13 @@ Newest entries on top.
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
 Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
-local `development` (`8701773` to `05d767d`). Nothing is pushed, so CI has never run. Full
-review: `APP-REVIEW-2026-11.md`.
+local `development` (`8701773` to `05d767d`). The branch is pushed as PR 21;
+`origin/development` is unchanged, and CI has not run yet. Full review:
+`APP-REVIEW-2026-11.md`.
+
+`android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
+the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
+reproduced it byte for byte before removal. It remains in older commits, starting at `eb37aa2`.
 
 **Integrated** the finished local branches, with both histories kept: M7, EX-24, M5 and M6,
 the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real

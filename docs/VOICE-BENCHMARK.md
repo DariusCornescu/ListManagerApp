@@ -89,17 +89,18 @@ From `android-native/`:
   --seed 240513
 ```
 
-The checked-in `synthetic-v1.json` contains 2,500 positive pairs and two hard
+The output is not kept in git: `training-data/` is ignored, so run the command
+above when you need the file. It contains 2,500 positive pairs and two hard
 negatives for each positive, for 7,500 rows in total. Templates vary commands,
 quantities, diacritics, digit quantities, and common ASR spacing. Negative
 candidates prioritize products from the same family and variants that differ by
 numeric package attributes. Train, validation, and test products are disjoint,
-so a product cannot leak across splits. A unit test regenerates the complete
-file and fails if the code, fixture, or versioned artifact drifts.
+so a product cannot leak across splits. A unit test generates the complete
+dataset twice and fails if the output changes between runs or the counts drift.
 
-The current artifact uses the four-product benchmark fixture. It validates the
+The command above uses the four-product benchmark fixture. It validates the
 data pipeline but has too little catalog diversity for training or an accuracy
-claim. Before a model experiment, regenerate it from an approved catalog-only
+claim. Before a model experiment, generate the file from an approved catalog-only
 JSON or SQLite export and review the class and split distribution. Keep the
 operator-confirmed real transcript corpus separate and untouched as the final
 evaluation set; synthetic rows may warm-start training and hard-negative mining,
