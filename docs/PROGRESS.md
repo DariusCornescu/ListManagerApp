@@ -49,7 +49,8 @@ Newest entries on top.
   replaced during it. The cause of that replacement was not identified.
 
 **Next**
-- Merge PR 33, then this. The Back button with the menu open and the catalog ETag are still open.
+- Merge this. The catalog ETag is still open. The fix for Back with the menu open is on
+  `feat/android-design-finish`, but not yet in `development`.
 - The preview on the phone is signed with `~/.android/debug.keystore`, so build it without
   `ANDROID_USER_HOME` pointing at `.tooling/android-user`, or the install is refused.
 
