@@ -80,7 +80,7 @@ These were found by review and checked against the current code. Defects in code
 
 ## Linear status, 43 issues
 
-28 Done, 3 In Review, 2 In Progress, 10 Backlog. Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
+29 Done, 3 In Review, 1 In Progress, 10 Backlog. Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
 
 ### Done
 
@@ -98,6 +98,7 @@ These meet their own "Done when" and are in local `development` at `05d767d`. Th
 
 | Issue | What landed |
 | --- | --- |
+| EX-24 | Randomized interleavings test on `origin/development`; Talos candidate closed unmerged |
 | EX-25 | Two-writer storm, and Android's way out of a 409. PostgreSQL variant passes on CI |
 | EX-29 | `SyncService` 563 to 335 lines, `SyncDebugScreen` 607 to 221 |
 | EX-33, EX-34 | Catalog and Home screens split. Not checked on a real phone |
@@ -119,7 +120,6 @@ These meet their own "Done when" and are in local `development` at `05d767d`. Th
 
 | Issue | Needs |
 | --- | --- |
-| EX-24 | Yours to accept. A test in local `development` meets the original criterion, and the separate Talos candidate awaits your acceptance as its note asks |
 | EX-8 | Needs your go-ahead to publish `development` and delete remote branches |
 | EX-9, EX-28 | Needs a second real phone and a two-phone run |
 | EX-15, EX-16 | Needs real shop crash reports over the seven-day window |

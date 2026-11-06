@@ -75,7 +75,7 @@ Hashes cited elsewhere in this entry, in the other docs and in Linear comments a
 the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real
 conflict resolution: mutations now check `is_active` under the row lock, and PUT replays are
 answered before that check. M6's migration was re-parented onto M7's to keep one head.
-The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting acceptance.
+The Talos EX-24 candidate (`workbench/5adfcd05-374`) was closed unmerged by the owner's decision. Talos was not running, so its branch and worktree remain.
 
 **Fixed, found while working**
 - Offline edits never replayed on their own. The only trigger, the drawer button, built an
@@ -145,7 +145,7 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   Robolectric.
 
 **Linear, updated with an evidence comment on each issue touched**
-- All 43: 28 Done, 3 In Review, 2 In Progress, 10 Backlog, read back from the project page.
+- All 43: 29 Done, 3 In Review, 1 In Progress, 10 Backlog, read back from the project page.
 - Moved to Done after the merge, each against its own "Done when", with what stays unverified
   in its comment: EX-25, EX-29, EX-33, EX-34, EX-37, EX-39, EX-40, EX-42, EX-43, EX-45, EX-46,
   EX-47. Done here means in local `development`, not pushed or deployed.
@@ -155,8 +155,7 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   in local `development`, but `origin/development` still replays only from the debug screen.
 - Merged but left In Review, because their criteria need the real world: EX-35 and EX-36 (a
   real user, EX-32), EX-44 (two real phones, EX-28).
-- EX-24 stays In Progress as its Talos note asks. The merged test meets its original criterion,
-  but accepting or closing the candidate `workbench/5adfcd05-374` is the owner's decision.
+- EX-24 is Done against its original criterion, after the owner chose to close the Talos candidate.
 - Unchanged: EX-15 (In Progress), EX-8, EX-9, EX-16, EX-19, EX-21, EX-23, EX-28, EX-32, EX-38,
   EX-41 (Backlog). Each needs a person, a device, real data or a go-ahead.
 
@@ -179,8 +178,6 @@ matters only when bisecting. History was left as it is.
   EX-38 and EX-41 (model, recorded audio).
 
 **Open questions**
-- Accept or close the Talos EX-24 candidate; the merged test from `feat/sync-randomized-interleavings`
-  already covers EX-24.
 - Are per-distributor PDFs sent to suppliers, or used as pick lists? It shapes the top features.
 
 ---
