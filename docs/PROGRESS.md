@@ -5,6 +5,28 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 4 of 7: De rezolvat and the single product form
+
+**Changed**
+- New `resolve` route and `ResolveScreen` show ambiguous phrases and unknown ones together, using
+  the existing `NeedsReviewViewModel` and `UnknownViewModel`. They replace the `review` and `unknown`
+  routes, `NeedsReviewScreen` and `UnknownProductsScreen`. The routes were internal to the app.
+- `ProductFormSheet` is now the one form for adding a product, from here and from the catalog. It
+  replaces `EditProductBottomSheet` and the catalog's `AddProductDialog`. The catalog can now create
+  a distributor, which its view model already supported.
+- Only admins see **Adaugă** on an unknown phrase. Others used to see it and then get an error.
+- Deleting an unknown phrase can be undone. A failed save now gets a message instead of replacing
+  the whole list with an error screen.
+
+**Not done**
+- The catalog screen itself and the edit screen change in part 5.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 5: catalog, product editing and inventory.
+
+---
+
 ## 2026-11-06 - Android redesign, part 3 of 7: the current list
 
 **Changed**

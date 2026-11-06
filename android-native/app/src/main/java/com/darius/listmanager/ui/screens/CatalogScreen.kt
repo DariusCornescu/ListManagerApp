@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.darius.listmanager.ui.components.ProductFormSheet
 import com.darius.listmanager.ui.viewmodel.CatalogViewModel
 import kotlinx.coroutines.launch
 
@@ -152,10 +153,11 @@ fun CatalogScreen(
 
         // Add Product Dialog
         if (showAddProductDialog) {
-            AddProductDialog(
+            ProductFormSheet(
+                title = "Produs nou",
                 distributors = uiState.distributors.map { it.distributor.distributorName }.sorted(),
                 onDismiss = { showAddProductDialog = false },
-                onConfirm = { productName, distributorName, aliases ->
+                onSave = { productName, distributorName, aliases ->
                     scope.launch {
                         try {
                             viewModel.addProduct(productName, distributorName, aliases)
