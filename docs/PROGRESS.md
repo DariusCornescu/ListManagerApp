@@ -5,6 +5,52 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Catalog at scale: imports reach phones without opening Catalog (WP3)
+
+**Changed**
+- Backend: the two public catalog lists answer `If-None-Match` with a bodyless 304, and large
+  responses are gzipped. A committed import that changed rows broadcasts `catalog_changed` with
+  a new `change_id`; old apps ignore the unknown type. No migration, and paths are unchanged.
+- Android: new `sync/CatalogRefresher`. It runs after pending work replays, so also on the
+  15-minute periodic run, at app start, on socket connect, on `catalog_changed`, and when a
+  session snapshot hits an unknown product. `WorkspaceSessionResolver` uses it too, so a Session
+  screen edit no longer re-downloads the catalog.
+- Flutter: refreshes on `catalog_changed` and on reconnect, ignores stale overlapping answers, and
+  normalizes search text once per loaded list rather than per keystroke.
+
+**What protects open work**
+- Only rows that differ are written, so an unchanged catalog doesn't touch the search index or
+  re-emit session flows.
+- Rows with unfinished offline work (create, update, delete, or an add that refers to them) are
+  skipped and retried. The saved version is not recorded while anything is skipped.
+- A product leaves the phone only if no session item, inventory row or unfinished operation uses
+  it, and never because of an empty server list. Distributors are never removed.
+- A saved version is ignored when the local catalog is empty, because a wipe by `CrashLoopGuard`
+  would otherwise answer 304 forever.
+- A distributor name held under another id no longer blocks refreshes.
+
+**Changed from the plan:** skipping is per row rather than deferring the whole refresh while a
+create is pending, because one stuck failed operation would otherwise block catalog updates forever.
+
+**Verified:** backend suite, Android debug suite with new `CatalogRefresherTest`, Flutter suite
+including the contract tests against a real local backend. Against a local backend with 144
+products: unchanged check 304 and 0 bytes, full list 17,139 bytes plain and 1,799 gzipped.
+
+**Not verified:** a real phone, including going offline during an import. Production until this
+merges. Android needs a rebuilt app to get any of this.
+
+**Known gap, not fixed here:** after an offline product create replays, the phone keeps its local
+id instead of the server's (`SyncService`). A later server row with that id can still overwrite the
+local row. Only admins can create products, so it should be rare. `ProductRepository.getAll()`, used
+by the Catalog screen and the voice fallback, still downloads the full list; WP4 removes the fallback.
+
+**Next**
+- WP4 baseline on a real phone.
+- Clickable prototype for smoother UI, which the owner wants after WP3. Found so far: Flutter uses
+  default purple, not the brand colours, and "Ai vrut sa zici?" is missing a diacritic on Android.
+
+---
+
 ## 2026-11-06 - Catalog at scale: admin read API and private prices (WP1 + WP2)
 
 Production now holds 3,196 products and 67 distributors after a SAGA import through `/admin`.
