@@ -5,6 +5,86 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Linear issue sweep, integration and application review
+
+Work is on branch `claude/ex-dario-issues-features-b0e765`. Nothing is pushed or merged
+into `development`. Full review: `APP-REVIEW-2026-11.md`.
+
+**Integrated** the finished local branches, with both histories kept: M7, EX-24, M5 and M6,
+the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real
+conflict resolution: mutations now check `is_active` under the row lock, and PUT replays are
+answered before that check. M6's migration was re-parented onto M7's to keep one head.
+The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting acceptance.
+
+**Fixed, found while working**
+- Offline edits never replayed on their own. The only trigger, the drawer button, built an
+  expedited WorkManager request with a battery constraint, which always throws, and the
+  exception was swallowed. Replay now runs when work is queued or the socket connects.
+- A 409 held an operation forever, blocking the whole queue and every refresh, with no way
+  out except deleting all pending work on the debug screen. Users now choose (EX-25).
+- `HttpLoggingInterceptor` at BODY level wrote passwords and tokens to logcat in every build.
+  The WebSocket URL, which holds the token, was logged too.
+- No screen showed save state: `SyncStatusBar` and its dialog were not used anywhere (EX-35).
+- Tapping stop while the recognizer was mid-phrase was ignored.
+- Suggestion badges printed raw scores such as `0.73%`.
+
+**Issues implemented on this branch**
+- Security: EX-45 refresh and revocation, EX-46 CORS, EX-47 dependency upgrade (43 advisories
+  to 0; `python-jose` replaced by PyJWT). See `DEPENDENCY-AUDIT.md`.
+- Sync: EX-25, EX-29 (`SyncService` 563 to 335 lines, `SyncDebugScreen` 607 to 221).
+- UX: EX-33, EX-34, EX-35, EX-36, EX-37, with Compose UI tests running under Robolectric.
+- Voice: EX-42 fixed (session 25/36 to 36/36, inventory 11/17 to 17/17 on a hand-written
+  slice). EX-39 dropped and EX-40 kept at 5, on synthetic noise only. EX-38 and EX-41 are
+  written up in `VOICE-BENCHMARK.md` but not run.
+- EX-43, decided: finish. Flutter now uses the real API. Voice, offline queue and PDFs remain
+  Android-only.
+- EX-44: shared inventory, server and Android, tested with two simulated phones.
+- CI added in `.github/workflows/ci.yml`, not yet run because nothing is pushed.
+
+**Compatibility and migration notes**
+- Additive endpoints: `/api/auth/refresh`, `/logout`, `/logout-all`,
+  `/api/admin/users/{id}/revoke-tokens`, `/api/inventory/*`. Additive fields on login and
+  `/api/auth/me`. The route contract test now reads the OpenAPI schema.
+- **Behaviour change:** a password change now ends every login, including the current one. An
+  installed older client is signed out and must log in again. Clients without the new
+  `ver` claim otherwise keep working until a user's first revocation.
+- A request with no token still gets 403, kept deliberately; newer FastAPI would send 401.
+- Alembic order: M7 `e6f7a8b9c013`, M6 `f7a8b9c0d124`, `a8b9c0d1e235`, `b9c0d1e2f346`,
+  `c0d1e2f3a457`. Room goes to version 10, keeping inventory rows.
+- Existing virtual environments must reinstall `requirements.txt`.
+
+**Verification**
+- Backend: 346 passed, 3 skipped (the PostgreSQL gate), on the pinned dependencies; `pip-audit`
+  finds no known vulnerabilities. A real server booted and ran the token flow.
+- Android: 265 Debug and 252 Release unit tests, including 12 Compose UI tests that render
+  under Robolectric, plus Preview assembly and instrumentation-code compilation.
+- Voice tools: 14 passed at integration.
+- Flutter: `flutter analyze` clean. On the plain Dart VM: API client 10/10, list controller
+  17/17, live updates 4/4, and 5/5 contract tests against a real running backend.
+
+**Not verified**
+- Flutter widget tests were not executed. This machine's Application Control policy blocks
+  `dartaotruntime.exe`, which `flutter test` and builds need. The logic ran on the plain Dart
+  VM with a `ChangeNotifier` stand-in, including 5/5 contract tests against a real backend.
+- The PostgreSQL gates, including the new EX-25 and EX-44 variants, were skipped: Docker's
+  engine did not start. CI runs them once pushed. M7's earlier real-PostgreSQL pass predates
+  the merge with M6.
+- No real device was attached, so nothing here ran on a phone. Screens were rendered under
+  Robolectric. The prod Python is 3.11; the suite ran on 3.12.
+
+**Next**
+- Merge decision and push: this branch, then EX-8's branch cleanup.
+- Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
+- Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
+  EX-38 and EX-41 (model, recorded audio).
+
+**Open questions**
+- Accept or close the Talos EX-24 candidate; the merged test from `feat/sync-randomized-interleavings`
+  already covers EX-24.
+- Are per-distributor PDFs sent to suppliers, or used as pick lists? It shapes the top features.
+
+---
+
 ## 2026-09-13 - Synthetic Romanian voice-pair pipeline
 
 - Added a deterministic catalog-derived generator for Romanian product retrieval
