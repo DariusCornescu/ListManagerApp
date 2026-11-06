@@ -8,9 +8,14 @@ Newest entries on top.
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
 Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
-local `development` (`8701773` to `05d767d`). The branch is pushed as PR 21;
-`origin/development` is unchanged, and CI has not run yet. Full review:
+local `development` (`8701773` to `05d767d`). The branch is pushed as PR 22, which replaced
+PR 21; `origin/development` is unchanged, and CI passes on all three jobs. Full review:
 `APP-REVIEW-2026-11.md`.
+
+**Production is down.** Render's log on 2026-11-06 shows `listmanager-api` crashing at startup
+because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves. The free database
+appears to have been deleted: Render's articles now give free Postgres 30 days plus a 14-day
+grace period, and it was created around 2026-07-04. `render.yaml` still asks for free plans.
 
 `android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
@@ -90,7 +95,8 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
 - EX-43, decided: finish. Flutter now uses the real API. Voice, offline queue and PDFs remain
   Android-only.
 - EX-44: shared inventory, server and Android, tested with two simulated phones.
-- CI added in `.github/workflows/ci.yml`, not yet run because nothing is pushed.
+- CI added in `.github/workflows/ci.yml`. Its first run failed on Android because `gradlew` was
+  committed as non-executable, which is fixed; it now passes.
 
 **Compatibility and migration notes**
 - Additive endpoints: `/api/auth/refresh`, `/logout`, `/logout-all`,
@@ -105,6 +111,9 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
 - Existing virtual environments must reinstall `requirements.txt`.
 
 **Verification**
+- CI at `a079749`, on Linux: backend on Python 3.11 349 passed, 0 skipped, `pip-audit` clean;
+  Android tests and Preview build pass; Flutter passes. The backend run includes the 3
+  PostgreSQL tests, which run every migration on a real, empty PostgreSQL server.
 - Re-run on `05d767d` after the merge: backend 346 passed, 3 skipped; Android 265 Debug and
   252 Release with the tests forced to re-run, plus Preview assembly. No phone was attached.
 - Backend: 346 passed, 3 skipped (the PostgreSQL gate), on the pinned dependencies; `pip-audit`
@@ -126,11 +135,9 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   and the debug APK builds. Kotlin 2.2.20 draws a warning that 2.3.20 will soon be required.
   CI runs analyze and test but no Flutter build, so it would not have caught this.
 - No Flutter build has run on a device or emulator.
-- The PostgreSQL gates, including the new EX-25 and EX-44 variants, were skipped: Docker's
-  engine did not start. CI runs them once pushed. M7's earlier real-PostgreSQL pass predates
-  the merge with M6.
+- The migrations against real production data: CI runs them only on an empty database.
 - No real device was attached, so nothing here ran on a phone. Screens were rendered under
-  Robolectric. The prod Python is 3.11; the suite ran on 3.12.
+  Robolectric.
 
 **Linear, updated with an evidence comment on each issue touched**
 - All 43: 28 Done, 3 In Review, 2 In Progress, 10 Backlog, read back from the project page.
@@ -160,9 +167,9 @@ matters only when bisecting. History was left as it is.
   Compose previews need Android Studio, which is free. No emulator is installed.
 
 **Next**
-- Reach CI. Pushing `development` probably deploys to Render and runs 7 migrations on the live
-  database, so check the service and take a backup first, or run CI from a PR. The first CI
-  run is also the first real run of the PostgreSQL gates. Then EX-8's branch cleanup.
+- Restore production: confirm the database is gone, create a paid one, connect it through
+  `DATABASE_URL`, and move `render.yaml` off the free plans. Then merge PR 22, which probably
+  deploys, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).

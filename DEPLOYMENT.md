@@ -51,8 +51,9 @@ The WebSocket URL (`wss://…/ws`) is derived automatically from this.
 ## Free-tier caveats
 - The free web service **sleeps after ~15 min idle**; the first request after
   that takes ~30–60s to wake (cold start).
-- The free Postgres **expires after 90 days** (data is lost — recreate it, or
-  upgrade to a paid instance / export periodically).
+- The free Postgres **expires after 30 days, with a 14-day grace period before it
+  is deleted** (per Render's articles in November 2026). The data is lost and the
+  service then crashes at startup. Use a paid database for anything you need to keep.
 - Cost: **$0**, no top-up. For always-on without cold starts later, the same
   `Procfile` works on a DigitalOcean Droplet (~$5/mo) or App Platform (~$12/mo).
 

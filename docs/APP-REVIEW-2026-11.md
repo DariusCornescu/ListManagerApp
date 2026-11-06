@@ -2,7 +2,7 @@
 
 List Manager does its core job well on paper: dictate items in Romanian, match them to a catalog, and turn the list into one PDF per distributor. The engineering under it is careful, especially session sync. The gaps now are at the two ends of the workflow: trusting what voice added, and what happens to the list after the PDF.
 
-The most urgent item is not in the code. Production runs on Render's free Postgres, which `DEPLOYMENT.md` says expires after 90 days and loses the data, and the repo has no backup job. Check that database's age today.
+The most urgent item is not in the code. Production is down. The service crashes at startup because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves (Render log, 2026-11-06), so the free database appears to have been deleted. Everything in it is likely lost, and the repo has no backup job.
 
 Everything here was checked against the code at commit `7f9c52d`. It comes from reading and from automated tests. No real phone, shop or user was involved, and the production system was not inspected.
 
@@ -12,7 +12,7 @@ These were found by review and checked against the current code. Defects in code
 
 | Severity | Finding | Evidence | Suggested fix |
 | --- | --- | --- | --- |
-| Critical | Production data can expire | `render.yaml:11` uses free Postgres; `DEPLOYMENT.md:54` says it expires after 90 days with data lost. There is no backup job. Every order ever completed is at risk. | Move to a paid plan or schedule `pg_dump`. Confirm Render's current limit, which may be shorter than the doc says. |
+| Critical | Production is down and its data appears lost | `render.yaml:11` uses free Postgres, which Render's articles say expires after 30 days and is deleted 14 days later. The service log shows the database host no longer resolves. There is no backup job. | Create a paid database, move `render.yaml` off the free plans, and schedule `pg_dump` or use the plan's backups. |
 | High | Production logs are switched off | `alembic/env.py:23` calls `fileConfig` during import, which disables existing loggers, including uvicorn's and the app's. The startup line was missing from a real server log. 500 errors leave no traceback, which also blocks crash work. | Pass `disable_existing_loggers=False`, configure root logging, and redact `token=` first, since the socket URL holds the token. |
 | High | A PDF can miss items, then close the list | `SessionViewModel:129-150` neither sends queued edits nor pulls first, and does not warn about items waiting in review or unknown. A teammate's unseen item is left out of the order. With anything queued, completion waits and `refresh()` can reactivate the old list. | Sync first, then show a pre-PDF check. See feature 1. |
 | High | Wrong products can be added without asking | `ProductRanker:110,132`: an exact alias scores 1.36 and an exact name 1.07, with no margin check before auto-add. "lapte capra" can become "Lapte" plus an unknown "capra". Users see only a count, with no name or undo. | Normalize the scales, require a gap to second place, and show what was added. See feature 2. |
@@ -94,11 +94,11 @@ These were found by review and checked against the current code. Defects in code
 
 ### Done on the local merge
 
-These meet their own "Done when" and are in local `development` at `05d767d`. None is pushed or deployed, and CI has not run.
+These meet their own "Done when" and are in local `development` at `05d767d`. They are on PR 22, where CI passes, and are not merged or deployed.
 
 | Issue | What landed |
 | --- | --- |
-| EX-25 | Two-writer storm, and Android's way out of a 409. PostgreSQL variant skipped |
+| EX-25 | Two-writer storm, and Android's way out of a 409. PostgreSQL variant passes on CI |
 | EX-29 | `SyncService` 563 to 335 lines, `SyncDebugScreen` 607 to 221 |
 | EX-33, EX-34 | Catalog and Home screens split. Not checked on a real phone |
 | EX-37 | Profile fields end to end. Android screen not run on a real phone |
@@ -139,5 +139,5 @@ These meet their own "Done when" and are in local `development` at `05d767d`. No
 ## Questions for you
 
 1. Do the per-distributor PDFs go to suppliers, or are they pick lists for your own staff? Metro, Auchan and Dedeman in the seed data suggest pick lists. This decides whether sending (feature 5) or a delivery check matters more.
-2. How old is the production database?
+2. Did the production database hold anything you need? If so, ask Render support whether it can be recovered.
 3. Should registration stay open? It is what makes the presence finding and public-write surface matter.
