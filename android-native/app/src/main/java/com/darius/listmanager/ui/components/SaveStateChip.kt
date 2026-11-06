@@ -37,7 +37,7 @@ internal fun SaveState.label(): String = when (this) {
     SaveState.SavedOffline -> "Salvat, offline"
     is SaveState.Saving -> "Se salvează…"
     is SaveState.StoredOnPhone -> "Pe telefon ($count)"
-    is SaveState.NeedsAttention -> "De verificat ($count)"
+    is SaveState.NeedsAttention -> "De decis ($count)"
 }
 
 internal fun SaveState.description(): String = when (this) {
