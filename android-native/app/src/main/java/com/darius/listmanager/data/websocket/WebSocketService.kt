@@ -1,21 +1,43 @@
 package com.darius.listmanager.data.websocket
 
+import android.os.SystemClock
 import android.util.Log
 import com.darius.listmanager.network.ApiConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import okhttp3.*
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 class WebSocketService private constructor() {
-    
+
     private val client = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
+        // Without pings a silently dead socket would keep reporting Connected.
+        .pingInterval(30, TimeUnit.SECONDS)
         .build()
-    
-    private var webSocket: WebSocket? = null
-    
+
+    private val retryScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /** Called when the server refuses the token, so the app can try to refresh it. */
+    @Volatile
+    var onTokenRejected: (() -> Unit)? = null
+
+    private val connection = ReconnectingSocket<WebSocket>(
+        open = ::openSocket,
+        close = { it.close(1000, "User disconnected") },
+        schedule = ::runAfter,
+        now = SystemClock::elapsedRealtime,
+        setState = ::publishState,
+        onTokenRejected = { onTokenRejected?.invoke() },
+    )
+
     private val _connectionState = MutableStateFlow<WebSocketState>(WebSocketState.Disconnected)
     val connectionState: StateFlow<WebSocketState> = _connectionState.asStateFlow()
     
@@ -41,14 +63,38 @@ class WebSocketService private constructor() {
         }
     }
     
-    fun connect(token: String) {
-        if (_connectionState.value is WebSocketState.Connected) {
-            Log.d(TAG, "Already connected")
-            return
+    fun connect(token: String) = connection.connect(token)
+
+    /** For logout: stops the socket and every retry until the next [connect]. */
+    fun disconnect() = connection.disconnect()
+
+    /** Retries only run in the foreground, and returning to it reconnects at once. */
+    fun setForeground(foreground: Boolean) {
+        Log.d(TAG, if (foreground) "App in foreground" else "App in background")
+        connection.setForeground(foreground)
+    }
+
+    fun sendPing() {
+        connection.current()?.send("ping")
+    }
+
+    private fun publishState(state: WebSocketState) {
+        _connectionState.value = state
+        if (state is WebSocketState.Disconnected || state is WebSocketState.Error) {
+            _onlineUsers.value = emptyList()
         }
-        
-        _connectionState.value = WebSocketState.Connecting
-        
+    }
+
+    private fun runAfter(delayMillis: Long, action: () -> Unit): () -> Unit {
+        Log.d(TAG, "Retrying WebSocket in $delayMillis ms")
+        val job = retryScope.launch {
+            delay(delayMillis)
+            action()
+        }
+        return { job.cancel() }
+    }
+
+    private fun openSocket(token: String): WebSocket {
         // Build WebSocket URL with token using ApiConfig
         val httpUrl = ApiConfig.BASE_URL.replace("http://", "").replace("https://", "").trimEnd('/')
         val wsProtocol = if (ApiConfig.USE_PRODUCTION) "wss" else "ws"
@@ -61,16 +107,18 @@ class WebSocketService private constructor() {
             .url(wsUrl)
             .build()
         
-        webSocket = client.newWebSocket(request, object : WebSocketListener() {
-            
+        return client.newWebSocket(request, object : WebSocketListener() {
+
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d(TAG, "WebSocket connected")
-                _connectionState.value = WebSocketState.Connected
+                connection.onOpened(webSocket)
             }
-            
+
             override fun onMessage(webSocket: WebSocket, text: String) {
+                // A socket that was replaced or closed must not touch the current state.
+                if (!connection.isCurrent(webSocket)) return
                 Log.d(TAG, "Received message: $text")
-                
+
                 try {
                     val json = JSONObject(text)
                     val type = json.getString("type")
@@ -247,30 +295,25 @@ class WebSocketService private constructor() {
             
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closing: $code - $reason")
-                _connectionState.value = WebSocketState.Disconnected
+                // Finish the closing handshake. Not with the received code, which may be
+                // one OkHttp refuses to send, such as 1005 when the server gave none.
+                webSocket.close(1000, null)
+                connection.onDropped(webSocket, WebSocketState.Disconnected, isRejectedClose(code))
             }
-            
+
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d(TAG, "WebSocket closed: $code - $reason")
-                _connectionState.value = WebSocketState.Disconnected
-                _onlineUsers.value = emptyList()
+                connection.onDropped(webSocket, WebSocketState.Disconnected, isRejectedClose(code))
             }
-            
+
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e(TAG, "WebSocket error: ${t.message}", t)
-                _connectionState.value = WebSocketState.Error(t.message ?: "Unknown error")
-                _onlineUsers.value = emptyList()
+                connection.onDropped(
+                    webSocket,
+                    WebSocketState.Error(t.message ?: "Unknown error"),
+                    isRejectedHandshake(response?.code),
+                )
             }
         })
-    }
-    
-    fun disconnect() {
-        webSocket?.close(1000, "User disconnected")
-        webSocket = null
-        _connectionState.value = WebSocketState.Disconnected
-    }
-    
-    fun sendPing() {
-        webSocket?.send("ping")
     }
 }
