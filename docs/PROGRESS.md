@@ -20,7 +20,7 @@ period, and it was created around 2026-07-04. Merging PR 22 made the Blueprint r
 deploy failed and the plan-change deploy succeeded. Live checks after that: `/health` healthy,
 new routes present, seed catalog of 48 distributors and 24 products with no duplicates.
 Accounts, lists and any imported catalog from before are lost. The new database is
-PostgreSQL 18, while CI tests on 17. Admin login has not been tested.
+PostgreSQL 18, while CI tests on 17. Admin login works.
 
 `android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
@@ -172,7 +172,7 @@ matters only when bisecting. History was left as it is.
   Compose previews need Android Studio, which is free. No emulator is installed.
 
 **Next**
-- Test admin login, re-import the catalog, and rebuild the apps against the new backend.
+- Re-import the catalog, and rebuild the apps against the new backend.
 - Point CI at PostgreSQL 18 to match production, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
