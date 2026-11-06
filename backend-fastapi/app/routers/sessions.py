@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import List, NoReturn
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
@@ -14,6 +14,16 @@ from ..websocket_manager import manager
 
 
 router = APIRouter()
+
+
+def _refuse(db: Session, status_code: int, detail) -> NoReturn:
+    """Refuse a request made under the session lock, releasing the lock first.
+
+    Handlers run on the event loop, and the session is only closed after a later checkpoint.
+    Another writer could run in that gap and block the loop waiting for this very lock.
+    """
+    db.rollback()
+    raise HTTPException(status_code=status_code, detail=detail)
 
 
 @router.get("/api/session/active", response_model=schemas.GlobalSessionDTO)
@@ -235,7 +245,7 @@ async def clear_session(
     session = sync_ops.lock_session(db, session_id)
     # Checked under the row lock so a concurrent completion cannot slip between.
     if not session.is_active:
-        raise HTTPException(status_code=400, detail="Session is no longer active.")
+        _refuse(db, 400, "Session is no longer active.")
 
     deleted_count = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id
@@ -333,13 +343,11 @@ async def add_session_item(
     # still checked first; a replay must never bypass authorization.
     stored = sync_ops.check_idempotent(db, key, session_id)
     if stored is not None:
+        db.rollback()
         return stored
 
     if not session.is_active:
-        raise HTTPException(
-            status_code=400,
-            detail="Session is no longer active.",
-        )
+        _refuse(db, 400, "Session is no longer active.")
 
     # Validate before writing: SQLite may accept an orphan without FK checks,
     # while PostgreSQL would fail at flush with an unhandled IntegrityError.
@@ -347,7 +355,7 @@ async def add_session_item(
         models.Product.id == item_data.product_id
     ).first()
     if product is None:
-        raise HTTPException(status_code=404, detail="Product not found")
+        _refuse(db, 404, "Product not found")
 
     existing = db.query(models.GlobalSessionItem).filter(
         models.GlobalSessionItem.session_id == session_id,
@@ -358,9 +366,9 @@ async def add_session_item(
         # Valid increments can overflow the stored total. Reject before changing
         # the item or reserving the idempotency key.
         if existing.quantity + item_data.quantity > schemas.SESSION_INT_MAX:
-            raise HTTPException(status_code=422, detail="Quantity exceeds the supported maximum")
+            _refuse(db, 422, "Quantity exceeds the supported maximum")
         if existing.version >= schemas.SESSION_INT_MAX:
-            raise HTTPException(status_code=409, detail="Item version limit reached")
+            _refuse(db, 409, "Item version limit reached")
         # Item exists - increment quantity
         existing.quantity += item_data.quantity
         existing.version += 1
@@ -470,7 +478,7 @@ async def update_session_item(
         .first()
     )
     if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
+        _refuse(db, 404, "Item not found")
 
     key = update_data.idempotency_key
     # Idempotency: a retried update with the same key returns the stored result.
@@ -478,26 +486,24 @@ async def update_session_item(
     # cannot return another session's stored DTO (cross-tenant leak).
     stored = sync_ops.check_idempotent(db, key, item.session_id)
     if stored is not None:
+        db.rollback()
         return stored
 
     # A replay above stays answerable after completion; new writes do not.
     if not session.is_active:
-        raise HTTPException(status_code=400, detail="Session is no longer active.")
+        _refuse(db, 400, "Session is no longer active.")
 
     # Check version for optimistic locking
     if item.version != update_data.version:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "error": "Conflict",
-                "message": "Item was modified by another user. Please refresh and try again.",
-                "current_version": item.version,
-                "your_version": update_data.version
-            }
-        )
+        _refuse(db, 409, {
+            "error": "Conflict",
+            "message": "Item was modified by another user. Please refresh and try again.",
+            "current_version": item.version,
+            "your_version": update_data.version
+        })
 
     if item.version >= schemas.SESSION_INT_MAX:
-        raise HTTPException(status_code=409, detail="Item version limit reached")
+        _refuse(db, 409, "Item version limit reached")
 
     # Update item
     old_quantity = item.quantity
@@ -587,7 +593,7 @@ async def delete_session_item(
     session_id = item.session_id
     session = sync_ops.lock_session(db, session_id)
     if not session.is_active:
-        raise HTTPException(status_code=400, detail="Session is no longer active.")
+        _refuse(db, 400, "Session is no longer active.")
     item = (
         db.query(models.GlobalSessionItem)
         .filter(models.GlobalSessionItem.id == item_id)
@@ -595,7 +601,7 @@ async def delete_session_item(
         .first()
     )
     if item is None:
-        raise HTTPException(status_code=404, detail="Item not found")
+        _refuse(db, 404, "Item not found")
 
     # Get product name before deleting
     product = db.query(models.Product).filter(

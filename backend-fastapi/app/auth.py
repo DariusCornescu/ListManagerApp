@@ -9,6 +9,7 @@ from jwt import PyJWTError
 import bcrypt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
@@ -90,7 +91,12 @@ def decode_access_token(token: str):
 def create_user_access_token(user: models.User) -> str:
     """Access token bound to the user's current token_version."""
     return create_access_token(
-        data={"sub": user.username, "role": user.role, "ver": user.token_version}
+        data={
+            "sub": user.username,
+            "uid": user.id,
+            "role": user.role,
+            "ver": user.token_version,
+        }
     )
 
 
@@ -107,7 +113,8 @@ def resolve_token_user(token: str, database: Session) -> Optional[models.User]:
     ).first()
     if user is None:
         return None
-    if payload.get("ver", 0) != user.token_version:
+    # "uid": a deleted user's token must not work on a new account with the same name.
+    if payload.get("ver", 0) != user.token_version or payload.get("uid", user.id) != user.id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has been revoked",
@@ -137,6 +144,11 @@ def issue_refresh_token(
 
     Only the SHA-256 is stored, so a database leak does not expose usable tokens.
     """
+    database.query(models.RefreshToken).filter(
+        models.RefreshToken.user_id == user.id,
+        models.RefreshToken.expires_at <= _utcnow(),
+    ).delete(synchronize_session=False)
+
     raw_token = secrets.token_urlsafe(48)
     database.add(models.RefreshToken(
         user_id=user.id,
@@ -150,48 +162,72 @@ def issue_refresh_token(
 def rotate_refresh_token(raw_token: str, database: Session) -> tuple[models.User, str]:
     """Exchange a refresh token for its successor. Caller commits on success.
 
-    A used token presented within the grace window gets another successor: the first
-    response was probably lost. Later than that it was copied or replayed, so the
-    whole family is revoked, and that revocation is committed here, before the 401.
+    A used token presented within the grace window gets a new successor, because the first
+    response was probably lost. That revokes the earlier successor, so two holders of one
+    token cannot both carry on: whoever next presents a revoked token burns the whole family.
+    The same happens to a used token presented after the window. Burning is committed here,
+    before the 401.
     """
     invalid = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid refresh token",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    row = (
-        database.query(models.RefreshToken)
-        .filter(models.RefreshToken.token_hash == _hash_refresh_token(raw_token))
+    token_hash = _hash_refresh_token(raw_token)
+    found = database.query(models.RefreshToken).filter(
+        models.RefreshToken.token_hash == token_hash
+    ).first()
+    if found is None:
+        raise invalid
+
+    # User first, the order revoke_all_user_tokens uses, so a successor issued here
+    # cannot slip past a password change running at the same moment.
+    user = (
+        database.query(models.User)
+        .filter(models.User.id == found.user_id)
         .with_for_update()
         .first()
     )
-    if row is None:
-        raise invalid
+    row = (
+        database.query(models.RefreshToken)
+        .filter(models.RefreshToken.id == found.id)
+        .populate_existing()
+        .with_for_update()
+        .one()
+    )
 
     now = _utcnow()
-    if row.revoked_at is not None or row.expires_at <= now:
+    if row.expires_at <= now:
+        database.rollback()
         raise invalid
-    if row.used_at is not None and now - row.used_at > timedelta(
-        seconds=REFRESH_REUSE_GRACE_SECONDS
-    ):
+
+    replayed = row.used_at is not None
+    too_late = replayed and now - row.used_at > timedelta(seconds=REFRESH_REUSE_GRACE_SECONDS)
+    if row.revoked_at is not None or too_late:
         revoke_refresh_family(row.family_id, database)
         database.commit()
         raise invalid
-
-    user = database.query(models.User).filter(models.User.id == row.user_id).first()
     if user is None or not user.is_active:
+        database.rollback()
         raise invalid
 
+    if replayed:
+        revoke_refresh_family(row.family_id, database, except_id=row.id)
     row.used_at = row.used_at or now
     return user, issue_refresh_token(user, database, family_id=row.family_id)
 
 
-def revoke_refresh_family(family_id: str, database: Session) -> None:
+def revoke_refresh_family(
+    family_id: str, database: Session, except_id: Optional[int] = None
+) -> None:
     """Revoke every live token of one login. Caller commits."""
-    database.query(models.RefreshToken).filter(
+    query = database.query(models.RefreshToken).filter(
         models.RefreshToken.family_id == family_id,
         models.RefreshToken.revoked_at.is_(None),
-    ).update({"revoked_at": _utcnow()}, synchronize_session=False)
+    )
+    if except_id is not None:
+        query = query.filter(models.RefreshToken.id != except_id)
+    query.update({"revoked_at": _utcnow()}, synchronize_session=False)
 
 
 def revoke_refresh_token(raw_token: str, database: Session) -> None:
@@ -204,8 +240,13 @@ def revoke_refresh_token(raw_token: str, database: Session) -> None:
 
 
 def revoke_all_user_tokens(user: models.User, database: Session) -> None:
-    """Invalidate every access and refresh token of the user. Caller commits."""
-    user.token_version += 1
+    """Invalidate every access and refresh token of the user. Caller commits and then closes
+    their sockets with manager.close_user, since a socket is only checked when it connects."""
+    # Locks without reloading the object, which may hold unsaved changes such as a new password.
+    current = database.execute(
+        select(models.User.token_version).where(models.User.id == user.id).with_for_update()
+    ).scalar_one()
+    user.token_version = current + 1
     database.query(models.RefreshToken).filter(
         models.RefreshToken.user_id == user.id,
         models.RefreshToken.revoked_at.is_(None),

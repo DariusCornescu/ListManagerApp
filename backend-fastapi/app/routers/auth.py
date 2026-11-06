@@ -14,6 +14,7 @@ from ..auth import (
 )
 from ..database import get_db
 from ..limiting import limiter
+from ..websocket_manager import manager
 
 
 router = APIRouter()
@@ -149,13 +150,14 @@ def logout(request: Request, data: schemas.RefreshRequest, db: Session = Depends
 
 
 @router.post("/api/auth/logout-all")
-def logout_all(
+async def logout_all(
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Revoke every token of the caller, on all devices, including this one."""
     revoke_all_user_tokens(current_user, db)
     db.commit()
+    await manager.close_user(current_user.id)
     return {"message": "All sessions revoked"}
 
 
@@ -169,7 +171,7 @@ def get_current_user_info(current_user: models.User = Depends(get_current_user))
 
 
 @router.put("/api/auth/me", response_model=schemas.UserDTO)
-def update_current_user_info(
+async def update_current_user_info(
     update_data: schemas.UserUpdate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -210,6 +212,8 @@ def update_current_user_info(
 
     db.commit()
     db.refresh(current_user)
+    if update_data.password is not None:
+        await manager.close_user(current_user.id)
 
     return current_user
 

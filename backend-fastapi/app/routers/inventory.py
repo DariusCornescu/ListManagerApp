@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import authz, models, schemas
+from .. import authz, models, schemas, sync_ops
 from ..auth import get_current_user
 from ..database import get_db
 from ..websocket_manager import manager
@@ -28,6 +28,7 @@ router = APIRouter()
 def _load_for_write(inventory_id: int, user: models.User, db: Session) -> models.Inventory:
     """Authorize, then lock the row for the rest of the transaction."""
     _require_access(inventory_id, user, db)
+    sync_ops.limit_lock_wait(db)
     return (
         db.query(models.Inventory)
         .filter(models.Inventory.id == inventory_id)
@@ -82,6 +83,7 @@ def _dto(item: models.InventoryItem) -> dict:
 
 def _require_product(product_id: Optional[int], db: Session) -> None:
     if product_id is not None and db.get(models.Product, product_id) is None:
+        db.rollback()  # Called under the inventory lock; see sessions._refuse.
         raise HTTPException(status_code=404, detail="Product not found")
 
 

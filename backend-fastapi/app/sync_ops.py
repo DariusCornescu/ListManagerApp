@@ -6,9 +6,19 @@ for committing the transaction; these helpers only add rows / read.
 """
 import json
 
-from sqlalchemy import update
+from sqlalchemy import text, update
 
 from app import models
+
+
+def limit_lock_wait(db) -> None:
+    """Fail a waiting writer rather than let it wait forever.
+
+    Handlers run database calls on the event loop, so a writer stuck waiting for a row lock
+    would freeze the whole process, including the request that would release the lock.
+    """
+    if db.get_bind().dialect.name == "postgresql":
+        db.execute(text("SET LOCAL lock_timeout = '5s'"))
 
 
 def lock_session(db, session_id: int):
@@ -18,6 +28,7 @@ def lock_session(db, session_id: int):
     SQLite ignores ``FOR UPDATE``; its write lock plus the atomic sequence
     update still keeps the local/test path compatible.
     """
+    limit_lock_wait(db)
     return (
         db.query(models.GlobalSession)
         .filter(models.GlobalSession.id == session_id)

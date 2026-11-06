@@ -216,8 +216,8 @@ class Inventory(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     # Exactly one is set. NULLs do not collide, so each owner still has at most one.
-    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True)
-    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True, unique=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, unique=True)
+    team_id = Column(Integer, ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, unique=True)
     created_at = Column(DateTime, default=func.now())
 
     __table_args__ = (
@@ -232,7 +232,7 @@ class InventoryItem(Base):
     __tablename__ = "inventory_items"
 
     id = Column(Integer, primary_key=True, index=True)
-    inventory_id = Column(Integer, ForeignKey("inventories.id"), nullable=False, index=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id", ondelete="CASCADE"), nullable=False, index=True)
     # Chosen by the phone before sending, so a retried add finds the row it created.
     item_uuid = Column(String(36), nullable=False)
     name = Column(String(200), nullable=False)
@@ -260,6 +260,6 @@ class InventoryAppliedOp(Base):
     __tablename__ = "inventory_applied_ops"
 
     key = Column(String(64), primary_key=True)
-    inventory_id = Column(Integer, ForeignKey("inventories.id"), primary_key=True)
+    inventory_id = Column(Integer, ForeignKey("inventories.id", ondelete="CASCADE"), primary_key=True)
     result_json = Column(Text, nullable=False)
     created_at = Column(DateTime, default=func.now())

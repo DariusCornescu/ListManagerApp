@@ -13,6 +13,7 @@ from ..auth import get_current_admin_user, revoke_all_user_tokens
 from ..config import settings
 from ..database import get_db
 from ..limiting import limiter
+from ..websocket_manager import manager
 from ..services.catalog_import import CatalogImportError, import_catalog_csv
 
 
@@ -163,7 +164,7 @@ def get_all_users(
 
 
 @router.post("/api/admin/users/{user_id}/revoke-tokens")
-def revoke_user_tokens(
+async def revoke_user_tokens(
     user_id: int,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
@@ -174,6 +175,7 @@ def revoke_user_tokens(
         raise HTTPException(status_code=404, detail="User not found")
     revoke_all_user_tokens(user, db)
     db.commit()
+    await manager.close_user(user_id)
     return {"message": "Tokens revoked", "user_id": user_id}
 
 

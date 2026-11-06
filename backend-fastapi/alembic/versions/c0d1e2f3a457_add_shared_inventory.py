@@ -28,10 +28,16 @@ def upgrade():
             name=op.f("ck_inventories_ck_inventory_one_owner"),
         ),
         sa.ForeignKeyConstraint(
-            ["owner_user_id"], ["users.id"], name=op.f("fk_inventories_owner_user_id_users")
+            ["owner_user_id"],
+            ["users.id"],
+            name=op.f("fk_inventories_owner_user_id_users"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
-            ["team_id"], ["teams.id"], name=op.f("fk_inventories_team_id_teams")
+            ["team_id"],
+            ["teams.id"],
+            name=op.f("fk_inventories_team_id_teams"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_inventories")),
         sa.UniqueConstraint("owner_user_id", name=op.f("uq_inventories_owner_user_id")),
@@ -56,6 +62,7 @@ def upgrade():
             ["inventory_id"],
             ["inventories.id"],
             name=op.f("fk_inventory_items_inventory_id_inventories"),
+            ondelete="CASCADE",
         ),
         sa.ForeignKeyConstraint(
             ["product_id"],
@@ -81,6 +88,7 @@ def upgrade():
             ["inventory_id"],
             ["inventories.id"],
             name=op.f("fk_inventory_applied_ops_inventory_id_inventories"),
+            ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("key", "inventory_id", name=op.f("pk_inventory_applied_ops")),
     )

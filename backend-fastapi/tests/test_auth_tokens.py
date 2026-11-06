@@ -1,5 +1,6 @@
 """EX-45: refresh rotation, reuse detection and revocation."""
 from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
@@ -63,12 +64,79 @@ def test_retry_within_grace_window_survives_a_lost_response(client, sample_user)
     first = _login(client)["refresh_token"]
     client.post("/api/auth/refresh", json={"refresh_token": first})
 
-    # The phone never saw that response, so it presents the same token again.
+    # The phone never saw that response, so it presents the same token again. Twice,
+    # because a flaky network can lose the second answer as well.
+    client.post("/api/auth/refresh", json={"refresh_token": first})
     retry = client.post("/api/auth/refresh", json={"refresh_token": first})
     assert retry.status_code == 200
     assert client.post(
         "/api/auth/refresh", json={"refresh_token": retry.json()["refresh_token"]}
     ).status_code == 200
+
+
+def test_a_copied_token_cannot_keep_a_parallel_login_alive(client, sample_user):
+    """A thief replays a token within the grace window; the victim's next refresh burns both."""
+    stolen = _login(client)["refresh_token"]
+    victim = client.post("/api/auth/refresh", json={"refresh_token": stolen}).json()["refresh_token"]
+    thief = client.post("/api/auth/refresh", json={"refresh_token": stolen}).json()["refresh_token"]
+
+    assert client.post("/api/auth/refresh", json={"refresh_token": victim}).status_code == 401
+    assert client.post("/api/auth/refresh", json={"refresh_token": thief}).status_code == 401
+
+
+def test_expired_rows_are_removed_at_the_next_login(client, sample_user, db_session):
+    _login(client)
+    past = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=1)
+    db_session.query(models.RefreshToken).update({"expires_at": past})
+    db_session.commit()
+
+    _login(client)
+
+    assert db_session.query(models.RefreshToken).count() == 1
+
+
+def test_a_deleted_users_token_does_not_work_on_a_new_account_with_that_name(
+    client, sample_user, db_session
+):
+    other_user_token = create_access_token(
+        data={"sub": sample_user.username, "uid": sample_user.id + 1000, "ver": 0}
+    )
+    assert _me_status(client, other_user_token) == 401
+
+
+def _closed_sockets():
+    return patch("app.websocket_manager.manager.close_user", new_callable=AsyncMock)
+
+
+def test_revoking_closes_open_sockets(client, sample_user, admin_headers):
+    tokens = _login(client)
+    with _closed_sockets() as close:
+        client.post("/api/admin/users/%d/revoke-tokens" % sample_user.id, headers=admin_headers)
+    close.assert_awaited_once_with(sample_user.id)
+
+    tokens = _login(client)
+    with _closed_sockets() as close:
+        client.post("/api/auth/logout-all", headers=_bearer(tokens["access_token"]))
+    close.assert_awaited_once_with(sample_user.id)
+
+
+def test_a_password_change_closes_sockets_but_an_email_change_does_not(client, sample_user):
+    tokens = _login(client)
+    with _closed_sockets() as close:
+        client.put(
+            "/api/auth/me",
+            headers=_bearer(tokens["access_token"]),
+            json={"email": "changed@example.com"},
+        )
+    close.assert_not_awaited()
+
+    with _closed_sockets() as close:
+        client.put(
+            "/api/auth/me",
+            headers=_bearer(tokens["access_token"]),
+            json={"password": "another-password-789"},
+        )
+    close.assert_awaited_once_with(sample_user.id)
 
 
 def test_reused_refresh_token_revokes_the_whole_family(client, sample_user, db_session):
