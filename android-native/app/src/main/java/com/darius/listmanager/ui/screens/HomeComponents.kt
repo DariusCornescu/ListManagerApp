@@ -285,7 +285,7 @@ private fun SuggestionItem(
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
                 Text(
-                    text = "$score%",
+                    text = "${(score * 100).toInt().coerceAtMost(100)}%",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold
                 )
