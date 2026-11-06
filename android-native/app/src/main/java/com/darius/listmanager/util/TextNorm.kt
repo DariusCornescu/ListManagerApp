@@ -3,13 +3,21 @@ import java.text.Normalizer
 import java.util.Locale
 
 object TextNorm {
+    // Compiled once: these run many times for every product on each voice match.
+    private val WHITESPACE = Regex("\\s+")
+    private val COMBINING_MARKS = Regex("\\p{InCombiningDiacriticalMarks}+")
+    private val DIGITS_AROUND_X = Regex("(\\d)\\s*x\\s*(\\d)")
+    private val SPACED_DIMENSION = Regex("(\\d{1,3})\\s+(\\d{2,4})(?=\\s|$)")
+    private val NUMBER = Regex("\\d+\\.?\\d*")
+    private val DIMENSION = Regex("\\d+\\.?\\d*x\\d+\\.?\\d*(?:x\\d+\\.?\\d*)?")
+
     fun normalize(text: String): String {
         return text
             .lowercase(Locale.getDefault())
             .removeDiacritics()
             .normalizeDimensionSeparators()
             .trim()
-            .replace(Regex("\\s+"), " ")
+            .replace(WHITESPACE, " ")
     }
 
     private fun String.removeDiacritics(): String {
@@ -26,7 +34,7 @@ object TextNorm {
             .replace("Ț", "t")
 
         val normalized = Normalizer.normalize(result, Normalizer.Form.NFD)
-        return normalized.replace(Regex("\\p{InCombiningDiacriticalMarks}+"), "")
+        return normalized.replace(COMBINING_MARKS, "")
     }
 
     private fun String.normalizeDimensionSeparators(): String {
@@ -34,18 +42,15 @@ object TextNorm {
             .replace("×", "x")
             .replace("*", "x")
             .replace(" pe ", "x")
-            .replace(Regex("(\\d)\\s*x\\s*(\\d)"), "$1x$2")
+            .replace(DIGITS_AROUND_X, "$1x$2")
 
-        result = result.replace(
-            Regex("(\\d{1,3})\\s+(\\d{2,4})(?=\\s|$)"),
-            "$1x$2"
-        )
+        result = result.replace(SPACED_DIMENSION, "$1x$2")
         return result
     }
 
     fun tokenize(text: String): List<String> {
         return normalize(text)
-            .split(Regex("\\s+"))
+            .split(WHITESPACE)
             .filter { it.isNotBlank() }
     }
 
@@ -54,7 +59,7 @@ object TextNorm {
     }
 
     fun extractNumbers(text: String): List<String> {
-        return Regex("\\d+\\.?\\d*").findAll(text)
+        return NUMBER.findAll(text)
             .map { it.value }
             .toList()
     }
@@ -63,7 +68,7 @@ object TextNorm {
         val normalized = normalize(text)
         val dimensions = mutableSetOf<String>()
 
-        Regex("\\d+\\.?\\d*x\\d+\\.?\\d*(?:x\\d+\\.?\\d*)?")
+        DIMENSION
             .findAll(normalized)
             .forEach { dimensions.add(it.value) }
 
