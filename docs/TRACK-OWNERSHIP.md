@@ -56,6 +56,8 @@ replay, WebSocket scoping, sync diagnostics, and all migration ordering.
 - `android-native/app/src/main/java/com/darius/listmanager/data/repository/PendingOperationRepository.kt`
 - `android-native/app/src/main/java/com/darius/listmanager/data/repository/SessionRepository.kt`
 - `android-native/app/src/main/java/com/darius/listmanager/data/repository/SessionTransaction.kt`
+- `android-native/app/src/main/java/com/darius/listmanager/data/repository/ProductRepository.kt`
+- `android-native/app/src/main/java/com/darius/listmanager/data/repository/DistributorRepository.kt`
 - `android-native/app/src/main/java/com/darius/listmanager/ui/screens/SyncDebugScreen.kt`
 - sync-focused backend and Android tests
 
@@ -75,6 +77,20 @@ decomposition, the big-REC home, save-state presentation, and user profile UI.
 
 T4 requests an Alembic revision slot from T3 for the append-only user profile
 columns.
+
+### T5 - Catalog admin: the real catalog, kept private
+
+Scope: the admin catalog read and search API, moving `/admin` onto it, and
+keeping purchase prices out of public responses. T5 owns catalog import too.
+
+- `backend-fastapi/app/routers/catalog.py`
+- `backend-fastapi/app/services/catalog_import.py`
+- catalog-specific code in `backend-fastapi/app/routers/admin.py`
+- `backend-fastapi/app/static/admin.html`, except T1's crash view
+- catalog and admin-page backend tests
+
+Getting catalog data onto phones belongs to T3. Matching against it belongs to
+T2. `GET /api/catalog/products` stays a full list for the mobile clients.
 
 ## Shared integration surfaces
 
