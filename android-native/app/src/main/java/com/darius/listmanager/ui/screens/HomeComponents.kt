@@ -9,130 +9,120 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.darius.listmanager.data.speech.SpeechState
 import com.darius.listmanager.util.RankedProduct
 
-/** The mic control and its processing overlay, the hero of the screen. */
+internal enum class RecordAction { START, STOP, BUSY }
+
+/** Stop must work while the recognizer is mid-phrase, not only between phrases. */
+internal fun recordActionFor(speechState: SpeechState, isProcessing: Boolean): RecordAction = when {
+    speechState is SpeechState.Listening || speechState is SpeechState.Partial -> RecordAction.STOP
+    speechState is SpeechState.Final || isProcessing -> RecordAction.BUSY
+    else -> RecordAction.START
+}
+
+/** The one thing a first-time user needs to find on this screen. */
 @Composable
-internal fun HomeMicButton(speechState: SpeechState, isProcessing: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
-    Box(
-        contentAlignment = Alignment.Center,
-        modifier = Modifier.size(160.dp)
+internal fun RecordButton(
+    action: RecordAction,
+    onStart: () -> Unit,
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val container = when (action) {
+        RecordAction.START -> scheme.primary
+        RecordAction.STOP -> scheme.error
+        RecordAction.BUSY -> scheme.surfaceVariant
+    }
+    val content = when (action) {
+        RecordAction.START -> scheme.onPrimary
+        RecordAction.STOP -> scheme.onError
+        RecordAction.BUSY -> scheme.onSurfaceVariant
+    }
+    val description = when (action) {
+        RecordAction.START -> "Începe înregistrarea"
+        RecordAction.STOP -> "Oprește înregistrarea"
+        RecordAction.BUSY -> "Se procesează"
+    }
+
+    Surface(
+        onClick = {
+            when (action) {
+                RecordAction.START -> onStart()
+                RecordAction.STOP -> onStop()
+                RecordAction.BUSY -> Unit
+            }
+        },
+        enabled = action != RecordAction.BUSY,
+        shape = CircleShape,
+        color = container,
+        contentColor = content,
+        shadowElevation = 6.dp,
+        modifier = modifier
+            .size(RecordButtonSize)
+            .semantics { contentDescription = description },
     ) {
-        Surface(
-            shape = CircleShape,
-            color = when (speechState) {
-                is SpeechState.Listening -> MaterialTheme.colorScheme.primaryContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            },
-            modifier = Modifier.fillMaxSize(),
-            onClick = {
-
-                when (speechState) {
-                    is SpeechState.Idle -> {
-                        onStart()
-                    }
-                    is SpeechState.Listening -> {
-                        onStop()
-                    }
-                    is SpeechState.Partial, is SpeechState.Final -> {
-                    }
-                    is SpeechState.Error -> {
-                        onStart()
-                    }
-                }
-            }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                if (isProcessing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(72.dp),
-                        strokeWidth = 3.dp
-                    )
-                } else {
-                    Icon(
-                        if (speechState is SpeechState.Listening)
-                            Icons.Rounded.Stop
-                        else
-                            Icons.Rounded.Mic,
-                        contentDescription = "Microphone",
-                        modifier = Modifier.size(72.dp),
-                        tint = when (speechState) {
-                            is SpeechState.Listening -> MaterialTheme.colorScheme.onPrimaryContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                }
+            if (action == RecordAction.BUSY) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(72.dp),
+                    strokeWidth = 4.dp,
+                    color = content,
+                )
+            } else {
+                Icon(
+                    if (action == RecordAction.STOP) Icons.Rounded.Stop else Icons.Rounded.Mic,
+                    contentDescription = null,
+                    modifier = Modifier.size(96.dp),
+                )
             }
-        }
-
-        // Pulsing ring when processing
-        if (isProcessing) {
-            CircularProgressIndicator(
-                modifier = Modifier
-                    .size(140.dp)
-                    .padding(8.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                when (action) {
+                    RecordAction.START -> "Înregistrează"
+                    RecordAction.STOP -> "Oprește"
+                    RecordAction.BUSY -> "Procesez…"
+                },
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
             )
         }
     }
 }
+
+private val RecordButtonSize = 220.dp
 
 @Composable
 internal fun HomeSpeechStatus(speechState: SpeechState, addedCount: Int) {
     Text(
-        when (val state = speechState) {
-            is SpeechState.Idle -> "Apasă pentru a începe înregistrarea"
-            is SpeechState.Listening -> "Ascultare..."
-            is SpeechState.Partial -> "Am auzit: ${state.text}"
-            is SpeechState.Final -> "Procesez: ${state.text}"
-            is SpeechState.Error -> "Eroare: ${state.message}"
+        when (speechState) {
+            is SpeechState.Idle -> "Apasă și spune produsele"
+            is SpeechState.Listening -> "Te ascult..."
+            is SpeechState.Partial -> "Am auzit: ${speechState.text}"
+            is SpeechState.Final -> "Procesez: ${speechState.text}"
+            is SpeechState.Error -> "Eroare: ${speechState.message}"
         },
         style = MaterialTheme.typography.bodyLarge,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
     )
 
     if (speechState is SpeechState.Listening || addedCount > 0) {
         Text(
-            "Adăugate în sesiune: ${addedCount}",
+            "Adăugate în sesiune: $addedCount",
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
         )
-    }
-}
-
-@Composable
-internal fun HomeProcessingCard() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.tertiaryContainer
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(20.dp),
-                strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                "Procesez cererea…",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onTertiaryContainer
-            )
-        }
     }
 }
 

@@ -73,6 +73,10 @@ android {
         }
     }
     testBuildType = "preview"
+    // Compose UI tests render real screens under Robolectric, without a device.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
@@ -104,6 +108,9 @@ dependencies {
     testImplementation(libs.junit)
     // Native SQLite tests exercise Room persistence and rollback without a device.
     testImplementation("org.robolectric:robolectric:4.14.1")
+    // Debug only: the host activity comes from the debug-only ui-test-manifest.
+    testDebugImplementation(platform(libs.androidx.compose.bom))
+    testDebugImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
