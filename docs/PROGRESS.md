@@ -5,6 +5,31 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 2 of 7: Home
+
+**Changed**
+- Home now shows what's happening in large type at the top, with **De rezolvat**, the record button
+  and **Lista** in a bar within thumb reach. The button squares off, turns red and pulses while
+  listening. With animations off on the phone, the rings and sound bars stay still.
+- Each add shows a card with **Anulează** for 6 seconds. Undo removes only the quantity that add
+  put there (`UndoAddUseCase`), so someone else's additions to the same product stay.
+- **Behavior change:** an ambiguous phrase now opens "Ai vrut să zici?" for the first match, while
+  listening continues. Later ones in the same stretch wait in the review list. The phrase is saved
+  before the question appears, so closing the sheet or the app loses nothing.
+- Speech errors and Home messages are in Romanian. The save chip says "De decis" for held changes,
+  because "De verificat" also named the ambiguous-speech list.
+
+**Not done**
+- `HomeViewModel`'s prompt and undo window have no automated test, because the view model needs a
+  real speech recognizer and database. They need a check on a phone.
+- **De rezolvat** still opens the old review or unknown screen. Part 4 merges them.
+- Nothing here has run on a real phone.
+
+**Next**
+- Part 3: the current list.
+
+---
+
 ## 2026-11-06 - Android redesign, part 1 of 7: foundation
 
 **Changed**

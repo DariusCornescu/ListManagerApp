@@ -38,7 +38,7 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
             sessionGate.stop()
-            _speechState.value = SpeechState.Error("Speech recognition not available")
+            _speechState.value = SpeechState.Error("Recunoașterea vocală nu este disponibilă pe acest telefon.")
             return
         }
 
@@ -75,7 +75,7 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
         } catch (e: Exception) {
             Log.e("Speech", "Failed to start listening", e)
             if (sessionGate.stopIfCurrent(generation)) {
-                _speechState.value = SpeechState.Error("Failed to start: ${e.message}")
+                _speechState.value = SpeechState.Error("Recunoașterea vocală nu a pornit. Încearcă din nou.")
             }
         }
     }
@@ -131,13 +131,13 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                         else -> RecognizerEvent.FATAL_ERROR
                     }
                     val message = when (error) {
-                        SpeechRecognizer.ERROR_AUDIO -> "Audio recording error"
-                        SpeechRecognizer.ERROR_CLIENT -> "Client side error"
-                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Insufficient permissions"
-                        SpeechRecognizer.ERROR_NETWORK -> "Network error"
-                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Network timeout"
-                        SpeechRecognizer.ERROR_SERVER -> "Server error"
-                        else -> "Recognition error: $error"
+                        SpeechRecognizer.ERROR_AUDIO -> "Microfonul nu a putut înregistra."
+                        SpeechRecognizer.ERROR_CLIENT -> "Recunoașterea vocală s-a oprit. Încearcă din nou."
+                        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Am nevoie de acces la microfon."
+                        SpeechRecognizer.ERROR_NETWORK -> "Nu există conexiune la internet."
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "Conexiunea la internet e prea lentă."
+                        SpeechRecognizer.ERROR_SERVER -> "Serviciul de recunoaștere nu răspunde."
+                        else -> "Recunoașterea vocală a eșuat (cod $error)."
                     }
                     Log.d("Speech", "onError code=$error -> $event")
                     applyPolicy(generation, event, errorMessage = message)
