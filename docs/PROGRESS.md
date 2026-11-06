@@ -12,16 +12,19 @@ Newest entries on top.
   their base branches.
 - Fixed the doubled system bar spacing, and preview builds can reach a local test server.
 - **Catalog search:** a new search returns the list to the top. Returning to the catalog keeps the place.
+- **Back with the menu open** closes the menu instead of leaving the app. Covered by a test, not yet
+  checked on the phone.
 
 **Checked on a Galaxy S25, Android 17, against production**
 - Install, sign-in, Home, Catalog, Settings, About and Contul meu open without a crash.
 - The catalog shows 3,196 products and 67 distributors. While scrolling, 95% of frames took at most
   8 ms with closed groups and 13 ms in an open group of 261 products.
-- Android tests: 397 passing. Only read requests were made after sign-in.
+- Android tests: 398 passing. Only read requests were made after sign-in during these checks.
 - The local `ApiConfig.kt` decides which server a build uses. It is git-ignored and was edited by hand.
 
 **Found, not fixed**
-- Back with the menu open leaves the app instead of closing the menu.
+- The app showed an error after dictating a product on the phone. Being diagnosed; the cause is not
+  known yet.
 - The live connection dropped several times around a reinstall and leaving the app. In the code, a
   failed connection is only retried when the menu opens or a token is refreshed.
 - Opening Catalog downloads the whole catalog again instead of reusing the ETag.
