@@ -9,239 +9,167 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.darius.listmanager.data.local.entity.PendingOperationEntity
-import com.darius.listmanager.data.repository.AuthState
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.*
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.darius.listmanager.ui.viewmodel.ReviewKind
+import com.darius.listmanager.ui.viewmodel.ReviewLine
+import com.darius.listmanager.ui.viewmodel.SaveStateViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PendingOperationsDialog( onDismiss: () -> Unit, onSyncClick: () -> Unit ) {
-    val context = LocalContext.current
-    val database = remember { com.darius.listmanager.data.local.AppDatabase.getInstance(context) }
-    val accountUserId by AuthState.userId.collectAsState()
-    
-    var operations by remember { mutableStateOf<List<PendingOperationEntity>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    
-    // Load pending operations
-    LaunchedEffect(accountUserId) {
-        withContext(Dispatchers.IO) {
-            operations = accountUserId?.let {
-                database.pendingOperationDao().getUnfinishedForUser(it)
-            } ?: emptyList()
-            isLoading = false
-        }
+fun PendingOperationsDialog(
+    onDismiss: () -> Unit,
+    onSyncClick: () -> Unit,
+    viewModel: SaveStateViewModel = viewModel(),
+) {
+    val lines by viewModel.lines.collectAsState()
+    val message by viewModel.message.collectAsState()
+    val isResolving by viewModel.isResolving.collectAsState()
+
+    DisposableEffect(Unit) {
+        onDispose { viewModel.clearMessage() }
     }
-    
+
+    PendingOperationsDialogContent(
+        lines = lines,
+        message = message,
+        isResolving = isResolving,
+        onDismiss = onDismiss,
+        onSync = {
+            onSyncClick()
+            onDismiss()
+        },
+        onKeepMine = viewModel::keepMine,
+        onUseServer = viewModel::useServer,
+        onRetry = viewModel::retry,
+    )
+}
+
+@Composable
+internal fun PendingOperationsDialogContent(
+    lines: List<ReviewLine>,
+    message: String?,
+    isResolving: Boolean,
+    onDismiss: () -> Unit,
+    onSync: () -> Unit,
+    onKeepMine: (Long) -> Unit,
+    onUseServer: (Long) -> Unit,
+    onRetry: (Long) -> Unit,
+) {
+    val needsDecision = lines.any { it.kind != ReviewKind.QUEUED }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Rounded.PendingActions, "Operații în așteptare") },
-        title = { 
+        icon = {
+            Icon(
+                if (lines.isEmpty()) Icons.Rounded.CloudDone else Icons.Rounded.PendingActions,
+                contentDescription = null,
+            )
+        },
+        title = {
             Text(
-                "Operații în așteptare",
+                when {
+                    lines.isEmpty() -> "Totul este salvat"
+                    needsDecision -> "Ai de decis"
+                    else -> "Modificări în așteptare"
+                },
                 style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
             )
         },
         text = {
-            if (isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                when {
+                    lines.isEmpty() -> Text("Toate modificările tale au ajuns pe server.")
+                    needsDecision -> Text("Restul modificărilor așteaptă până rezolvi aceste produse. Nimic nu s-a pierdut.")
+                    else -> Text("Sunt salvate pe telefon și se trimit automat.")
                 }
-            } else if (operations.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Rounded.CheckCircle,
-                        contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(Modifier.height(16.dp))
+                message?.let {
                     Text(
-                        "Toate operațiile sunt sincronizate!",
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium
+                        it,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
                     )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(operations) { operation ->
-                        PendingOperationItem(operation)
+                if (isResolving) LinearProgressIndicator(Modifier.fillMaxWidth())
+                if (lines.isNotEmpty()) {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(lines, key = { it.id }) { line ->
+                            ReviewLineCard(line, enabled = !isResolving, onKeepMine, onUseServer, onRetry)
+                        }
                     }
                 }
             }
         },
         confirmButton = {
-            if (operations.isNotEmpty()) {
-                Button(
-                    onClick = {
-                        android.util.Log.d("PendingOpsDialog", "Sync button clicked in dialog - ${operations.size} operations")
-                        onSyncClick()
-                        onDismiss()
-                    }
-                ) {
+            if (lines.isNotEmpty() && !needsDecision) {
+                Button(onClick = onSync) {
                     Icon(Icons.Rounded.Sync, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Sincronizează acum")
+                    Text("Trimite acum")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Închide")
-            }
-        }
+            TextButton(onClick = onDismiss) { Text("Închide") }
+        },
     )
 }
 
 @Composable
-private fun PendingOperationItem(operation: PendingOperationEntity) {
+private fun ReviewLineCard(
+    line: ReviewLine,
+    enabled: Boolean,
+    onKeepMine: (Long) -> Unit,
+    onUseServer: (Long) -> Unit,
+    onRetry: (Long) -> Unit,
+) {
+    val isHeld = line.kind != ReviewKind.QUEUED
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = when (operation.status) {
-                "PENDING", "WAITING" -> MaterialTheme.colorScheme.tertiaryContainer
-                "IN_PROGRESS" -> MaterialTheme.colorScheme.primaryContainer
-                "FAILED" -> MaterialTheme.colorScheme.errorContainer
-                else -> MaterialTheme.colorScheme.surfaceVariant
-            }
-        )
+            containerColor = if (isHeld) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surfaceVariant
+        ),
     ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                // Operation type icon + text
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        imageVector = when {
-                            operation.operationType.contains("CREATE") -> Icons.Rounded.Add
-                            operation.operationType.contains("UPDATE") -> Icons.Rounded.Edit
-                            operation.operationType.contains("DELETE") -> Icons.Rounded.Delete
-                            else -> Icons.Rounded.Info
-                        },
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = when (operation.status) {
-                            "PENDING", "WAITING" -> MaterialTheme.colorScheme.onTertiaryContainer
-                            "IN_PROGRESS" -> MaterialTheme.colorScheme.onPrimaryContainer
-                            "FAILED" -> MaterialTheme.colorScheme.onErrorContainer
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
-                    Text(
-                        text = formatOperationType(operation.operationType),
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                
-                // Status badge
-                Badge(
-                    containerColor = when (operation.status) {
-                        "PENDING", "WAITING" -> MaterialTheme.colorScheme.tertiary
-                        "IN_PROGRESS" -> MaterialTheme.colorScheme.primary
-                        "FAILED" -> MaterialTheme.colorScheme.error
-                        else -> MaterialTheme.colorScheme.secondary
-                    }
-                ) {
-                    Text(
-                        text = when (operation.status) {
-                            "PENDING", "WAITING" -> "În așteptare"
-                            "IN_PROGRESS" -> "În curs"
-                            "FAILED" -> "Eșuat"
-                            else -> operation.status
-                        },
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                }
-            }
-            
-            // Resource type
-            Text(
-                text = formatResourceType(operation.resourceType),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            // Created time
-            Text(
-                text = "Creat: ${formatTime(operation.createdAt)}",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            
-            // Error message if failed
-            if (operation.status == "FAILED" && operation.lastError != null) {
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    text = "⚠️ ${operation.lastError}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error
+                Icon(
+                    if (isHeld) Icons.Rounded.WarningAmber else Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
                 )
+                Text(line.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            }
+            when (line.kind) {
+                ReviewKind.QUEUED -> Unit
+                ReviewKind.CONFLICT -> {
+                    Text(
+                        "Altcineva a modificat acest produs între timp. Ce păstrăm?",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onKeepMine(line.id) }, enabled = enabled) { Text("Varianta mea") }
+                        OutlinedButton(onClick = { onUseServer(line.id) }, enabled = enabled) { Text("Varianta lor") }
+                    }
+                }
+                ReviewKind.HELD -> {
+                    Text(
+                        "Serverul nu a acceptat modificarea.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onRetry(line.id) }, enabled = enabled) { Text("Reîncearcă") }
+                        OutlinedButton(onClick = { onUseServer(line.id) }, enabled = enabled) { Text("Renunță") }
+                    }
+                }
             }
         }
     }
 }
-
-private fun formatOperationType(type: String): String {
-    return when (type) {
-        "CREATE_PRODUCT" -> "Creare produs"
-        "UPDATE_PRODUCT" -> "Actualizare produs"
-        "DELETE_PRODUCT" -> "Ștergere produs"
-        "CREATE_DISTRIBUTOR" -> "Creare distribuitor"
-        "UPDATE_DISTRIBUTOR" -> "Actualizare distribuitor"
-        "DELETE_DISTRIBUTOR" -> "Ștergere distribuitor"
-        "ADD_SESSION_ITEM" -> "Adăugare în sesiune"
-        "UPDATE_SESSION_ITEM" -> "Actualizare sesiune"
-        "DELETE_SESSION_ITEM" -> "Ștergere din sesiune"
-        else -> type
-    }
-}
-
-private fun formatResourceType(type: String): String {
-    return when (type) {
-        "PRODUCT" -> "📦 Produs"
-        "DISTRIBUTOR" -> "🏢 Distribuitor"
-        "SESSION_ITEM" -> "🛒 Element sesiune"
-        else -> type
-    }
-}
-
-private fun formatTime(timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    
-    return when {
-        diff < 60_000 -> "acum ${diff / 1000}s"
-        diff < 3600_000 -> "acum ${diff / 60_000}m"
-        diff < 86400_000 -> "acum ${diff / 3600_000}h"
-        else -> SimpleDateFormat("dd MMM HH:mm", Locale.getDefault()).format(Date(timestamp))
-    }
-}
-
