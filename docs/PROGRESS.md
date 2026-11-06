@@ -16,6 +16,51 @@ local `development` (`8701773` to `05d767d`). The branch is pushed as PR 21;
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
 reproduced it byte for byte before removal. It remains in older commits, starting at `eb37aa2`.
 
+The `Co-Authored-By: Claude` lines were later removed from this PR's commits, at the owner's
+request. That changed the hashes of the 34 commits below; code, authors and dates are unchanged.
+Hashes cited elsewhere in this entry, in the other docs and in Linear comments are the old ones.
+
+<details><summary>Old and new commit hashes</summary>
+
+| Old | New | Commit |
+| --- | --- | --- |
+| `fb734a4` | `5ce9cc1` | docs: drop superseded deferred sync section |
+| `2707be5` | `1fd1a98` | Merge branch 'feat/offline-session-lifecycle' into claude/ex-dario-iss |
+| `c86fe0d` | `54afef6` | Merge branch 'fix/voice-listening-lifecycle' into claude/ex-dario-issu |
+| `2f83d39` | `1de3045` | Merge branch 'feat/multi-product-dictation' into claude/ex-dario-issue |
+| `e610a3a` | `e4d1377` | Merge branch 'feat/voice-synthetic-corpus' into claude/ex-dario-issues |
+| `19dde18` | `489e50b` | sec: restrict CORS to configured origins |
+| `8e330b8` | `0ddce60` | sec: add refresh token rotation and revocation |
+| `2a1b3cf` | `d748b1b` | sec: upgrade vulnerable backend dependencies |
+| `513b754` | `dbe2dd8` | sec: refresh Android login and stop logging secrets |
+| `4c97cde` | `8dda2a8` | fix: make the offline outbox actually replay |
+| `ff34a69` | `bbf942c` | fix: give held sync conflicts a way out |
+| `7b4c065` | `68e17cf` | refactor: simplify SyncService and SyncDebugScreen |
+| `85a12ea` | `2cf0c63` | refactor: split HomeScreen into focused composables |
+| `cfe106c` | `bc153a4` | refactor: split CatalogScreen into focused composables |
+| `e69d99f` | `730b2a6` | fix: never let sync scheduling crash app start |
+| `19a5834` | `9399b81` | feat: show whether the last change is saved |
+| `e6fe6c6` | `5d82c4c` | feat: make recording the one obvious action on Home |
+| `b470618` | `1ab4727` | feat: add user profile fields |
+| `4b32c62` | `62d3a36` | fix: understand spoken numbers above ten and in inventory lines |
+| `58e0c6e` | `75a32bd` | fix: show suggestion confidence as a real percentage |
+| `1204b66` | `cbd2f21` | test: grade N-best depth and phonetic weight on synthetic noise |
+| `1748c22` | `1b9728a` | feat: add shared inventory API |
+| `90e93d8` | `e532c1d` | feat: share the inventory between phones |
+| `e2b63f2` | `b5f731e` | feat: connect the Flutter client to the real backend |
+| `bb64bb6` | `b403015` | chore: add CI for all three projects |
+| `8afab20` | `d19faf6` | fix: harden refresh, revocation and lock handling after review |
+| `7f9c52d` | `4e9cf45` | fix: close sync dead ends found in review |
+| `d4fa053` | `2f0db01` | docs: add application review and record this work |
+| `05d767d` | `642fd37` | docs: record Linear reconciliation and a commit slip |
+| `c5e6227` | `cb53ef7` | docs: record local merge and final Linear status |
+| `5f44584` | `56d9f12` | test: scroll to the logout button before tapping it |
+| `69bade6` | `d2fb8b5` | fix: raise Flutter's Android build tools to its minimums |
+| `abceac3` | `a59df56` | docs: record Flutter test and build results and VS Code setup |
+| `5dc70b2` | `6ccbe5e` | chore: stop tracking the generated voice dataset |
+
+</details>
+
 **Integrated** the finished local branches, with both histories kept: M7, EX-24, M5 and M6,
 the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real
 conflict resolution: mutations now check `is_active` under the row lock, and PUT replays are
