@@ -258,6 +258,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('ana'), findsOneWidget);
 
+      // The profile rows push the button below the fold at the test's window size.
+      await tester.ensureVisible(find.text('Deconectare'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Deconectare'));
       await tester.pumpAndSettle();
 
