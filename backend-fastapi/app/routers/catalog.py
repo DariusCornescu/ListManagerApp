@@ -135,9 +135,9 @@ async def delete_distributor(
     return {"message": "Distributor deleted successfully", "id": distributor_id}
 
 
-@router.get("/api/catalog/products", response_model=List[schemas.ProductDTO])
+@router.get("/api/catalog/products", response_model=List[schemas.ProductPublicDTO])
 def get_products(search: str = None, db: Session = Depends(get_db)):
-    """Get all products, optionally filter by search query"""
+    """Get all products, optionally filter by search query. Stays a full list for mobile clients."""
     query = db.query(models.Product)
     if search:
         search_filter = f"%{search}%"
@@ -149,7 +149,7 @@ def get_products(search: str = None, db: Session = Depends(get_db)):
     return query.all()
 
 
-@router.get("/api/catalog/products/{product_id}", response_model=schemas.ProductDTO)
+@router.get("/api/catalog/products/{product_id}", response_model=schemas.ProductPublicDTO)
 def get_product(product_id: int, db: Session = Depends(get_db)):
     """Get product by ID"""
     product = db.query(models.Product).filter(

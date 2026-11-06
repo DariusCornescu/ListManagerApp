@@ -50,5 +50,6 @@ def test_update_product_persists_price(client, admin_headers, sample_distributor
     )
     assert resp.status_code == status.HTTP_200_OK
     assert resp.json()["price"] == "6.50"
-    got = client.get(f"/api/catalog/products/{created['id']}").json()
+    page = client.get("/api/admin/catalog/products", headers=admin_headers).json()
+    got = next(p for p in page["items"] if p["id"] == created["id"])
     assert got["price"] == "6.50"

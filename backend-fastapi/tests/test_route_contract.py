@@ -31,6 +31,7 @@ EXPECTED_HTTP_ROUTES = {
     ("PUT", "/api/catalog/products/{product_id}"),
     ("DELETE", "/api/catalog/products/{product_id}"),
     ("POST", "/api/admin/catalog/import"),
+    ("GET", "/api/admin/catalog/products"),
     ("GET", "/admin"),
     ("GET", "/api/session/active"),
     ("POST", "/api/session/create"),
