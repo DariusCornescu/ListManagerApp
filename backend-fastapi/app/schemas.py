@@ -98,6 +98,10 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     password: Optional[str] = None
+    # Profile: a missing field is left alone, a blank one clears the value.
+    full_name: Optional[str] = Field(default=None, max_length=100)
+    company: Optional[str] = Field(default=None, max_length=100)
+    address: Optional[str] = Field(default=None, max_length=255)
 
 class Token(BaseModel):
     access_token: str
@@ -114,6 +118,9 @@ class UserDTO(BaseModel):
     email: str
     role: str
     is_active: bool
+    full_name: Optional[str] = None
+    company: Optional[str] = None
+    address: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 

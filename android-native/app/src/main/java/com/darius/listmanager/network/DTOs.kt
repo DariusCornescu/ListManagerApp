@@ -8,10 +8,10 @@ data class ProductCreate( val name: String, val distributor_id: Long, val aliase
 data class LoginRequest( val username: String, val password: String )
 data class LoginResponse( val access_token: String, val token_type: String, val refresh_token: String? = null )
 data class RefreshTokenRequest( val refresh_token: String )
-data class UpdateUserRequest( val email: String? = null, val password: String? = null )
+data class UpdateUserRequest( val email: String? = null, val password: String? = null, val full_name: String? = null, val company: String? = null, val address: String? = null )
 data class GlobalSessionDTO( val id: Long, val name: String, val is_active: Boolean, val created_at: String, val completed_at: String?, val version: Int, val owner_user_id: Long?, val team_id: Long?, val client_uuid: String? = null )
 data class GlobalSessionItemDTO( val id: Long, val session_id: Long, val product_id: Long, val quantity: Int, val version: Int, val created_at: String, val updated_at: String, val product_name: String?, val distributor_name: String?)
-data class UserDTO( val id: Long, val username: String, val email: String, val role: String, val is_active: Boolean )
+data class UserDTO( val id: Long, val username: String, val email: String, val role: String, val is_active: Boolean, val full_name: String? = null, val company: String? = null, val address: String? = null )
 data class StatsDTO( val distributors_count: Int, val products_count: Int, val sessions_count: Int, val active_sessions_count: Int, val total_session_items: Int, val active_session: ActiveSessionInfo? )
 
 data class CreateSessionRequest( val name: String, val team_id: Long? = null, val client_uuid: String? = null )

@@ -15,6 +15,9 @@ class User(Base):
     created_at = Column(DateTime, default=func.now())
     # Bumped to revoke every access token already issued to this user.
     token_version = Column(Integer, nullable=False, default=0, server_default="0")
+    full_name = Column(String(100), nullable=True)
+    company = Column(String(100), nullable=True)
+    address = Column(String(255), nullable=True)
 
 
 class RefreshToken(Base):

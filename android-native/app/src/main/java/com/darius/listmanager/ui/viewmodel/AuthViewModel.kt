@@ -24,6 +24,9 @@ data class AuthUiState(
     val isLoading: Boolean = false,
     val username: String? = null,
     val email: String? = null,
+    val fullName: String? = null,
+    val company: String? = null,
+    val address: String? = null,
     val role: String? = null,
     val error: String? = null,
     val registrationSuccess: Boolean = false,
@@ -32,6 +35,23 @@ data class AuthUiState(
     val isSavingProfile: Boolean = false,
     val profileMessage: String? = null
 )
+
+/** What the profile form holds; the password travels separately and is never stored. */
+data class ProfileInput(
+    val email: String,
+    val fullName: String,
+    val company: String,
+    val address: String,
+) {
+    /** A blank profile field is sent so the server clears it; a blank email or password means no change. */
+    fun toRequest(newPassword: String) = UpdateUserRequest(
+        email = email.trim().ifBlank { null },
+        password = newPassword.ifBlank { null },
+        full_name = fullName.trim(),
+        company = company.trim(),
+        address = address.trim(),
+    )
+}
 
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
     
@@ -250,6 +270,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         isProfileLoading = false,
                         username = user.username,
                         email = user.email,
+                        fullName = user.full_name,
+                        company = user.company,
+                        address = user.address,
                         role = user.role
                     )
                     Log.d(TAG, "Loaded current user: ${user.username} (role=${user.role})")
@@ -264,18 +287,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Updates the current account. [email] and/or [newPassword] may be blank to leave unchanged.
-     */
-    fun updateProfile(email: String, newPassword: String) {
+    /** Updates the current account. A blank [newPassword] leaves the password unchanged. */
+    fun updateProfile(input: ProfileInput, newPassword: String) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isSavingProfile = true, profileMessage = null)
             try {
-                val request = UpdateUserRequest(
-                    email = email.trim().ifBlank { null },
-                    password = newPassword.ifBlank { null }
-                )
-                val response = RetrofitClient.api.updateCurrentUser(request)
+                val response = RetrofitClient.api.updateCurrentUser(input.toRequest(newPassword))
                 if (response.isSuccessful && response.body() != null) {
                     val user = response.body()!!
                     if (newPassword.isNotBlank()) signBackIn(user.username, newPassword)
@@ -286,6 +303,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         isSavingProfile = false,
                         username = user.username,
                         email = user.email,
+                        fullName = user.full_name,
+                        company = user.company,
+                        address = user.address,
                         role = user.role,
                         profileMessage = "Profil actualizat cu succes"
                     )

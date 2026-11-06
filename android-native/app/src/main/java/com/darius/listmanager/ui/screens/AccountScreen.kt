@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.darius.listmanager.data.websocket.WebSocketService
 import com.darius.listmanager.ui.viewmodel.AuthViewModel
+import com.darius.listmanager.ui.viewmodel.ProfileInput
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,11 +91,16 @@ fun AccountScreen(
     // Edit profile dialog
     if (showEditDialog) {
         EditProfileDialog(
-            currentEmail = uiState.email ?: "",
+            current = ProfileInput(
+                email = uiState.email ?: "",
+                fullName = uiState.fullName ?: "",
+                company = uiState.company ?: "",
+                address = uiState.address ?: "",
+            ),
             isSaving = uiState.isSavingProfile,
             onDismiss = { showEditDialog = false },
-            onConfirm = { email, newPassword ->
-                viewModel.updateProfile(email, newPassword)
+            onConfirm = { input, newPassword ->
+                viewModel.updateProfile(input, newPassword)
                 showEditDialog = false
             }
         )
@@ -191,6 +197,24 @@ fun AccountScreen(
                     )
 
                     AccountInfoRow(
+                        icon = Icons.Rounded.AccountCircle,
+                        label = "Nume complet",
+                        value = uiState.fullName ?: "-"
+                    )
+
+                    AccountInfoRow(
+                        icon = Icons.Rounded.Business,
+                        label = "Companie",
+                        value = uiState.company ?: "-"
+                    )
+
+                    AccountInfoRow(
+                        icon = Icons.Rounded.Place,
+                        label = "Adresă",
+                        value = uiState.address ?: "-"
+                    )
+
+                    AccountInfoRow(
                         icon = Icons.Rounded.Badge,
                         label = "Rol",
                         value = when (uiState.role) {
@@ -258,10 +282,13 @@ private fun AccountInfoRow(
             Icon(icon, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(label)
         }
+        Spacer(Modifier.width(16.dp))
         Text(
             value,
             fontWeight = FontWeight.Medium,
-            color = valueColor
+            color = valueColor,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -269,12 +296,15 @@ private fun AccountInfoRow(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditProfileDialog(
-    currentEmail: String,
+    current: ProfileInput,
     isSaving: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (email: String, newPassword: String) -> Unit
+    onConfirm: (input: ProfileInput, newPassword: String) -> Unit
 ) {
-    var email by remember { mutableStateOf(currentEmail) }
+    var fullName by remember { mutableStateOf(current.fullName) }
+    var company by remember { mutableStateOf(current.company) }
+    var address by remember { mutableStateOf(current.address) }
+    var email by remember { mutableStateOf(current.email) }
     var newPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -283,7 +313,33 @@ private fun EditProfileDialog(
         icon = { Icon(Icons.Rounded.Edit, contentDescription = null) },
         title = { Text("Editează profilul") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { fullName = it.take(100) },
+                    label = { Text("Nume complet") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
+                )
+                OutlinedTextField(
+                    value = company,
+                    onValueChange = { company = it.take(100) },
+                    label = { Text("Companie") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it.take(255) },
+                    label = { Text("Adresă") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSaving
+                )
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
@@ -314,7 +370,7 @@ private fun EditProfileDialog(
                     enabled = !isSaving
                 )
                 Text(
-                    "Lasă câmpurile goale pentru a păstra valorile actuale.",
+                    "Lasă parola goală pentru a o păstra pe cea actuală.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -322,8 +378,8 @@ private fun EditProfileDialog(
         },
         confirmButton = {
             Button(
-                onClick = { onConfirm(email, newPassword) },
-                enabled = !isSaving && (email.isNotBlank() || newPassword.isNotBlank())
+                onClick = { onConfirm(ProfileInput(email, fullName, company, address), newPassword) },
+                enabled = !isSaving && email.isNotBlank()
             ) {
                 Text("Salvează")
             }

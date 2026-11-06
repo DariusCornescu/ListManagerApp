@@ -191,6 +191,11 @@ def update_current_user_info(
             )
         current_user.email = update_data.email
 
+    for field in ("full_name", "company", "address"):
+        value = getattr(update_data, field)
+        if value is not None:
+            setattr(current_user, field, value.strip() or None)
+
     # Update password if provided (enforce bcrypt 72-byte limit, re-hash)
     if update_data.password is not None:
         password_bytes = update_data.password.encode('utf-8')
