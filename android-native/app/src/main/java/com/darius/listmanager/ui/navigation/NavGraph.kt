@@ -3,6 +3,7 @@ package com.darius.listmanager.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,6 +24,7 @@ import com.darius.listmanager.ui.screens.NeedsReviewScreen
 import com.darius.listmanager.ui.screens.InventoryScreen
 import com.darius.listmanager.ui.screens.TeamDetailScreen
 import com.darius.listmanager.ui.screens.TeamsScreen
+import com.darius.listmanager.ui.theme.Motion
 
 @Composable
 fun NavGraph(
@@ -34,10 +36,15 @@ fun NavGraph(
     username: String? = null,
     onLoginStateChanged: () -> Unit = {}
 ) {
+    val offset = with(LocalDensity.current) { Motion.ScreenOffset.roundToPx() }
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        modifier = modifier
+        modifier = modifier,
+        enterTransition = { screenEnter(offset) },
+        exitTransition = { screenExit(offset) },
+        popEnterTransition = { screenPopEnter(offset) },
+        popExitTransition = { screenPopExit(offset) }
     ) {
         composable("login") {
             LoginScreen(

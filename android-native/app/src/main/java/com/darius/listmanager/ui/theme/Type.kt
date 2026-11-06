@@ -29,8 +29,33 @@ val Inter = FontFamily(
     interFont(FontWeight.Normal),     // 400
     interFont(FontWeight.Medium),     // 500
     interFont(FontWeight.SemiBold),   // 600
-    interFont(FontWeight.Bold)        // 700
+    interFont(FontWeight.Bold),       // 700
+    interFont(FontWeight.ExtraBold)   // 800
 )
+
+/** The two heavy styles the redesign adds on top of the Material scale. */
+object AppTextStyles {
+    val ScreenTitle = TextStyle(
+        fontFamily = Inter,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 18.sp,
+        lineHeight = 24.sp,
+        letterSpacing = (-0.36).sp
+    )
+    val BigMessage = TextStyle(
+        fontFamily = Inter,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 34.sp,
+        lineHeight = 39.sp,
+        letterSpacing = (-0.95).sp
+    )
+    val ButtonLabel = TextStyle(
+        fontFamily = Inter,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 16.sp,
+        lineHeight = 22.sp
+    )
+}
 
 /** Premium, legible type scale built on Inter. */
 val Typography = Typography(
