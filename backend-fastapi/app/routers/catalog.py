@@ -1,6 +1,8 @@
-from typing import List
+import hashlib
+import json
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -12,11 +14,36 @@ from ..websocket_manager import manager
 router = APIRouter()
 
 
+def _etag_matches(if_none_match: Optional[str], etag: str) -> bool:
+    if not if_none_match:
+        return False
+    if if_none_match.strip() == "*":
+        return True
+    candidates = (value.strip().removeprefix("W/") for value in if_none_match.split(","))
+    return etag in candidates
+
+
+def _conditional_json(request: Request, rows: list) -> Response:
+    """Answer with the rows, or a bodyless 304 when the client already holds them.
+
+    The ETag hashes the public body, so it can't reveal anything the body doesn't.
+    """
+    body = json.dumps(rows, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    etag = f'"{hashlib.sha256(body).hexdigest()[:32]}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if _etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
+
+
 @router.get("/api/catalog/distributors", response_model=List[schemas.DistributorDTO])
-def get_distributors(db: Session = Depends(get_db)):
-    """Get all distributors"""
-    distributors = db.query(models.Distributor).all()
-    return distributors
+def get_distributors(request: Request, db: Session = Depends(get_db)):
+    """Get all distributors. Supports If-None-Match."""
+    distributors = db.query(models.Distributor).order_by(models.Distributor.id).all()
+    return _conditional_json(
+        request,
+        [schemas.DistributorDTO.model_validate(d).model_dump(mode="json") for d in distributors],
+    )
 
 
 @router.get("/api/catalog/distributors/{distributor_id}", response_model=schemas.DistributorDTO)
@@ -136,8 +163,11 @@ async def delete_distributor(
 
 
 @router.get("/api/catalog/products", response_model=List[schemas.ProductPublicDTO])
-def get_products(search: str = None, db: Session = Depends(get_db)):
-    """Get all products, optionally filter by search query. Stays a full list for mobile clients."""
+def get_products(request: Request, search: str = None, db: Session = Depends(get_db)):
+    """Get all products, optionally filter by search query. Stays a full list for mobile clients.
+
+    Supports If-None-Match, so a phone can check for changes without downloading the list.
+    """
     query = db.query(models.Product)
     if search:
         search_filter = f"%{search}%"
@@ -146,7 +176,11 @@ def get_products(search: str = None, db: Session = Depends(get_db)):
             (models.Product.aliases.ilike(search_filter))
         )
 
-    return query.all()
+    products = query.order_by(models.Product.id).all()
+    return _conditional_json(
+        request,
+        [schemas.ProductPublicDTO.model_validate(p).model_dump(mode="json") for p in products],
+    )
 
 
 @router.get("/api/catalog/products/{product_id}", response_model=schemas.ProductPublicDTO)
