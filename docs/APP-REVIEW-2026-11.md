@@ -86,9 +86,11 @@ Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
 
 | Issue | State |
 | --- | --- |
-| EX-5, EX-6, EX-7 | Merged into `development` |
-| EX-26, EX-27 | Replay and duplicate-delivery tests are in `development` |
-| EX-30, EX-31 | WebSocket scoping and the stats leak are fixed in `development` |
+| EX-5, EX-6 | Merged, and on `origin/development` |
+| EX-7 | Merged into local `development` only, which is 42 commits ahead of its remote |
+| EX-26 | Replay tests are in local `development`. They call `SyncService` directly, so they missed the broken trigger; the fix, `4c97cde`, is on this branch and not merged |
+| EX-27 | The backend duplicate-delivery test is on `origin/development`; the Android side is in local `development` |
+| EX-30, EX-31 | WebSocket scoping and the stats leak are fixed on `origin/development` |
 
 ### In Review, on this branch and not merged
 

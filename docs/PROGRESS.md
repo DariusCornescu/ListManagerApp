@@ -72,6 +72,23 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
 - No real device was attached, so nothing here ran on a phone. Screens were rendered under
   Robolectric. The prod Python is 3.11; the suite ran on 3.12.
 
+**Linear, updated with an evidence comment on each issue touched**
+- All 43: 16 Done, 15 In Review, 2 In Progress, 10 Backlog, read back from the project page.
+- Moved to Done: EX-5, EX-6, EX-7, EX-26, EX-27, EX-30, EX-31. EX-7 and part of the EX-26 and
+  EX-27 evidence are only in local `development`, which is 42 commits ahead of its remote.
+- EX-26 is Done against its stated criterion, a drop-and-replay test. Those tests call
+  `SyncService` directly, so they did not catch the broken trigger; until `4c97cde` is merged,
+  queued edits in `development` still replay only from the debug screen.
+- In Review, on this branch: EX-25, EX-29, EX-33 to EX-37, EX-39, EX-40, EX-42 to EX-47.
+  They stay there until merged, and EX-35, EX-36 and EX-44 also need the real-world checks.
+- Unchanged: EX-15, EX-24 (In Progress), EX-8, EX-9, EX-16, EX-19, EX-21, EX-23, EX-28, EX-32,
+  EX-38, EX-41 (Backlog). Each needs a person, a device, real data or a go-ahead.
+
+**Commit slip:** the removal of the old Flutter demo screens and fake service landed in
+`1748c22` (inventory API) instead of `e2b63f2` (Flutter), breaking the one-concern rule. The
+removal itself was intended, but `flutter_ui` does not compile between those two commits, which
+matters only when bisecting. History was left as it is.
+
 **Next**
 - Merge decision and push: this branch, then EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
