@@ -15,7 +15,7 @@ PR 21; `origin/development` is unchanged, and CI passes on all three jobs. Full 
 **Production is down.** Render's log on 2026-11-06 shows `listmanager-api` crashing at startup
 because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves. The free database
 appears to have been deleted: Render's articles now give free Postgres 30 days plus a 14-day
-grace period, and it was created around 2026-07-04. `render.yaml` still asks for free plans.
+grace period, and it was created around 2026-07-04. `render.yaml` now uses paid plans.
 
 `android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
@@ -168,7 +168,7 @@ matters only when bisecting. History was left as it is.
 
 **Next**
 - Restore production: confirm the database is gone, create a paid one, connect it through
-  `DATABASE_URL`, and move `render.yaml` off the free plans. Then merge PR 22, which probably
+  `DATABASE_URL`, and upgrade the service. Then merge PR 22, which probably
   deploys, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
