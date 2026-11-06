@@ -7,6 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -224,6 +225,81 @@ async def revoke_user_tokens(
     return {"message": "Tokens revoked", "user_id": user_id}
 
 
+@router.post("/api/admin/users/{user_id}/deactivate")
+async def deactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Block sign-in and end every login of a user, keeping their data."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot deactivate yourself")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = False
+    revoke_all_user_tokens(user, db)
+    db.commit()
+    await manager.close_user(user_id)
+    return {"message": "User deactivated", "user_id": user_id, "is_active": False}
+
+
+@router.post("/api/admin/users/{user_id}/reactivate")
+def reactivate_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Allow a deactivated user to sign in again."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = True
+    db.commit()
+    return {"message": "User reactivated", "user_id": user_id, "is_active": True}
+
+
+def _user_delete_blockers(user_id: int, db: Session) -> dict[str, int]:
+    """Count what deleting this user would break or silently destroy.
+
+    The first four are foreign keys PostgreSQL refuses to break. A personal
+    inventory would cascade away with the user, so its live rows block as well.
+    """
+    counts = {
+        "team_memberships": db.query(models.TeamMember)
+        .filter(models.TeamMember.user_id == user_id)
+        .count(),
+        "teams_created": db.query(models.Team)
+        .filter(models.Team.created_by == user_id)
+        .count(),
+        "invites_created": db.query(models.TeamInvite)
+        .filter(models.TeamInvite.created_by == user_id)
+        .count(),
+        "lists": db.query(models.GlobalSession)
+        .filter(models.GlobalSession.owner_user_id == user_id)
+        .count(),
+        "inventory_items": db.query(models.InventoryItem)
+        .join(models.Inventory, models.InventoryItem.inventory_id == models.Inventory.id)
+        .filter(
+            models.Inventory.owner_user_id == user_id,
+            models.InventoryItem.deleted_at.is_(None),
+        )
+        .count(),
+    }
+    return {name: count for name, count in counts.items() if count}
+
+
+def _user_has_linked_data(blockers: dict[str, int]) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "code": "user_has_linked_data",
+            "message": "User has linked data. Deactivate the account instead.",
+            "blockers": blockers,
+        },
+    )
+
+
 @router.delete("/api/admin/users/{user_id}")
 def delete_user(
     user_id: int,
@@ -231,7 +307,7 @@ def delete_user(
     db: Session = Depends(get_db)
 ):
     """
-    Delete user
+    Delete a user that has no linked data; answers 409 otherwise
     Admin only endpoint
     """
     if user_id == current_user.id:
@@ -245,7 +321,16 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    blockers = _user_delete_blockers(user_id, db)
+    if blockers:
+        raise _user_has_linked_data(blockers)
+
     db.delete(user)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        # The user gained linked data after the check above.
+        db.rollback()
+        raise _user_has_linked_data({})
 
     return {"message": "User deleted successfully", "id": user_id}

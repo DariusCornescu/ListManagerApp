@@ -20,6 +20,8 @@ EXPECTED_HTTP_ROUTES = {
     ("DELETE", "/api/inventory/{inventory_id}/items/{item_uuid}"),
     ("POST", "/api/inventory/{inventory_id}/clear"),
     ("POST", "/api/admin/users/{user_id}/revoke-tokens"),
+    ("POST", "/api/admin/users/{user_id}/deactivate"),
+    ("POST", "/api/admin/users/{user_id}/reactivate"),
     ("GET", "/api/catalog/distributors"),
     ("GET", "/api/catalog/distributors/{distributor_id}"),
     ("POST", "/api/catalog/distributors"),
