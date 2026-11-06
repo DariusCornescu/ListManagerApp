@@ -21,6 +21,7 @@ import com.darius.listmanager.sync.CatalogEtags
 import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorker
 import com.darius.listmanager.sync.SyncWorkManager
+import com.darius.listmanager.ui.components.CloseDrawerOnBack
 import com.darius.listmanager.ui.components.DrawerContent
 import com.darius.listmanager.ui.navigation.NavGraph
 import kotlinx.coroutines.launch
@@ -221,6 +222,8 @@ fun AppContent() {
                         }
                     }
                 )
+                // After NavGraph, so it answers Back before navigation does.
+                CloseDrawerOnBack(drawerState)
             }
         }
     }
