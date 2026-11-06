@@ -5,6 +5,46 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Catalog at scale: admin read API and private prices (WP1 + WP2)
+
+Production now holds 3,196 products and 67 distributors after a SAGA import through `/admin`.
+The spec `docs/superpowers/specs/2026-11-06-admin-catalog-at-scale-design.md` was not found in
+the repo or git history, so this work follows the owner's written priorities. WP0 is the owner's
+own Render check, and no production data was changed.
+
+**Changed**
+- `GET /api/catalog/products` and `GET /api/catalog/products/{id}` no longer return `price`.
+- New admin-only `GET /api/admin/catalog/products`: `q`, `distributor_id`, `limit` (up to 200),
+  `offset`, returning `{items, total, limit, offset}` ordered by name then id.
+- `/admin` reads through it with server-side search and paging.
+- `PUT /api/catalog/products/{id}` only changes `price` when the request includes it. Before this,
+  an edit from Android or Flutter, which never send it, erased that product's price.
+- `TRACK-OWNERSHIP.md`: new T5 for catalog admin; T3 gains the product and distributor repositories.
+
+**Migration note**
+- Response shape change: `price` is gone from the two public `GET`s. Paths are unchanged and the
+  list stays complete. Android has no catalog price, and Flutter's field is nullable and unread.
+- Any integration reading `price` from those endpoints must move to the admin endpoint with an
+  admin token.
+- Prices were public until this deploys. Removing them can't recall copies already fetched.
+
+**Verified**
+- Backend suite, including new tests for every public response, admin access, paging, wildcards
+  and price retention.
+- `/admin` in a browser against a throwaway local database: paging, search, form edit keeping the
+  price, a phone-style edit keeping it, emptying the last page, and an expired token returning
+  to login.
+
+**Not verified:** anything against production until this is merged and deployed.
+
+**Next**
+- After deploy: no-login requests show no `price`, and `/admin` pages through 3,196 products.
+- WP3 (catalog reaches phones without opening Catalog), then WP4 (voice speed on a real phone).
+- Still left out: a CSV without a `price` or `aliases` column nulls them on matched products. Fix
+  this before the next import. `/admin` search doesn't match "paine" to "Pâine".
+
+---
+
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
 Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
