@@ -3,6 +3,7 @@ package com.darius.listmanager
 import android.app.Application
 import android.util.Log
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -203,7 +204,12 @@ fun AppContent() {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbarHostState) }
         ) { padding ->
-            Column(modifier = Modifier.padding(padding)) {
+            // Each screen has its own Scaffold. Consuming here stops it reserving the system bars again.
+            Column(
+                modifier = Modifier
+                    .padding(padding)
+                    .consumeWindowInsets(padding)
+            ) {
                 NavGraph(
                     navController = navController,
                     startDestination = startDestination,
