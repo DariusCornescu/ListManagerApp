@@ -89,6 +89,53 @@ def test_dashboard_activity_series(
     assert body["lists_completed_count"] == 2
 
 
+def test_dashboard_timeline_counts_each_series(
+    client, admin_headers, db_session, sample_user, second_user, team, sample_product
+):
+    from app.models import (
+        CrashReport,
+        Distributor,
+        GlobalSession,
+        GlobalSessionItem,
+        Product,
+        SessionOp,
+    )
+
+    other_distributor = Distributor(distributor_name="Other Distributor")
+    db_session.add(other_distributor)
+    db_session.commit()
+    other_product = Product(name="Other Product", distributor_id=other_distributor.id)
+    db_session.add(other_product)
+    now = datetime.utcnow()
+    done = GlobalSession(name="done", is_active=False, team_id=team.id, completed_at=now)
+    db_session.add(done)
+    db_session.commit()
+    db_session.add_all(
+        [
+            GlobalSessionItem(session_id=done.id, product_id=sample_product.id, quantity=1),
+            GlobalSessionItem(session_id=done.id, product_id=other_product.id, quantity=1),
+            SessionOp(session_id=done.id, seq=1, op_type="AddItem", actor_user_id=sample_user.id),
+            SessionOp(session_id=done.id, seq=2, op_type="AddItem", actor_user_id=sample_user.id),
+            SessionOp(session_id=done.id, seq=3, op_type="AddItem", actor_user_id=second_user.id),
+            SessionOp(session_id=done.id, seq=4, op_type="AddItem", actor_user_id=None),
+            CrashReport(stacktrace="trace", signature="abc"),
+        ]
+    )
+    db_session.commit()
+
+    body = client.get("/api/admin/dashboard", headers=admin_headers).json()
+
+    today = body["activity"][-1]
+    assert today["active_users"] == 2  # distinct actors, the empty actor left out
+    assert today["documents"] == 2  # one per distributor on the completed list
+    assert today["crash_reports"] == 1
+    assert today["teams_created"] == 1
+    assert today["users_registered"] >= 2
+    assert body["documents_count"] == 2
+    assert {s["name"]: s["lists_completed"] for s in body["stores"]}["Test Team"] == 1
+    assert body["stores"][0]["created_at"] is not None
+
+
 def test_dashboard_days_clamped(client, admin_headers):
     body = client.get(
         "/api/admin/dashboard?days=5000", headers=admin_headers

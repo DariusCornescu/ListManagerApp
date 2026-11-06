@@ -161,6 +161,89 @@ def test_delete_allowed_with_only_removed_inventory_items(
     assert response.status_code == status.HTTP_200_OK
 
 
+def test_user_details_are_admin_only(client, auth_headers):
+    assert client.get("/api/admin/users/details").status_code in _deny_statuses()
+    assert (
+        client.get("/api/admin/users/details", headers=auth_headers).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+
+
+def test_user_details_leave_out_address_and_secrets(
+    client, admin_headers, db_session, sample_user
+):
+    sample_user.address = "Strada Secreta 1"
+    sample_user.company = "Firma Test"
+    db_session.commit()
+
+    response = client.get("/api/admin/users/details", headers=admin_headers)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert "Strada Secreta" not in response.text
+    row = next(u for u in response.json() if u["username"] == "testuser")
+    assert row["company"] == "Firma Test"
+    assert not {"address", "hashed_password", "token_version"} & set(row)
+
+
+def test_user_details_show_teams_and_last_activity(
+    client, admin_headers, db_session, sample_user, team, personal_session
+):
+    stamp = datetime(2026, 1, 2, 3, 4, 5)
+    db_session.add_all(
+        [
+            models.SessionOp(
+                session_id=personal_session.id,
+                seq=1,
+                op_type="AddItem",
+                actor_user_id=sample_user.id,
+                created_at=stamp - timedelta(days=1),
+            ),
+            models.SessionOp(
+                session_id=personal_session.id,
+                seq=2,
+                op_type="AddItem",
+                actor_user_id=sample_user.id,
+                created_at=stamp,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    rows = client.get("/api/admin/users/details", headers=admin_headers).json()
+
+    row = next(u for u in rows if u["username"] == "testuser")
+    assert row["teams"] == [{"id": team.id, "name": "Test Team", "role": "admin"}]
+    assert row["last_activity_at"].startswith("2026-01-02T03:04:05")
+    idle = next(u for u in rows if u["username"] == "adminuser")
+    assert idle["teams"] == []
+    assert idle["last_activity_at"] is None
+
+
+def test_active_logins_count_each_device_once(client, admin_headers, sample_user):
+    credentials = {"username": "testuser", "password": "password123"}
+
+    def logins():
+        rows = client.get("/api/admin/users/details", headers=admin_headers).json()
+        return next(u for u in rows if u["username"] == "testuser")["active_logins"]
+
+    assert logins() == 0
+    first = client.post("/api/auth/login", json=credentials).json()
+    second = client.post("/api/auth/login", json=credentials).json()
+    assert logins() == 2
+
+    # Rotating a token keeps the same login.
+    rotated = client.post(
+        "/api/auth/refresh", json={"refresh_token": first["refresh_token"]}
+    ).json()
+    assert logins() == 2
+
+    client.post("/api/auth/logout", json={"refresh_token": rotated["refresh_token"]})
+    assert logins() == 1
+
+    client.post("/api/auth/logout", json={"refresh_token": second["refresh_token"]})
+    assert logins() == 0
+
+
 def test_delete_integrity_error_answers_409(
     client, admin_headers, db_session, sample_user, monkeypatch
 ):

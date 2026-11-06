@@ -196,12 +196,21 @@ class StoreDTO(BaseModel):
     id: int
     name: str
     member_count: int
+    created_at: Optional[datetime] = None
+    lists_completed: int = 0
 
 
 class ActivityDayDTO(BaseModel):
     date: str  # ISO YYYY-MM-DD
     lists_completed: int
     items_added: int
+    users_registered: int = 0
+    teams_created: int = 0
+    # Distinct people who changed a list on the server that day.
+    active_users: int = 0
+    crash_reports: int = 0
+    # One per distributor on each list completed that day, as one PDF is.
+    documents: int = 0
 
 
 class AdminDashboardDTO(BaseModel):
@@ -210,9 +219,51 @@ class AdminDashboardDTO(BaseModel):
     products_count: int
     distributors_count: int
     lists_completed_count: int
+    documents_count: int = 0
     crashes_count: int
     devices_count: int
     activity: list[ActivityDayDTO]
+
+
+class AdminUserTeamDTO(BaseModel):
+    id: int
+    name: str
+    role: str
+
+
+class AdminUserDetailDTO(BaseModel):
+    """A user as admins see them. The postal address is left out on purpose."""
+    id: int
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    company: Optional[str] = None
+    role: str
+    is_active: bool
+    created_at: Optional[datetime] = None
+    teams: list[AdminUserTeamDTO]
+    # Last list change on the server, not the last time the app was opened.
+    last_activity_at: Optional[datetime] = None
+    active_logins: int
+
+
+class AdminOrderDTO(BaseModel):
+    """A completed list. Which products it held is left out on purpose."""
+    session_id: int
+    name: str
+    team_name: Optional[str] = None
+    owner_username: Optional[str] = None
+    completed_at: datetime
+    item_lines: int
+    total_quantity: int
+    documents: int
+
+
+class AdminOrderPageDTO(BaseModel):
+    items: list[AdminOrderDTO]
+    total: int
+    limit: int
+    offset: int
 
 
 # ===== Inventory Schemas =====

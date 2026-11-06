@@ -1,6 +1,7 @@
-"""Admin deletes against real PostgreSQL, which enforces foreign keys.
+"""Admin routes against real PostgreSQL.
 
-SQLite in the main suite does not, so only this file can prove these answers.
+SQLite in the main suite does not enforce foreign keys and buckets dates as text,
+so only this file can prove the delete answers and the reports on production's engine.
 Set POSTGRES_TEST_URL to an isolated database whose name ends in ``_test``. The
 fixture recreates that database's public schema, so production URLs are rejected.
 """
@@ -212,3 +213,42 @@ def test_delete_race_answers_409_not_500(
 
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "user_has_linked_data"
+
+
+def test_dashboard_and_orders_report_on_postgres(pg_client, pg_session, admin_headers):
+    from datetime import datetime, timezone
+
+    product = _product(pg_session)
+    owner = _user(pg_session, "pg-buyer")
+    order = models.GlobalSession(
+        name="PG Done",
+        owner_user_id=owner.id,
+        is_active=False,
+        completed_at=datetime.now(timezone.utc),
+    )
+    pg_session.add(order)
+    pg_session.commit()
+    pg_session.add_all(
+        [
+            models.GlobalSessionItem(session_id=order.id, product_id=product.id, quantity=3),
+            models.SessionOp(session_id=order.id, seq=1, op_type="AddItem", actor_user_id=owner.id),
+        ]
+    )
+    pg_session.commit()
+
+    dashboard = pg_client.get("/api/admin/dashboard", headers=admin_headers)
+    assert dashboard.status_code == 200
+    today = dashboard.json()["activity"][-1]
+    assert today["lists_completed"] == 1
+    assert today["documents"] == 1
+    assert today["active_users"] == 1
+    assert dashboard.json()["documents_count"] == 1
+
+    orders = pg_client.get("/api/admin/orders", headers=admin_headers)
+    assert orders.status_code == 200
+    assert orders.json()["items"][0]["total_quantity"] == 3
+
+    details = pg_client.get("/api/admin/users/details", headers=admin_headers)
+    assert details.status_code == 200
+    row = next(u for u in details.json() if u["username"] == "pg-buyer")
+    assert row["last_activity_at"] is not None
