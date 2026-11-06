@@ -26,7 +26,7 @@ import kotlinx.coroutines.launch
         ProductEmbeddingEntity::class,
         InventoryItemEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -53,6 +53,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(MIGRATION_7_8)
                     .addMigrations(MIGRATION_8_9)
+                    .addMigrations(MIGRATION_9_10)
                     .fallbackToDestructiveMigration()
                     .addCallback(object : RoomDatabase.Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -88,6 +89,22 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_clientUuid " +
                         "ON sessions(clientUuid)"
+                )
+            }
+        }
+
+        val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Existing rows keep every value and stay unclaimed until an account opens the
+                // inventory; see InventoryRepository.adoptLegacyRows.
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN itemUuid TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN accountUserId INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE inventory_items ADD COLUMN teamId INTEGER")
+                db.execSQL("UPDATE inventory_items SET itemUuid = lower(hex(randomblob(16)))")
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_inventory_items_itemUuid " +
+                        "ON inventory_items(itemUuid)"
                 )
             }
         }

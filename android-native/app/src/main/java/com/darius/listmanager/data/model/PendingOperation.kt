@@ -16,14 +16,20 @@ enum class OperationType {
     ADD_SESSION_ITEM,
     UPDATE_SESSION_ITEM,
     DELETE_SESSION_ITEM,
-    CLEAR_SESSION
+    CLEAR_SESSION,
+
+    ADD_INVENTORY_ITEM,
+    UPDATE_INVENTORY_ITEM,
+    DELETE_INVENTORY_ITEM,
+    CLEAR_INVENTORY
 }
 
 enum class ResourceType {
     DISTRIBUTOR,
     PRODUCT,
     SESSION,
-    SESSION_ITEM
+    SESSION_ITEM,
+    INVENTORY_ITEM
 }
 
 enum class OperationStatus {
@@ -79,6 +85,27 @@ sealed class OperationData {
     data class DeleteSessionItem( val itemId: Long ) : OperationData()  
     @Serializable  
     data class ClearSession( val sessionId: Long ) : OperationData()
+
+    @Serializable
+    data class AddInventoryItem(
+        val itemUuid: String,
+        val teamId: Long? = null,
+        val name: String,
+        val productId: Long? = null,
+        val quantity: Double? = null,
+        val priceBani: Long? = null,
+    ) : OperationData()
+    /** The values to send are the row's current ones, read when this is sent. */
+    @Serializable
+    data class UpdateInventoryItem(
+        val itemUuid: String,
+        val teamId: Long? = null,
+        val idempotencyKey: String,
+    ) : OperationData()
+    @Serializable
+    data class DeleteInventoryItem( val itemUuid: String, val teamId: Long? = null ) : OperationData()
+    @Serializable
+    data class ClearInventory( val teamId: Long? = null, val idempotencyKey: String ) : OperationData()
 }
 
 sealed class SyncResult {

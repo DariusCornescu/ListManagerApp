@@ -220,6 +220,10 @@ class WebSocketService private constructor() {
                             )
                         }
                         
+                        "inventory_changed" -> WebSocketMessage.InventoryChanged(
+                            inventoryId = json.getJSONObject("data").getLong("inventory_id")
+                        )
+
                         // Pong
                         "pong" -> WebSocketMessage.Pong
                         

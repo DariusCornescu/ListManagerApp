@@ -5,6 +5,8 @@ data class OnlineUser( val userId: Long, val username: String )
 
 sealed class WebSocketMessage {
 
+    data class InventoryChanged( val inventoryId: Long ) : WebSocketMessage()
+
     // ==================== PRESENCE ====================
 
     data class PresenceUpdate( val online: List<OnlineUser> ) : WebSocketMessage()

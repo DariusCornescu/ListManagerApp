@@ -12,6 +12,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.local.entity.SessionItemEntity
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.websocket.WebSocketService
+import com.darius.listmanager.data.workspace.InventoryEvents
 import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.data.websocket.WebSocketMessage
 import com.darius.listmanager.data.websocket.WebSocketState
@@ -171,6 +172,8 @@ class MainActivity : ComponentActivity() {
                         Log.d(TAG, "WS: Session completed - ID ${message.sessionId}")
                         completeLocalSession(message.sessionId)
                     }
+
+                    is WebSocketMessage.InventoryChanged -> InventoryEvents.requestRefresh()
 
                     is WebSocketMessage.SessionCreated -> {
                         Log.d(TAG, "WS: Session created - ${message.sessionName}")

@@ -121,6 +121,11 @@ class SaveStateViewModel(application: Application) : AndroidViewModel(applicatio
             is OperationData.CreateDistributor -> "Distribuitor nou: ${data.distributorName}"
             is OperationData.UpdateDistributor -> "Modifică distribuitorul ${data.distributorName}"
             is OperationData.DeleteDistributor -> "Șterge un distribuitor"
+            is OperationData.AddInventoryItem -> "Inventar: ${data.name}"
+            is OperationData.UpdateInventoryItem ->
+                "Inventar: ${database.inventoryItemDao().getByUuid(data.itemUuid)?.name ?: "rând modificat"}"
+            is OperationData.DeleteInventoryItem -> "Inventar: șterge un rând"
+            is OperationData.ClearInventory -> "Inventar: listă nouă"
             null -> "Modificare salvată"
         }
     }

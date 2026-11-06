@@ -42,3 +42,10 @@ data class CrashReportRequest(
 
 // ===== Presence =====
 data class PresenceUserDTO( val user_id: Long, val username: String )
+
+// ===== Inventory =====
+data class InventoryItemDTO( val id: Long, val inventory_id: Long, val item_uuid: String, val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long?, val version: Int, val deleted: Boolean = false )
+data class InventoryDTO( val id: Long, val owner_user_id: Long?, val team_id: Long?, val items: List<InventoryItemDTO> )
+data class InventoryItemCreate( val item_uuid: String, val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long? )
+data class InventoryItemUpdate( val name: String, val product_id: Long?, val quantity: Double?, val price_bani: Long?, val version: Int, val idempotency_key: String )
+data class InventoryClearRequest( val idempotency_key: String )

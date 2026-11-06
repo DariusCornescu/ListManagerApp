@@ -33,6 +33,7 @@ class SyncService(
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val operationJson = Json { ignoreUnknownKeys = true }
+    private val inventorySender by lazy { InventoryOperationSender(database, api) }
 
     private val pendingOperationRepo = PendingOperationRepository(
         database.pendingOperationDao(),
@@ -163,12 +164,24 @@ class SyncService(
             pendingOperationRepo.deleteOldCompleted()
             _syncStatus.value = _syncStatus.value.copy(lastSyncTime = now())
             com.darius.listmanager.data.workspace.SessionEvents.requestRefresh()
+            com.darius.listmanager.data.workspace.InventoryEvents.requestRefresh()
             return SyncResult.Success()
         } catch (e: CancellationException) {
             throw e // Durable IN_PROGRESS is recovered by the next lock holder.
         } catch (e: Exception) {
             _syncStatus.value = _syncStatus.value.copy(lastError = e.message)
             return SyncResult.Error(e.message ?: "Sync failed", retryable = true)
+        }
+    }
+
+    private inline fun inventory(send: () -> InventorySend): SyncResult = guarded {
+        when (val result = send()) {
+            InventorySend.Done -> SyncResult.Success()
+            is InventorySend.Failed -> when (result.code) {
+                409 -> SyncResult.Conflict(message = VERSION_CONFLICT_MESSAGE)
+                404 -> SyncResult.Error("Resource not found", retryable = false)
+                else -> mapHttpErrorToSyncResult(result.code)
+            }
         }
     }
 
@@ -182,6 +195,9 @@ class SyncService(
             is OperationData.UpdateSessionItem -> data.idempotencyKey != null
             is OperationData.DeleteSessionItem, is OperationData.DeleteProduct,
             is OperationData.DeleteDistributor -> true
+            // The server identifies all of these, so a repeat cannot apply twice.
+            is OperationData.AddInventoryItem, is OperationData.UpdateInventoryItem,
+            is OperationData.DeleteInventoryItem, is OperationData.ClearInventory -> true
             else -> false // Non-idempotent creation and clear can have ambiguous effects.
         }
     }
@@ -211,6 +227,11 @@ class SyncService(
                 is OperationData.UpdateSessionItem -> updateSessionItem(data, operation)
                 is OperationData.DeleteSessionItem -> deleted { api.deleteSessionItem(data.itemId) }
                 is OperationData.ClearSession -> clearSession(data)
+
+                is OperationData.AddInventoryItem -> inventory { inventorySender.add(data) }
+                is OperationData.UpdateInventoryItem -> inventory { inventorySender.update(data) }
+                is OperationData.DeleteInventoryItem -> inventory { inventorySender.delete(data) }
+                is OperationData.ClearInventory -> inventory { inventorySender.clear(data) }
             }
         } catch (e: CancellationException) {
             throw e

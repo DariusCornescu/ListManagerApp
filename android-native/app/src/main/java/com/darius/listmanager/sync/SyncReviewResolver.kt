@@ -6,6 +6,7 @@ import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.data.model.OperationData
 import com.darius.listmanager.data.model.OperationType
 import com.darius.listmanager.data.repository.SessionWriteCoordinator
+import com.darius.listmanager.data.workspace.InventoryEvents
 import com.darius.listmanager.data.workspace.SessionEvents
 import com.darius.listmanager.network.ListManagerApi
 import kotlinx.coroutines.CancellationException
@@ -35,7 +36,8 @@ val PendingOperationEntity.isHeldForReview: Boolean
 
 val PendingOperationEntity.isVersionConflict: Boolean
     get() = isHeldForReview &&
-        operationType == OperationType.UPDATE_SESSION_ITEM.name &&
+        (operationType == OperationType.UPDATE_SESSION_ITEM.name ||
+            operationType == OperationType.UPDATE_INVENTORY_ITEM.name) &&
         lastError == SyncService.VERSION_CONFLICT_MESSAGE
 
 /**
@@ -109,6 +111,7 @@ class SyncReviewResolver(
         // Nothing may be left unresolved for the snapshot store to run; replay what remains.
         replay()
         SessionEvents.requestRefresh()
+        InventoryEvents.requestRefresh()
         return ReviewOutcome.RESOLVED
     }
 
@@ -122,7 +125,11 @@ class SyncReviewResolver(
             val pending = database.pendingOperationDao()
             val operation = pending.getById(operationId)
                 ?: return@withLock Rebase.Stop(ReviewOutcome.RESOLVED)
-            val data = decode(operation) as? OperationData.UpdateSessionItem
+            val decoded = decode(operation)
+            if (decoded is OperationData.UpdateInventoryItem) {
+                return@withLock rebaseInventoryRow(operation, decoded)
+            }
+            val data = decoded as? OperationData.UpdateSessionItem
                 ?: return@withLock Rebase.Stop(ReviewOutcome.NEEDS_REVIEW)
             val local = database.sessionItemDao().getById(data.itemId)
                 ?: return@withLock Rebase.Stop(ReviewOutcome.ITEM_GONE)
@@ -153,6 +160,32 @@ class SyncReviewResolver(
             }
             Rebase.Done
         }
+
+    /** The queued edit reads the row at send time, so only the row's version moves. */
+    private suspend fun rebaseInventoryRow(
+        operation: PendingOperationEntity,
+        data: OperationData.UpdateInventoryItem,
+    ): Rebase {
+        val rows = database.inventoryItemDao()
+        val local = rows.getByUuid(data.itemUuid) ?: return Rebase.Stop(ReviewOutcome.ITEM_GONE)
+        val response = try {
+            api.getInventory(data.teamId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return Rebase.Stop(ReviewOutcome.QUEUED)
+        }
+        val serverItems = response.body()?.items
+        if (!response.isSuccessful || serverItems == null) return Rebase.Stop(ReviewOutcome.QUEUED)
+        val server = serverItems.firstOrNull { it.item_uuid == data.itemUuid }
+            ?: return Rebase.Stop(ReviewOutcome.ITEM_GONE)
+
+        database.withTransaction {
+            rows.update(local.copy(version = server.version))
+            database.pendingOperationDao().update(operation.released())
+        }
+        return Rebase.Done
+    }
 
     private fun PendingOperationEntity.released() = copy(
         status = "PENDING",
@@ -186,6 +219,14 @@ class SyncReviewResolver(
                 is OperationData.DeleteSessionItem -> nextData.itemId == held.resourceId
                 else -> false
             }
+            // Edits read the row, so they die with the add that created it.
+            is OperationData.AddInventoryItem -> when (nextData) {
+                is OperationData.UpdateInventoryItem -> nextData.itemUuid == heldData.itemUuid
+                is OperationData.DeleteInventoryItem -> nextData.itemUuid == heldData.itemUuid
+                else -> false
+            }
+            is OperationData.UpdateInventoryItem ->
+                nextData is OperationData.UpdateInventoryItem && nextData.itemUuid == heldData.itemUuid
             else -> false
         }
     }

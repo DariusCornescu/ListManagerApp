@@ -16,14 +16,18 @@ import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.data.repository.SpeechRepository
 import com.darius.listmanager.data.speech.AndroidSpeechProvider
 import com.darius.listmanager.data.speech.SpeechState
+import com.darius.listmanager.data.workspace.InventoryEvents
+import com.darius.listmanager.data.workspace.WorkspaceManager
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.util.InventoryLineParser
 import com.darius.listmanager.util.InventoryMath
 import com.darius.listmanager.util.ParsedInventoryLine
 import com.darius.listmanager.util.ProductRanker
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -39,6 +43,7 @@ data class InventoryUiState(
     val continuous: Boolean = false
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class InventoryViewModel(application: Application) : AndroidViewModel(application) {
 
     private val speechRepository: SpeechRepository = AndroidSpeechProvider(application)
@@ -47,7 +52,9 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
     private val productRepository = ProductRepository(
         database.productDao(), pendingOperationRepo, application.applicationContext, RetrofitClient.api
     )
-    private val inventoryRepository = InventoryRepository(database.inventoryItemDao())
+    private val inventoryRepository = InventoryRepository(database)
+    private val workspaceManager = WorkspaceManager.getInstance(application)
+    private val teamId: Long? get() = workspaceManager.currentWorkspace.value.teamIdOrNull
     private val pdfRepository = PdfRepository(application)
 
     private val _uiState = MutableStateFlow(InventoryUiState())
@@ -58,7 +65,16 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     init {
         viewModelScope.launch {
-            inventoryRepository.getAllFlow().collect { items ->
+            inventoryRepository.adoptLegacyRows()
+            refreshFromServer()
+        }
+        viewModelScope.launch {
+            InventoryEvents.refreshRequests.collect { refreshFromServer() }
+        }
+        viewModelScope.launch {
+            workspaceManager.currentWorkspace
+                .flatMapLatest { workspace -> inventoryRepository.getAllFlow(workspace.teamIdOrNull) }
+                .collect { items ->
                 _uiState.value = _uiState.value.copy(
                     items = items,
                     totalBani = InventoryMath.totalBani(items.map { it.quantity to it.priceBani })
@@ -174,13 +190,12 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         }
         val (name, productId) = resolveName(parsed.nameText, local)
         inventoryRepository.insert(
-            InventoryItemEntity(
-                name = name,
-                productId = productId,
-                quantity = parsed.quantity,
-                priceBani = parsed.priceBani,
-                createdAt = System.currentTimeMillis()
-            )
+            teamId = teamId,
+            name = name,
+            productId = productId,
+            quantity = parsed.quantity,
+            priceBani = parsed.priceBani,
+            createdAt = System.currentTimeMillis(),
         )
         if (!quiet) {
             val missing = mutableListOf<String>()
@@ -209,13 +224,21 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         viewModelScope.launch { inventoryRepository.update(item) }
     }
 
-    fun deleteItem(id: Long) {
-        viewModelScope.launch { inventoryRepository.deleteById(id) }
+    fun deleteItem(item: InventoryItemEntity) {
+        viewModelScope.launch { inventoryRepository.delete(item) }
+    }
+
+    /** The server's list, unless unsent edits are waiting; then it refreshes after they land. */
+    private suspend fun refreshFromServer() {
+        val scope = teamId
+        runCatching {
+            inventoryRepository.refresh(scope) { RetrofitClient.api.getInventory(scope) }
+        }.onFailure { Log.w(TAG, "Inventory refresh failed: ${it.javaClass.simpleName}") }
     }
 
     fun clearList() {
         viewModelScope.launch {
-            inventoryRepository.deleteAll()
+            inventoryRepository.clear(teamId)
             _uiState.value = _uiState.value.copy(message = "Listă nouă")
         }
     }
