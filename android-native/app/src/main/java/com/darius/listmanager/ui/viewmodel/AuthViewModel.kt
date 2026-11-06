@@ -96,7 +96,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun login(username: String, password: String) {
         if (username.isBlank() || password.isBlank()) {
             _uiState.value = _uiState.value.copy(
-                error = "Completați toate câmpurile"
+                error = "Completează toate câmpurile."
             )
             return
         }
@@ -150,7 +150,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "Login exception", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Nu se poate conecta la server. Verificați conexiunea."
+                    error = "Nu mă pot conecta la server. Verifică conexiunea."
                 )
             }
         }
@@ -159,7 +159,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun register(username: String, password: String, email: String) {
         if (username.isBlank() || password.isBlank() || email.isBlank()) {
             _uiState.value = _uiState.value.copy(
-                error = "Completați toate câmpurile"
+                error = "Completează toate câmpurile."
             )
             return
         }
@@ -203,7 +203,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 Log.e(TAG, "Registration exception", e)
                 _uiState.value = _uiState.value.copy(
                     isLoading = false,
-                    error = "Nu se poate conecta la server. Verificați conexiunea."
+                    error = "Nu mă pot conecta la server. Verifică conexiunea."
                 )
             }
         }
@@ -322,7 +322,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(
                     isSavingProfile = false,
-                    profileMessage = "Nu se poate conecta la server"
+                    profileMessage = "Nu mă pot conecta la server."
                 )
                 Log.e(TAG, "updateProfile exception", e)
             }
