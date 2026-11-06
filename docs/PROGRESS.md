@@ -5,6 +5,35 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 7 of 7: remaining screens and cleanup
+
+**Changed**
+- **Login:** Romanian labels and the new look. After creating an account the form returns to
+  signing in. "Continuă fără cont" now says lists stay on that phone.
+- **Settings are real:** theme (Sistem, Întunecat, Deschis) and vibrations are saved on the phone
+  in `data/settings/AppSettings`. Vibrations apply to the shared buttons, record and swipe to delete.
+  The offline speech switch is gone, because it never did anything.
+- **PDFs, About and the sync sheet** use the shared look. About shows the build's real version. The
+  sync sheet keeps its logic and its wording.
+- **Diagnostic** is in Romanian without emoji, and is only reachable in debug and preview builds.
+  **Golește operațiunile now asks first**, because it erases the offline queue for good.
+- Removed unused `SyncStatusBar`, `ErrorCard`, `PDFCard`, `AppCard`, `Buttons` and `SettingItem`.
+
+**Behavior changes**
+- Release builds no longer show Diagnostic.
+- Theme defaults to Sistem. Before, the app always followed the system and the switch did nothing.
+
+**Not done**
+- Nothing in the redesign has run on a real phone. Gestures, animations, dictation and the catalog's
+  scrolling all still need that.
+- Some older messages from sync code stay as they are, including in English (T3).
+
+**Next**
+- Merge the seven parts in order, after trying them on a phone.
+- WP4: voice speed, measured on a phone.
+
+---
+
 ## 2026-11-06 - Android redesign, part 6 of 7: account, menu and teams
 
 **Changed**
