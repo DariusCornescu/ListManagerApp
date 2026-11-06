@@ -167,9 +167,10 @@ matters only when bisecting. History was left as it is.
   Compose previews need Android Studio, which is free. No emulator is installed.
 
 **Next**
-- Restore production: confirm the database is gone, create a paid one, connect it through
-  `DATABASE_URL`, and upgrade the service. Then merge PR 22, which probably
-  deploys, and do EX-8's branch cleanup.
+- Restore production by merging PR 22. The `listmanager` Blueprint has Auto Sync on and reads
+  `backend-fastapi/render.yaml` from `development`, so the merge should recreate the database on
+  a paid plan, connect it and deploy, for about $14.50/month. Do not create one by hand first.
+  Then check `/health` and `ADMIN_PASSWORD`, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).
