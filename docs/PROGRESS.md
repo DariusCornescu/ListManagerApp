@@ -5,6 +5,57 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android live connection recovers by itself
+
+**Changed**
+- A lost connection is retried after 1, 2, 4, 8 and 16 seconds, then every 30, while logged in and in
+  the foreground. Returning to the foreground reconnects at once. The rules are in
+  `data/websocket/ReconnectingSocket.kt`, with 29 new unit tests.
+- Logout stops the socket and every retry. A retry never runs in the background.
+- `connect` no longer opens a second socket while one is connecting, and late events from an old socket
+  are ignored. A refreshed token is kept for the next connection.
+- A socket refused for its token now makes an authenticated request. That either refreshes the token,
+  which reconnects, or ends the login.
+- The client sends pings every 30 seconds, so a silently dead socket is noticed. `/ws` and the backend
+  are unchanged.
+- Presence and missed list changes needed no code: the server sends presence on each connection, and
+  each connection already starts a sync that refreshes the list.
+
+**Cause of the aborts, from the phone's own log (Galaxy S25, Android 17)**
+- `Software caused connection abort` is Android closing the app's sockets, not the server or the
+  network. The system logs `Destroyed live tcp sockets for uids={<app uid>}` in the same millisecond.
+- It happens about 5 seconds after the app leaves the foreground (5.01 s and 5.00 s in one run, 5.01 s
+  in a later one), and again when the process is frozen. Other apps' UIDs show the same line.
+- So a live socket cannot outlast leaving the app by more than about 5 seconds on this phone. That is
+  expected, and this change makes it harmless. Airplane mode gives the same exception.
+
+**Behavior changes**
+- `MainActivity.onDestroy` no longer disconnects, because rotation and a late `onDestroy` must not turn
+  recovery off. The socket then ends as it does for any backgrounded app.
+- `lifecycle-process` is now declared directly, at the 2.9.4 that already resolved.
+
+**Checked on the phone against production, with only read requests from the test**
+- Home with the menu open: socket aborted after 5.0 s, no retries while away. On return it reconnected in
+  under a second, and the open menu showed `Conectat live` without the drawer's reconnect running.
+- Airplane mode on and off with the app on screen: retries after 1, 2, 4, 8, 16 and 30 seconds, and the
+  last one connected and received presence, with no drawer reconnect.
+- Unit tests: 426 passing, and the preview Android tests compile.
+
+**Not done**
+- Logout was not tried on the phone, to keep its sign-in. Unit tests cover the stop rule.
+- An expired or refused token was not tried on the phone. Unit tests cover the rule, but not the request
+  it triggers.
+- One early airplane run reconnected through the drawer because the menu was open, and the window was
+  replaced during it. The cause of that replacement was not identified.
+
+**Next**
+- Merge this. The catalog ETag is still open. The fix for Back with the menu open is on
+  `feat/android-design-finish`, but not yet in `development`.
+- The preview on the phone is signed with `~/.android/debug.keystore`, so build it without
+  `ANDROID_USER_HOME` pointing at `.tooling/android-user`, or the install is refused.
+
+---
+
 ## 2026-11-06 - Android redesign: first run on a real phone, against production
 
 **Changed**

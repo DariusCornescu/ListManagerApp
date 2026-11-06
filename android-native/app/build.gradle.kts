@@ -135,6 +135,7 @@ dependencies {
     // Lifecycle (for ViewModels later)
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.4")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.4")
+    implementation("androidx.lifecycle:lifecycle-process:2.9.4")
 
     // Retrofit for API calls
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
