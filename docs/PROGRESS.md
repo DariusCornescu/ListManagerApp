@@ -5,6 +5,33 @@ Newest entries on top.
 
 ---
 
+## 2026-11-07 - Android dictation no longer freezes the app
+
+**Cause, from the phone's ANR report (Galaxy S25, Android 17, preview build)**
+- A two-word phrase froze the app for about 17 seconds. A touch during that time brought up Android's
+  "isn't responding" dialog. It was an ANR, not a crash.
+- Voice matching ran on the main thread. Segmentation ranks the whole catalog (3,196 products) once per
+  word window, and every product compiled about 100 regular expressions per ranking.
+
+**Changed**
+- `ResolveSpokenProductUseCase` runs on `Dispatchers.Default`, so Home and "De rezolvat" stay
+  responsive while it works. A new test fails if the work starts on the caller's thread.
+- `TextNorm` and `SimilarityEngine` compile their regular expressions once. Matching is unchanged.
+  Three catalog-wide rankings went from about 1,000 ms to about 400 ms on a desktop JVM, on a synthetic
+  3,196-product catalog.
+
+**Found, not fixed**
+- Inventory dictation still ranks the whole catalog on the main thread (`InventoryViewModel`), so it
+  can freeze the same way.
+- Segmentation still ranks the whole catalog for every word window, so a phrase with more words waits
+  much longer. A preview build is also debuggable, so its timings are not those of a release build.
+
+**Next**
+- Measure the same phrase on the phone, between the `HomeViewModel` "Processing spoken result" and
+  `ResolveUseCase` "Segmented utterance" log lines.
+
+---
+
 ## 2026-11-06 - Android live connection recovers by itself
 
 **Changed**
