@@ -5,6 +5,36 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign: first run on a real phone, against production
+
+**Changed**
+- PR 33 now lands the whole redesign stack on `development`, because parts 2 to 7 had merged only into
+  their base branches.
+- Fixed the doubled system bar spacing, and preview builds can reach a local test server.
+- **Catalog search:** a new search returns the list to the top. Returning to the catalog keeps the place.
+
+**Checked on a Galaxy S25, Android 17, against production**
+- Install, sign-in, Home, Catalog, Settings, About and Contul meu open without a crash.
+- The catalog shows 3,196 products and 67 distributors. While scrolling, 95% of frames took at most
+  8 ms with closed groups and 13 ms in an open group of 261 products.
+- Android tests: 397 passing. Only read requests were made after sign-in.
+- The local `ApiConfig.kt` decides which server a build uses. It is git-ignored and was edited by hand.
+
+**Found, not fixed**
+- Back with the menu open leaves the app instead of closing the menu.
+- The live connection dropped several times around a reinstall and leaving the app. In the code, a
+  failed connection is only retried when the menu opens or a token is refreshed.
+- Opening Catalog downloads the whole catalog again instead of reusing the ETag.
+
+**Not done**
+- Dictation, the list, swipe and both undo actions have not run on a phone. Voice speed is still
+  unmeasured (WP4).
+
+**Next**
+- Try dictation and the list on the phone, then decide on merging PR 33.
+
+---
+
 ## 2026-11-06 - Android redesign, part 7 of 7: remaining screens and cleanup
 
 **Changed**
