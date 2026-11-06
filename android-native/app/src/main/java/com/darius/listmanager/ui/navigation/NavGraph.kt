@@ -106,7 +106,10 @@ fun NavGraph(
             InventoryScreen(onBack = { navController.popBackStack() })
         }
         composable("pdfs") {
-            PDFsScreen(onBack = { navController.popBackStack() })
+            PDFsScreen(
+                onBack = { navController.popBackStack() },
+                onGoToList = { navController.navigate("session") }
+            )
         }
         composable("catalog") {
             CatalogScreen(
