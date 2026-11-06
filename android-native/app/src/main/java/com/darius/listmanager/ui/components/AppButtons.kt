@@ -29,12 +29,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.darius.listmanager.data.settings.AppSettings
 import com.darius.listmanager.ui.theme.AppTextStyles
 import com.darius.listmanager.ui.theme.Motion
+
+/** A short vibration, unless it's turned off in Setări. */
+@Composable
+fun rememberHaptics(): () -> Unit {
+    val haptics = LocalHapticFeedback.current
+    val context = LocalContext.current
+    val settings = remember(context) { AppSettings.getInstance(context) }
+    return remember(haptics, settings) {
+        { if (settings.hapticsEnabled.value) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
+    }
+}
 
 /** The press response every button in the app shares. */
 @Composable
@@ -68,8 +83,12 @@ private fun AppButton(
     textStyle: TextStyle,
 ) {
     val source = remember { MutableInteractionSource() }
+    val haptic = rememberHaptics()
     Button(
-        onClick = onClick,
+        onClick = {
+            haptic()
+            onClick()
+        },
         modifier = modifier
             .pressScale(source)
             .fillMaxWidth()

@@ -62,7 +62,7 @@ fun AppTextField(
             enabled = enabled,
             singleLine = true,
             isError = isError,
-            shape = RoundedCornerShape(12.dp),
+            shape = RoundedCornerShape(16.dp),
             visualTransformation = if (isPassword && !passwordVisible)
                 PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = keyboardOptions,
@@ -73,8 +73,8 @@ fun AppTextField(
                         Icon(
                             imageVector = if (passwordVisible) Icons.Rounded.VisibilityOff
                                           else Icons.Rounded.Visibility,
-                            contentDescription = if (passwordVisible) "Hide password"
-                                                 else "Show password",
+                            contentDescription = if (passwordVisible) "Ascunde parola"
+                                                 else "Arată parola",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }

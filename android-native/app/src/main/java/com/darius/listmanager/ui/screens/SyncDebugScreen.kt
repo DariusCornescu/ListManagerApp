@@ -5,19 +5,20 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.darius.listmanager.data.local.AppDatabase
 import com.darius.listmanager.data.local.entity.PendingOperationEntity
 import com.darius.listmanager.data.model.SyncResult
 import com.darius.listmanager.data.repository.AuthState
 import com.darius.listmanager.sync.SyncService
+import com.darius.listmanager.ui.components.AppIconButton
+import com.darius.listmanager.ui.components.AppTopBar
+import com.darius.listmanager.ui.components.ConfirmSheet
 import com.darius.listmanager.util.NetworkHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -45,6 +46,7 @@ fun SyncDebugScreen(
     var isSyncing by remember { mutableStateOf(false) }
     var syncLogs by remember { mutableStateOf<List<String>>(emptyList()) }
     var lastSyncResult by remember { mutableStateOf<String?>(null) }
+    var confirmClear by remember { mutableStateOf(false) }
     
     // Database flows
     val pendingOperationsFlow = remember(accountUserId) {
@@ -97,28 +99,23 @@ fun SyncDebugScreen(
     
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("🔧 Sync Debug") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back")
-                    }
-                },
+            AppTopBar(
+                title = "Diagnostic",
+                onBack = onBack,
                 actions = {
-                    IconButton(onClick = { syncLogs = emptyList() }) {
-                        Icon(Icons.Rounded.Delete, "Clear logs")
-                    }
-                }
+                    AppIconButton(Icons.Rounded.Delete, "Golește jurnalul", { syncLogs = emptyList() })
+                },
             )
         }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(padding),
+            contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 4.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            item { DiagnosticHeading("Rețea") }
             item {
                 NetworkStatusCard(
                     isNetworkAvailable = isNetworkAvailable,
@@ -127,17 +124,18 @@ fun SyncDebugScreen(
                     onCheckServer = {
                         scope.launch {
                             isCheckingServer = true
-                            addLog("Checking server reachability...")
+                            addLog("Verific serverul...")
                             isServerReachable = withContext(Dispatchers.IO) {
                                 NetworkHelper.isServerReachable()
                             }
-                            addLog("Server reachable: $isServerReachable")
+                            addLog(if (isServerReachable) "Server disponibil" else "Server indisponibil")
                             isCheckingServer = false
                         }
                     },
                 )
             }
 
+            item { DiagnosticHeading("Date locale") }
             item {
                 LocalDatabaseCard(
                     productCount = productCount,
@@ -147,6 +145,7 @@ fun SyncDebugScreen(
                 )
             }
 
+            item { DiagnosticHeading("Sincronizare") }
             item {
                 SyncControlsCard(
                     isSyncing = isSyncing,
@@ -154,8 +153,8 @@ fun SyncDebugScreen(
                     onSync = {
                         scope.launch {
                             isSyncing = true
-                            addLog("========== SYNC STARTED ==========")
-                            addLog("Pending operations: ${pendingOperations.size}")
+                            addLog("Sincronizare pornită")
+                            addLog("Operațiuni în așteptare: ${pendingOperations.size}")
 
                             try {
                                 val result = withContext(Dispatchers.IO) {
@@ -163,39 +162,25 @@ fun SyncDebugScreen(
                                 }
 
                                 lastSyncResult = when (result) {
-                                    is SyncResult.Success -> "✅ SUCCESS"
-                                    is SyncResult.Error -> "❌ ERROR: ${result.message}"
-                                    is SyncResult.Conflict -> "⚠️ CONFLICT: ${result.message}"
+                                    is SyncResult.Success -> "Sincronizare reușită"
+                                    is SyncResult.Error -> "Eroare: ${result.message}"
+                                    is SyncResult.Conflict -> "Conflict: ${result.message}"
                                 }
-                                addLog("Sync result: $lastSyncResult")
+                                addLog("Rezultat: $lastSyncResult")
                             } catch (e: Exception) {
-                                lastSyncResult = "❌ EXCEPTION: ${e.message}"
-                                addLog("Sync exception: ${e.message}")
+                                lastSyncResult = "Eroare: ${e.message}"
+                                addLog("Eroare la sincronizare: ${e.message}")
                             } finally {
-                                addLog("========== SYNC FINISHED ==========")
+                                addLog("Sincronizare încheiată")
                                 isSyncing = false
                             }
                         }
                     },
-                    onClearAll = {
-                        scope.launch {
-                            addLog("Clearing all pending operations...")
-                            withContext(Dispatchers.IO) {
-                                database.pendingOperationDao().deleteAll()
-                            }
-                            addLog("All pending operations cleared")
-                        }
-                    },
+                    onClearAll = { confirmClear = true },
                 )
             }
 
-            item {
-                Text(
-                    "📋 Pending Operations (${allOperations.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            item { DiagnosticHeading("Operațiuni", allOperations.size) }
 
             if (allOperations.isEmpty()) {
                 item { NoPendingOperationsCard() }
@@ -205,17 +190,28 @@ fun SyncDebugScreen(
                 }
             }
 
-            item {
-                Text(
-                    "📝 Logs (${syncLogs.size})",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
+            item { DiagnosticHeading("Jurnal", syncLogs.size) }
 
             item { SyncLogCard(syncLogs) }
-
-            item { Spacer(Modifier.height(32.dp)) }
         }
+    }
+
+    if (confirmClear) {
+        ConfirmSheet(
+            title = "Golești operațiunile?",
+            message = "Modificările care nu au ajuns pe server se pierd definitiv.",
+            confirmLabel = "Golește",
+            onConfirm = {
+                confirmClear = false
+                scope.launch {
+                    addLog("Golesc operațiunile...")
+                    withContext(Dispatchers.IO) {
+                        database.pendingOperationDao().deleteAll()
+                    }
+                    addLog("Operațiuni golite")
+                }
+            },
+            onDismiss = { confirmClear = false },
+        )
     }
 }

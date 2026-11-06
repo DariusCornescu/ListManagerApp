@@ -20,6 +20,12 @@ import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorkManager
 import com.darius.listmanager.sync.SyncWorker
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import com.darius.listmanager.data.settings.AppSettings
+import com.darius.listmanager.data.settings.usesDarkTheme
 import com.darius.listmanager.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -82,7 +88,9 @@ class MainActivity : ComponentActivity() {
         setupWebSocket()
 
         setContent {
-            AppTheme {
+            val settings = remember { AppSettings.getInstance(this) }
+            val themeMode by settings.themeMode.collectAsState()
+            AppTheme(darkTheme = usesDarkTheme(themeMode, isSystemInDarkTheme())) {
                 AppContent()
             }
         }
