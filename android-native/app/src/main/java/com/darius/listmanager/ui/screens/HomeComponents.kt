@@ -74,6 +74,7 @@ import com.darius.listmanager.ui.components.AppSecondaryButton
 import com.darius.listmanager.ui.components.AppTextButton
 import com.darius.listmanager.ui.components.SheetBody
 import com.darius.listmanager.ui.components.pressScale
+import com.darius.listmanager.ui.components.rememberHaptics
 import com.darius.listmanager.ui.theme.AppTextStyles
 import com.darius.listmanager.ui.theme.Motion
 import com.darius.listmanager.ui.theme.rememberReducedMotion
@@ -122,6 +123,7 @@ internal fun RecordButton(
         RecordAction.BUSY -> "Se procesează"
     }
     val source = remember { MutableInteractionSource() }
+    val haptic = rememberHaptics()
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -132,6 +134,7 @@ internal fun RecordButton(
             if (listening && !reduced) PulseRings(scheme.error, corner.value)
             Surface(
                 onClick = {
+                    haptic()
                     when (action) {
                         RecordAction.START -> onStart()
                         RecordAction.STOP -> onStop()

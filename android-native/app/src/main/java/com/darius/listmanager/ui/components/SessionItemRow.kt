@@ -42,8 +42,12 @@ fun SessionItemRow(
     )
     // Not in confirmValueChange: Material calls that many times during one swipe.
     val latestOnDelete by rememberUpdatedState(onDelete)
+    val haptic = rememberHaptics()
     LaunchedEffect(dismissState.currentValue) {
-        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) latestOnDelete()
+        if (dismissState.currentValue == SwipeToDismissBoxValue.EndToStart) {
+            haptic()
+            latestOnDelete()
+        }
     }
     SwipeToDismissBox(
         state = dismissState,
