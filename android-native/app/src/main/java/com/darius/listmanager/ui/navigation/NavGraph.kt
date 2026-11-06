@@ -86,7 +86,14 @@ fun NavGraph(
                         popUpTo(0) { inclusive = true }
                     }
                 },
-                username = username
+                username = username,
+                onWorkspaceSwitched = {
+                    navController.navigate("session") {
+                        popUpTo("home") { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onManageTeams = { navController.navigate("teams") }
             )
         }
         composable("session") {
