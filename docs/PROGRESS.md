@@ -8,14 +8,19 @@ Newest entries on top.
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
 Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
-local `development` (`8701773` to `05d767d`). The branch is pushed as PR 22, which replaced
-PR 21; `origin/development` is unchanged, and CI passes on all three jobs. Full review:
+local `development` (`8701773` to `05d767d`). It reached `origin/development` through PR 22, which
+replaced PR 21, merged as `42f98b2` on 2026-11-06 with CI passing. Full review:
 `APP-REVIEW-2026-11.md`.
 
-**Production is down.** Render's log on 2026-11-06 shows `listmanager-api` crashing at startup
-because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves. The free database
-appears to have been deleted: Render's articles now give free Postgres 30 days plus a 14-day
-grace period, and it was created around 2026-07-04. `render.yaml` now uses paid plans.
+**Production was down and is restored, but its data is gone.** `listmanager-api` was crashing at
+startup because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolved, and the
+workspace had no database. Render's articles give free Postgres 30 days plus a 14-day grace
+period, and it was created around 2026-07-04. Merging PR 22 made the Blueprint recreate
+`listmanager-db` on `0.1c-256mb`, connect it and move the service to `0.5c-512mb`. The first
+deploy failed and the plan-change deploy succeeded. Live checks after that: `/health` healthy,
+new routes present, seed catalog of 48 distributors and 24 products with no duplicates.
+Accounts, lists and any imported catalog from before are lost. The new database is
+PostgreSQL 18, while CI tests on 17. Admin login has not been tested.
 
 `android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
@@ -167,10 +172,8 @@ matters only when bisecting. History was left as it is.
   Compose previews need Android Studio, which is free. No emulator is installed.
 
 **Next**
-- Restore production by merging PR 22. The `listmanager` Blueprint has Auto Sync on and reads
-  `backend-fastapi/render.yaml` from `development`, so the merge should recreate the database on
-  a paid plan, connect it and deploy, for about $14.50/month. Do not create one by hand first.
-  Then check `/health` and `ADMIN_PASSWORD`, and do EX-8's branch cleanup.
+- Test admin login, re-import the catalog, and rebuild the apps against the new backend.
+- Point CI at PostgreSQL 18 to match production, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).
