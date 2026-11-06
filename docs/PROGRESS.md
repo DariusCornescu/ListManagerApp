@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-11-06 - Android redesign, part 5 of 7: catalog, product editing and inventory
+
+**Changed**
+- **Catalog:** distributor groups start closed and open on tap, by themselves during a search or a
+  selection. Each product is its own lazy item, so 3,196 products cost only what's on screen. Admins
+  can edit from any row, not only in selection mode.
+- **Catalog loading:** one load when the screen opens, instead of up to three. Products are grouped
+  in memory instead of 67 queries, overlapping refreshes cancel each other, and a refresh keeps the
+  list on screen.
+- **Search** ignores diacritics, so "paine" finds "Pâine". A distributor found by name keeps all its
+  products. Search keys are built once per load.
+- **Product editing:** one save button, which also blocks a blank name with an explanation. Deleting
+  asks in a sheet.
+- **Inventory:** cards instead of a four-column table. A row says what's missing, and tapping it
+  opens the editor, which is now the way to delete. Deleting can be undone. A denied microphone and
+  speech errors now show a message, where before nothing happened.
+- Remaining English and raw error text on these screens is now Romanian.
+
+**Not done**
+- `ProductRepository.getAll()` still downloads the full catalog each time the screen resumes, even
+  when nothing changed. `CatalogRefresher` has a cheaper path, but that's sync code (T3).
+- Scrolling 3,196 products hasn't been measured. Nothing here has run on a real phone.
+
+**Next**
+- Part 6: account, menu and teams.
+
+---
+
 ## 2026-11-06 - Android redesign, part 4 of 7: De rezolvat and the single product form
 
 **Changed**

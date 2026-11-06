@@ -1,21 +1,29 @@
 package com.darius.listmanager.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Delete
-import androidx.compose.material.icons.rounded.Error
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.darius.listmanager.ui.components.AppEmptyState
+import com.darius.listmanager.ui.components.AppIconButton
+import com.darius.listmanager.ui.components.AppPrimaryButton
+import com.darius.listmanager.ui.components.AppSecondaryButton
+import com.darius.listmanager.ui.components.AppTopBar
+import com.darius.listmanager.ui.components.BannerTone
+import com.darius.listmanager.ui.components.ConfirmSheet
+import com.darius.listmanager.ui.components.SkeletonRows
+import com.darius.listmanager.ui.components.StatusBanner
+import com.darius.listmanager.ui.viewmodel.EditProductUiState
 import com.darius.listmanager.ui.viewmodel.EditProductViewModel
-import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProductScreen(
     productId: Long,
@@ -23,16 +31,13 @@ fun EditProductScreen(
     viewModel: EditProductViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var showDeleteDialog by remember { mutableStateOf(false) }
+    var showDeleteSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
-    val scope = rememberCoroutineScope()
 
-    // Load product data
     LaunchedEffect(productId) {
         viewModel.loadProduct(productId)
     }
 
-    // Show messages
     LaunchedEffect(uiState.message) {
         uiState.message?.let { message ->
             snackbarHostState.showSnackbar(message)
@@ -40,208 +45,149 @@ fun EditProductScreen(
         }
     }
 
-    // Handle successful save/delete
     LaunchedEffect(uiState.operationSuccess) {
-        if (uiState.operationSuccess) {
-            onBack()
-        }
+        if (uiState.operationSuccess) onBack()
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
-            TopAppBar(
-                title = { Text("Editează Produs") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Rounded.ArrowBack, "Înapoi")
-                    }
-                },
+            AppTopBar(
+                title = "Editează produsul",
+                onBack = onBack,
                 actions = {
-                    // Edit/delete affordances are ADMIN-only
                     if (uiState.isAdmin) {
-                        IconButton(
-                            onClick = { showDeleteDialog = true },
-                            enabled = !uiState.isLoading && !uiState.isSaving
-                        ) {
-                            Icon(
-                                Icons.Rounded.Delete,
-                                "Șterge produsul",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                        IconButton(
-                            onClick = { viewModel.saveProduct() },
-                            enabled = !uiState.isLoading && !uiState.isSaving && uiState.hasChanges
-                        ) {
-                            Icon(Icons.Rounded.Check, "Salvează")
-                        }
+                        AppIconButton(
+                            Icons.Rounded.Delete,
+                            "Șterge produsul",
+                            { showDeleteSheet = true },
+                            enabled = !uiState.isLoading && !uiState.isSaving,
+                        )
                     }
-                }
+                },
             )
-        }
+        },
+        bottomBar = {
+            if (uiState.isAdmin && !uiState.isLoading && uiState.error == null) {
+                EditProductFooter(uiState, viewModel::saveProduct)
+            }
+        },
     ) { padding ->
-        when {
-            uiState.isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    CircularProgressIndicator()
-                }
+        EditProductContent(
+            state = uiState,
+            onNameChange = viewModel::updateProductName,
+            onAliasesChange = viewModel::updateAliases,
+            onRetry = { viewModel.loadProduct(productId) },
+            modifier = Modifier.padding(padding),
+        )
+    }
+
+    if (showDeleteSheet) {
+        ConfirmSheet(
+            title = "Ștergi produsul?",
+            message = "„${uiState.productName}” va dispărea din catalog. Această acțiune nu poate fi anulată.",
+            confirmLabel = "Șterge",
+            onConfirm = {
+                viewModel.deleteProduct()
+                showDeleteSheet = false
+            },
+            onDismiss = { showDeleteSheet = false },
+        )
+    }
+}
+
+@Composable
+internal fun EditProductContent(
+    state: EditProductUiState,
+    onNameChange: (String) -> Unit,
+    onAliasesChange: (String) -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    when {
+        state.isLoading -> SkeletonRows(
+            count = 3,
+            modifier = modifier
+                .fillMaxSize()
+                .padding(16.dp),
+        )
+        state.error != null -> AppEmptyState(
+            icon = Icons.Rounded.ErrorOutline,
+            title = state.error,
+            modifier = modifier,
+            action = { AppSecondaryButton("Încearcă din nou", onRetry, Modifier.width(220.dp)) },
+        )
+        else -> Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+        ) {
+            val shape = RoundedCornerShape(16.dp)
+            val editable = state.isAdmin && !state.isSaving
+            if (!state.isAdmin) {
+                StatusBanner("Doar administratorii pot modifica catalogul.")
             }
-            uiState.error != null -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Rounded.Error,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            "Eroare: ${uiState.error}",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Button(onClick = { viewModel.loadProduct(productId) }) {
-                            Text("Reîncearcă")
-                        }
-                    }
-                }
-            }
-            else -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    // Read-only notice for non-admins
-                    if (!uiState.isAdmin) {
-                        Surface(
-                            modifier = Modifier.fillMaxWidth(),
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            shape = MaterialTheme.shapes.small
-                        ) {
-                            Text(
-                                "Vizualizare: doar administratorii pot modifica catalogul",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    }
-
-                    // Product Name
-                    OutlinedTextField(
-                        value = uiState.productName,
-                        onValueChange = { viewModel.updateProductName(it) },
-                        label = { Text("Nume Produs *") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = uiState.isAdmin && !uiState.isSaving,
-                        isError = uiState.productName.isBlank()
-                    )
-
-                    // Distributor (read-only, shows current distributor)
-                    OutlinedTextField(
-                        value = uiState.distributorName,
-                        onValueChange = {},
-                        label = { Text("Distribuitor") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = false,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            disabledTextColor = MaterialTheme.colorScheme.onSurface,
-                            disabledBorderColor = MaterialTheme.colorScheme.outline,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    )
-
-                    // Aliases
-                    OutlinedTextField(
-                        value = uiState.aliases,
-                        onValueChange = { viewModel.updateAliases(it) },
-                        label = { Text("Aliasuri (separate prin virgulă)") },
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text("ex: lapte, lapte proaspăt, lapte de vacă") },
-                        supportingText = {
-                            Text("Opțional: Adaugă nume alternative pentru recunoaștere vocală mai bună")
-                        },
-                        minLines = 2,
-                        enabled = uiState.isAdmin && !uiState.isSaving
-                    )
-
-                    Spacer(Modifier.weight(1f))
-
-                    // Save button (ADMIN-only)
-                    if (uiState.isAdmin) {
-                        Button(
-                            onClick = { viewModel.saveProduct() },
-                            modifier = Modifier.fillMaxWidth(),
-                            enabled = !uiState.isSaving && uiState.hasChanges && uiState.productName.isNotBlank()
-                        ) {
-                            if (uiState.isSaving) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Text(if (uiState.isSaving) "Salvez..." else "Salvează Modificările")
-                        }
-                    }
-
-                    if (uiState.isAdmin && uiState.hasChanges) {
-                        Text(
-                            "Aveți modificări nesalvate",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.align(Alignment.CenterHorizontally)
-                        )
-                    }
-                }
+            OutlinedTextField(
+                value = state.productName,
+                onValueChange = onNameChange,
+                label = { Text("Nume produs *") },
+                isError = state.productName.isBlank(),
+                supportingText = if (state.productName.isBlank()) {
+                    { Text("Scrie numele produsului.") }
+                } else null,
+                singleLine = true,
+                enabled = editable,
+                shape = shape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.distributorName,
+                onValueChange = {},
+                label = { Text("Distribuitor") },
+                singleLine = true,
+                enabled = false,
+                shape = shape,
+                // Can't be changed here, but it still has to be easy to read.
+                colors = OutlinedTextFieldDefaults.colors(
+                    disabledTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    disabledLabelColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.aliases,
+                onValueChange = onAliasesChange,
+                label = { Text("Sinonime (separate prin virgulă)") },
+                placeholder = { Text("ex. lapte, lapte proaspăt") },
+                supportingText = { Text("Opțional. Ajută recunoașterea vocală.") },
+                enabled = editable,
+                shape = shape,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (state.isAdmin && state.hasChanges && !state.isSaving) {
+                StatusBanner("Ai modificări nesalvate.", tone = BannerTone.Info)
             }
         }
+    }
+}
 
-        // Delete confirmation dialog
-        if (showDeleteDialog) {
-            AlertDialog(
-                onDismissRequest = { showDeleteDialog = false },
-                title = { Text("Șterge Produs") },
-                text = {
-                    Text("Ștergi \"${uiState.productName}\"? Această acțiune nu poate fi anulată.")
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            viewModel.deleteProduct()
-                            showDeleteDialog = false
-                        },
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("Șterge")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = false }) {
-                        Text("Anulează")
-                    }
-                }
+@Composable
+internal fun EditProductFooter(state: EditProductUiState, onSave: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Column {
+        HorizontalDivider(color = scheme.outline)
+        Surface(color = scheme.background) {
+            AppPrimaryButton(
+                text = "Salvează modificările",
+                onClick = onSave,
+                enabled = state.hasChanges && state.productName.isNotBlank(),
+                loading = state.isSaving,
+                loadingText = "Se salvează…",
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
             )
         }
     }

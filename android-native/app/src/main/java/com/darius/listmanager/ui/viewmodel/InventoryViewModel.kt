@@ -161,7 +161,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             } else {
                 var added = 0
                 segments.forEach { if (insertSegment(it, quiet = true)) added++ }
-                _uiState.value = _uiState.value.copy(message = "Adăugate: $added rânduri")
+                _uiState.value = _uiState.value.copy(message = if (added == 1) "Adăugat un rând" else "Adăugate: $added rânduri")
             }
         }
     }
@@ -184,7 +184,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
         val parsed = InventoryLineParser.parse(segText, scorer)
         if (parsed == null || parsed.nameText.isBlank()) {
             if (!quiet) {
-                _uiState.value = _uiState.value.copy(message = "Nu am înțeles produsul — mai zi o dată")
+                _uiState.value = _uiState.value.copy(message = "Nu am înțeles produsul. Mai spune o dată.")
             }
             return false
         }
@@ -203,7 +203,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
             if (parsed.priceBani == null) missing.add("prețul")
             _uiState.value = _uiState.value.copy(
                 message = if (missing.isEmpty()) null
-                          else "Lipsește ${missing.joinToString(" și ")} — completează în tabel"
+                          else "${if (missing.size == 1) "Lipsește" else "Lipsesc"} ${missing.joinToString(" și ")}. Apasă pe rând ca să completezi."
             )
         }
         return true
@@ -226,6 +226,20 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun deleteItem(item: InventoryItemEntity) {
         viewModelScope.launch { inventoryRepository.delete(item) }
+    }
+
+    /** Puts a deleted row back, as a new row with the same values. */
+    fun restoreItem(item: InventoryItemEntity) {
+        viewModelScope.launch {
+            inventoryRepository.insert(
+                teamId = teamId,
+                name = item.name,
+                productId = item.productId,
+                quantity = item.quantity,
+                priceBani = item.priceBani,
+                createdAt = item.createdAt,
+            )
+        }
     }
 
     /** The server's list, unless unsent edits are waiting; then it refreshes after they land. */
@@ -273,7 +287,7 @@ class InventoryViewModel(application: Application) : AndroidViewModel(applicatio
                 Log.e(TAG, "PDF export failed", e)
                 _uiState.value = _uiState.value.copy(
                     isGeneratingPdf = false,
-                    message = "Eroare la PDF: ${e.message}"
+                    message = "Nu am putut genera PDF-ul. Încearcă din nou."
                 )
             }
         }
