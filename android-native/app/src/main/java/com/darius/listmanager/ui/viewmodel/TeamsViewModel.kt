@@ -53,7 +53,7 @@ class TeamsViewModel(application: Application) : AndroidViewModel(application) {
                         _uiState.value = _uiState.value.copy(
                             isLoading = false,
                             loadFailed = true,
-                            error = "Team management requires a connection"
+                            error = "Echipele au nevoie de conexiune la internet."
                         )
                     is TeamResult.Failure ->
                         _uiState.value = _uiState.value.copy(
@@ -80,7 +80,7 @@ class TeamsViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is TeamResult.Offline ->
                     _uiState.value = _uiState.value.copy(
-                        error = "Team management requires a connection", isSubmitting = false
+                        error = "Echipele au nevoie de conexiune la internet.", isSubmitting = false
                     )
                 is TeamResult.Failure ->
                     _uiState.value = _uiState.value.copy(
@@ -116,7 +116,7 @@ class TeamsViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 is TeamResult.Offline ->
                     _uiState.value = _uiState.value.copy(
-                        error = "Team management requires a connection", isSubmitting = false
+                        error = "Echipele au nevoie de conexiune la internet.", isSubmitting = false
                     )
                 is TeamResult.Failure ->
                     _uiState.value = _uiState.value.copy(
