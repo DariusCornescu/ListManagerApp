@@ -29,6 +29,7 @@ val DarkSuccess = Color(0xFF8F9E7A)
 val DarkError = Color(0xFFE5786A)
 val DarkOnError = Color(0xFF2A2A2A)
 val Color_DarkErrorContainer = Color(0xFF3A2420)
+val Color_DarkOnErrorContainer = Color(0xFFF0A79C)
 
 // ===== Light (matching) =====
 val LightBackground = Color(0xFFF6F2E9)      // cream paper
@@ -50,3 +51,4 @@ val LightSuccess = Color(0xFF71805C)
 val LightError = Color(0xFFC4553F)
 val LightOnError = Color(0xFFFFFFFF)
 val Color_LightErrorContainer = Color(0xFFF7DDD5)
+val Color_LightOnErrorContainer = Color(0xFF8E3524)
