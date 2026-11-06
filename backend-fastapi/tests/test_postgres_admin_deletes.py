@@ -135,6 +135,68 @@ def test_delete_user_without_data_cascades_their_tokens(
     )
 
 
+def _product(session, distributor_name="PG Distributor"):
+    distributor = models.Distributor(distributor_name=distributor_name)
+    session.add(distributor)
+    session.commit()
+    product = models.Product(name="PG Product", distributor_id=distributor.id)
+    session.add(product)
+    session.commit()
+    return product
+
+
+def test_delete_distributor_with_products_answers_409(
+    pg_client, pg_session, admin_headers
+):
+    product = _product(pg_session)
+
+    response = pg_client.delete(
+        f"/api/catalog/distributors/{product.distributor_id}", headers=admin_headers
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["product_count"] == 1
+
+
+def test_delete_product_on_a_list_answers_409(pg_client, pg_session, admin_headers):
+    product = _product(pg_session)
+    owner = _user(pg_session, "pg-list-owner")
+    session = models.GlobalSession(name="PG Order", owner_user_id=owner.id)
+    pg_session.add(session)
+    pg_session.commit()
+    pg_session.add(
+        models.GlobalSessionItem(session_id=session.id, product_id=product.id, quantity=1)
+    )
+    pg_session.commit()
+
+    response = pg_client.delete(
+        f"/api/catalog/products/{product.id}", headers=admin_headers
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["list_item_count"] == 1
+
+
+def test_delete_unused_product_then_distributor_succeeds(
+    pg_client, pg_session, admin_headers
+):
+    product = _product(pg_session)
+    distributor_id = product.distributor_id
+
+    assert (
+        pg_client.delete(
+            f"/api/catalog/products/{product.id}", headers=admin_headers
+        ).status_code
+        == 200
+    )
+    assert (
+        pg_client.delete(
+            f"/api/catalog/distributors/{distributor_id}", headers=admin_headers
+        ).status_code
+        == 200
+    )
+
+
 def test_delete_race_answers_409_not_500(
     pg_client, pg_session, admin_headers, monkeypatch
 ):

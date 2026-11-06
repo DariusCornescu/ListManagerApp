@@ -3,6 +3,7 @@ import json
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
@@ -12,6 +13,15 @@ from ..websocket_manager import manager
 
 
 router = APIRouter()
+
+
+def _commit_delete(db: Session, conflict_detail: dict) -> None:
+    """Commit a delete, answering 409 if a linked row appeared after the check."""
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=conflict_detail)
 
 
 def _etag_matches(if_none_match: Optional[str], etag: str) -> bool:
@@ -145,9 +155,25 @@ async def delete_distributor(
     if not distributor:
         raise HTTPException(status_code=404, detail="Distributor not found")
 
-    # Delete distributor (CASCADE will delete associated products)
+    # No cascade exists: products need a distributor, so they must go first.
+    product_count = db.query(models.Product).filter(
+        models.Product.distributor_id == distributor_id
+    ).count()
+    if product_count:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "distributor_has_products",
+                "message": "Distributor still has products.",
+                "product_count": product_count,
+            },
+        )
+
     db.delete(distributor)
-    db.commit()
+    _commit_delete(
+        db,
+        {"code": "distributor_has_products", "message": "Distributor still has products."},
+    )
 
     # Notify all connected clients
     await manager.broadcast({
@@ -282,9 +308,22 @@ async def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    # Delete product
+    # A list row keeps its product forever, so past orders stay readable.
+    list_item_count = db.query(models.GlobalSessionItem).filter(
+        models.GlobalSessionItem.product_id == product_id
+    ).count()
+    if list_item_count:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "product_on_lists",
+                "message": "Product is used on lists.",
+                "list_item_count": list_item_count,
+            },
+        )
+
     db.delete(product)
-    db.commit()
+    _commit_delete(db, {"code": "product_on_lists", "message": "Product is used on lists."})
 
     # Notify all connected clients
     await manager.broadcast({
