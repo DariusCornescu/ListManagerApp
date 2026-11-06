@@ -108,14 +108,14 @@ class WorkspaceSessionResolverTest {
                 GlobalSessionDTO(10, "Current Session", true, "2026-09-13", null, 0, 1, null)
             )
 
-            override suspend fun getDistributors(): Response<List<DistributorDTO>> =
+            override suspend fun getDistributorsIfChanged(etag: String?): Response<List<DistributorDTO>> =
                 if (catalogAvailable) {
                     Response.success(listOf(DistributorDTO(1, "Supplier", null, "2026-09-13")))
                 } else {
                     Response.error(503, "unavailable".toResponseBody())
                 }
 
-            override suspend fun getProducts(search: String?) = Response.success(
+            override suspend fun getProductsIfChanged(etag: String?) = Response.success(
                 listOf(ProductDTO(7, "Lapte Zuzu 1L", 1, "lapte, zuzu", "2026-09-13"))
             )
 

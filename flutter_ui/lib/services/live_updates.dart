@@ -26,6 +26,11 @@ class LiveUpdates {
   WebSocketChannel? _channel;
   Duration _backoff = const Duration(seconds: 1);
   bool _running = false;
+  bool _reconnecting = false;
+
+  /// Sent after the socket comes back. Events aren't replayed, so anything that
+  /// happened during the gap has to be fetched again.
+  static const reconnected = 'live_reconnected';
 
   /// The type of each event, such as `session_item_added`.
   Stream<String> get events => _events.stream;
@@ -64,6 +69,7 @@ class LiveUpdates {
     try {
       final channel = _connect(socketUri(token));
       _channel = channel;
+      unawaited(channel.ready.then((_) => _onConnected(channel), onError: (Object _) {}));
       _subscription = channel.stream.listen(
         _onMessage,
         onDone: _scheduleReconnect,
@@ -73,6 +79,12 @@ class LiveUpdates {
     } on Exception {
       _scheduleReconnect();
     }
+  }
+
+  void _onConnected(WebSocketChannel channel) {
+    if (!_running || !_reconnecting || !identical(channel, _channel)) return;
+    _reconnecting = false;
+    _events.add(reconnected);
   }
 
   void _onMessage(dynamic raw) {
@@ -89,6 +101,7 @@ class LiveUpdates {
 
   void _scheduleReconnect() {
     if (!_running) return;
+    _reconnecting = true;
     _reconnect?.cancel();
     final wait = _backoff;
     _backoff = _backoff * 2 > maxBackoff ? maxBackoff : _backoff * 2;

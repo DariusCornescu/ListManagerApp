@@ -121,6 +121,11 @@ class WebSocketService private constructor() {
                             )
                         }
                         
+                        "catalog_changed" -> {
+                            val data = json.getJSONObject("data")
+                            WebSocketMessage.CatalogChanged(changeId = data.getString("change_id"))
+                        }
+
                         // Products
                         "product_created" -> {
                             val data = json.getJSONObject("data")

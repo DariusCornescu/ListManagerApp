@@ -30,7 +30,10 @@ class AppServices {
     SessionRepository(_api),
     liveEvents: live.events,
   );
-  late final CatalogController catalog = CatalogController(CatalogRepository(_api));
+  late final CatalogController catalog = CatalogController(
+    CatalogRepository(_api),
+    liveEvents: live.events,
+  );
 }
 
 class ListManagerApp extends StatefulWidget {

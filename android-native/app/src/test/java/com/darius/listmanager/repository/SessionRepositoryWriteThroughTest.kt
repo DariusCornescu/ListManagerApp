@@ -41,6 +41,7 @@ class SessionRepositoryWriteThroughTest {
     // ---------- Fakes ----------
 
     private class FakeSessionItemDao : SessionItemDao {
+        override suspend fun getReferencedProductIds(): List<Long> = emptyList()
         val rows = mutableListOf<SessionItemEntity>()
         private var nextId = 1L
 
@@ -214,6 +215,8 @@ class SessionRepositoryWriteThroughTest {
         }
 
         // Everything else is out of scope for these tests.
+        override suspend fun getProductsIfChanged(etag: String?): Response<List<ProductDTO>> = throw NotImplementedError()
+        override suspend fun getDistributorsIfChanged(etag: String?): Response<List<DistributorDTO>> = throw NotImplementedError()
         override suspend fun getProducts(search: String?): Response<List<ProductDTO>> = throw NotImplementedError()
         override suspend fun createProduct(request: ProductCreate): Response<ProductDTO> = throw NotImplementedError()
         override suspend fun updateProduct(productId: Long, request: ProductCreate): Response<ProductDTO> = throw NotImplementedError()

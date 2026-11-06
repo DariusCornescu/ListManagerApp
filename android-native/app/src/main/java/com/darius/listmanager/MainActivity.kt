@@ -19,6 +19,7 @@ import com.darius.listmanager.data.websocket.WebSocketState
 import com.darius.listmanager.network.RetrofitClient
 import com.darius.listmanager.sync.SyncService
 import com.darius.listmanager.sync.SyncWorkManager
+import com.darius.listmanager.sync.SyncWorker
 import com.darius.listmanager.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -112,6 +113,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             webSocketService.messages.collect { message ->
                 when (message) {
+                    is WebSocketMessage.CatalogChanged -> {
+                        SyncWorker.scheduleImmediateSync(this@MainActivity)
+                    }
+
                     is WebSocketMessage.DistributorCreated -> {
                         Log.d(TAG, "WS: Distributor created - ${message.distributorName}")
                         updateLocalDistributor(message.distributorId, message.distributorName)
@@ -268,6 +273,8 @@ class MainActivity : ComponentActivity() {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Session refresh deferred", e)
+                // Usually an item for a product this phone hasn't received yet.
+                SyncWorker.scheduleImmediateSync(this@MainActivity)
             }
         }
     }

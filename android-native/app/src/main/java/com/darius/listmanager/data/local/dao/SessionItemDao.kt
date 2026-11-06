@@ -45,6 +45,9 @@ interface SessionItemDao {
     @Query("SELECT * FROM session_items WHERE sessionId = :sessionId AND productId = :productId LIMIT 1")
     suspend fun getItem(sessionId: Long, productId: Long): SessionItemEntity?
 
+    @Query("SELECT DISTINCT productId FROM session_items")
+    suspend fun getReferencedProductIds(): List<Long>
+
     @Query("SELECT * FROM session_items WHERE id = :id")
     suspend fun getById(id: Long): SessionItemEntity?
 

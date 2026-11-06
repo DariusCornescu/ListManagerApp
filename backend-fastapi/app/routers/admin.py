@@ -1,5 +1,6 @@
 import logging
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -58,6 +59,12 @@ async def import_catalog(
         db.rollback()
         logger.exception("Catalog import failed")
         raise HTTPException(status_code=500, detail="Import failed")
+
+    if result.committed and (result.new or result.updated):
+        # A new id each time: the Android socket's StateFlow drops equal values.
+        await manager.broadcast(
+            {"type": "catalog_changed", "data": {"change_id": uuid.uuid4().hex}}
+        )
 
     return schemas.ImportResultDTO(
         new=result.new,

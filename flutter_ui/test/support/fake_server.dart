@@ -32,9 +32,9 @@ class FakeServer {
   void Function()? rivalWrite;
 
   final products = <Map<String, dynamic>>[
-    {'id': 1, 'name': 'Lapte Zuzu 1L', 'distributor_id': 1, 'aliases': 'lapte', 'price': '7.50'},
-    {'id': 2, 'name': 'Pâine albă', 'distributor_id': 1, 'aliases': null, 'price': null},
-    {'id': 3, 'name': 'Șuruburi 4x40', 'distributor_id': 2, 'aliases': 'surub', 'price': null},
+    {'id': 1, 'name': 'Lapte Zuzu 1L', 'distributor_id': 1, 'aliases': 'lapte'},
+    {'id': 2, 'name': 'Pâine albă', 'distributor_id': 1, 'aliases': null},
+    {'id': 3, 'name': 'Șuruburi 4x40', 'distributor_id': 2, 'aliases': 'surub'},
   ];
   final distributors = <Map<String, dynamic>>[
     {'id': 1, 'distributor_name': 'METRO'},

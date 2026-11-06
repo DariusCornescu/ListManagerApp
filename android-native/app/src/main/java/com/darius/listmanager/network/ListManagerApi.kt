@@ -5,6 +5,14 @@ import retrofit2.http.*
 
 interface ListManagerApi {
     
+    // ===== Catalog refresh =====
+    // A matching version answers 304 with no body, so an unchanged catalog costs almost nothing.
+    @GET("/api/catalog/products")
+    suspend fun getProductsIfChanged(@Header("If-None-Match") etag: String?): Response<List<ProductDTO>>
+
+    @GET("/api/catalog/distributors")
+    suspend fun getDistributorsIfChanged(@Header("If-None-Match") etag: String?): Response<List<DistributorDTO>>
+
     // ===== Products =====
     @GET("/api/catalog/products")
     suspend fun getProducts(@Query("search") search: String? = null): Response<List<ProductDTO>>
