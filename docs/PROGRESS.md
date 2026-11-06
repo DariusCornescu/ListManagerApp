@@ -8,14 +8,19 @@ Newest entries on top.
 ## 2026-11-06 - Linear issue sweep, integration and application review
 
 Work was done on branch `claude/ex-dario-issues-features-b0e765`, then fast-forwarded into
-local `development` (`8701773` to `05d767d`). The branch is pushed as PR 22, which replaced
-PR 21; `origin/development` is unchanged, and CI passes on all three jobs. Full review:
+local `development` (`8701773` to `05d767d`). It reached `origin/development` through PR 22, which
+replaced PR 21, merged as `42f98b2` on 2026-11-06 with CI passing. Full review:
 `APP-REVIEW-2026-11.md`.
 
-**Production is down.** Render's log on 2026-11-06 shows `listmanager-api` crashing at startup
-because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves. The free database
-appears to have been deleted: Render's articles now give free Postgres 30 days plus a 14-day
-grace period, and it was created around 2026-07-04. `render.yaml` now uses paid plans.
+**Production was down and is restored, but its data is gone.** `listmanager-api` was crashing at
+startup because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolved, and the
+workspace had no database. Render's articles give free Postgres 30 days plus a 14-day grace
+period, and it was created around 2026-07-04. Merging PR 22 made the Blueprint recreate
+`listmanager-db` on `0.1c-256mb`, connect it and move the service to `0.5c-512mb`. The first
+deploy failed and the plan-change deploy succeeded. Live checks after that: `/health` healthy,
+new routes present, seed catalog of 48 distributors and 24 products with no duplicates.
+Accounts, lists and any imported catalog from before are lost. The new database is
+PostgreSQL 18, while CI tests on 17. Admin login works.
 
 `android-native/training-data/voice/synthetic-v1.json` (117,546 lines) was later taken out of
 the tree and ignored. It is generated, and the documented command in `VOICE-BENCHMARK.md`
@@ -70,7 +75,7 @@ Hashes cited elsewhere in this entry, in the other docs and in Linear comments a
 the voice stop fix, multi-product dictation and the synthetic corpus. M6 and M7 needed real
 conflict resolution: mutations now check `is_active` under the row lock, and PUT replays are
 answered before that check. M6's migration was re-parented onto M7's to keep one head.
-The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting acceptance.
+The Talos EX-24 candidate (`workbench/5adfcd05-374`) was closed unmerged by the owner's decision. Talos was not running, so its branch and worktree remain.
 
 **Fixed, found while working**
 - Offline edits never replayed on their own. The only trigger, the drawer button, built an
@@ -140,7 +145,7 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   Robolectric.
 
 **Linear, updated with an evidence comment on each issue touched**
-- All 43: 28 Done, 3 In Review, 2 In Progress, 10 Backlog, read back from the project page.
+- All 43: 29 Done, 3 In Review, 1 In Progress, 10 Backlog, read back from the project page.
 - Moved to Done after the merge, each against its own "Done when", with what stays unverified
   in its comment: EX-25, EX-29, EX-33, EX-34, EX-37, EX-39, EX-40, EX-42, EX-43, EX-45, EX-46,
   EX-47. Done here means in local `development`, not pushed or deployed.
@@ -150,8 +155,7 @@ The Talos EX-24 candidate (`workbench/5adfcd05-374`) was left alone, awaiting ac
   in local `development`, but `origin/development` still replays only from the debug screen.
 - Merged but left In Review, because their criteria need the real world: EX-35 and EX-36 (a
   real user, EX-32), EX-44 (two real phones, EX-28).
-- EX-24 stays In Progress as its Talos note asks. The merged test meets its original criterion,
-  but accepting or closing the candidate `workbench/5adfcd05-374` is the owner's decision.
+- EX-24 is Done against its original criterion, after the owner chose to close the Talos candidate.
 - Unchanged: EX-15 (In Progress), EX-8, EX-9, EX-16, EX-19, EX-21, EX-23, EX-28, EX-32, EX-38,
   EX-41 (Backlog). Each needs a person, a device, real data or a go-ahead.
 
@@ -167,17 +171,13 @@ matters only when bisecting. History was left as it is.
   Compose previews need Android Studio, which is free. No emulator is installed.
 
 **Next**
-- Restore production by merging PR 22. The `listmanager` Blueprint has Auto Sync on and reads
-  `backend-fastapi/render.yaml` from `development`, so the merge should recreate the database on
-  a paid plan, connect it and deploy, for about $14.50/month. Do not create one by hand first.
-  Then check `/health` and `ADMIN_PASSWORD`, and do EX-8's branch cleanup.
+- Re-import the catalog, and rebuild the apps against the new backend.
+- Point CI at PostgreSQL 18 to match production, and do EX-8's branch cleanup.
 - Device gates: EX-9, EX-28 (second phone), EX-32 (real user), then EX-35 against its findings.
 - Real data: EX-15 and EX-16 (shop crashes), EX-19 then EX-21 and EX-23 (real dictations),
   EX-38 and EX-41 (model, recorded audio).
 
 **Open questions**
-- Accept or close the Talos EX-24 candidate; the merged test from `feat/sync-randomized-interleavings`
-  already covers EX-24.
 - Are per-distributor PDFs sent to suppliers, or used as pick lists? It shapes the top features.
 
 ---

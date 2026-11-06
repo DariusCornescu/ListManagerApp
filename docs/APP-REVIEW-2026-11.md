@@ -2,7 +2,7 @@
 
 List Manager does its core job well on paper: dictate items in Romanian, match them to a catalog, and turn the list into one PDF per distributor. The engineering under it is careful, especially session sync. The gaps now are at the two ends of the workflow: trusting what voice added, and what happens to the list after the PDF.
 
-The most urgent item is not in the code. Production is down. The service crashes at startup because its database host, `dpg-d94buhtckfvc739n0p5g-a`, no longer resolves (Render log, 2026-11-06), so the free database appears to have been deleted. Everything in it is likely lost, and the repo has no backup job.
+The most urgent item was not in the code. Production was down because its free database had been deleted, and everything in it is lost. Merging PR 22 restored the service on paid plans (2026-11-06), but the repo still has no backup job.
 
 Everything here was checked against the code at commit `7f9c52d`. It comes from reading and from automated tests. No real phone, shop or user was involved, and the production system was not inspected.
 
@@ -12,7 +12,7 @@ These were found by review and checked against the current code. Defects in code
 
 | Severity | Finding | Evidence | Suggested fix |
 | --- | --- | --- | --- |
-| Critical | Production is down and its data appears lost | `render.yaml:11` uses free Postgres, which Render's articles say expires after 30 days and is deleted 14 days later. The service log shows the database host no longer resolves. There is no backup job. | Create a paid database, move `render.yaml` off the free plans, and schedule `pg_dump` or use the plan's backups. |
+| Critical | No backups, after production data was lost | The free database was deleted, which took production down and lost its data. The service is restored on paid plans, but no backup job exists. | Confirm the paid plan's backup retention, and schedule `pg_dump` if it is too short. |
 | High | Production logs are switched off | `alembic/env.py:23` calls `fileConfig` during import, which disables existing loggers, including uvicorn's and the app's. The startup line was missing from a real server log. 500 errors leave no traceback, which also blocks crash work. | Pass `disable_existing_loggers=False`, configure root logging, and redact `token=` first, since the socket URL holds the token. |
 | High | A PDF can miss items, then close the list | `SessionViewModel:129-150` neither sends queued edits nor pulls first, and does not warn about items waiting in review or unknown. A teammate's unseen item is left out of the order. With anything queued, completion waits and `refresh()` can reactivate the old list. | Sync first, then show a pre-PDF check. See feature 1. |
 | High | Wrong products can be added without asking | `ProductRanker:110,132`: an exact alias scores 1.36 and an exact name 1.07, with no margin check before auto-add. "lapte capra" can become "Lapte" plus an unknown "capra". Users see only a count, with no name or undo. | Normalize the scales, require a gap to second place, and show what was added. See feature 2. |
@@ -80,7 +80,7 @@ These were found by review and checked against the current code. Defects in code
 
 ## Linear status, 43 issues
 
-28 Done, 3 In Review, 2 In Progress, 10 Backlog. Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
+29 Done, 3 In Review, 1 In Progress, 10 Backlog. Nine were already Done (EX-10 to EX-14, EX-17, EX-18, EX-20, EX-22).
 
 ### Done
 
@@ -94,10 +94,11 @@ These were found by review and checked against the current code. Defects in code
 
 ### Done on the local merge
 
-These meet their own "Done when" and are in local `development` at `05d767d`. They are on PR 22, where CI passes, and are not merged or deployed.
+These meet their own "Done when" and are in local `development` at `05d767d`. They reached `origin/development` through PR 22 and are deployed.
 
 | Issue | What landed |
 | --- | --- |
+| EX-24 | Randomized interleavings test on `origin/development`; Talos candidate closed unmerged |
 | EX-25 | Two-writer storm, and Android's way out of a 409. PostgreSQL variant passes on CI |
 | EX-29 | `SyncService` 563 to 335 lines, `SyncDebugScreen` 607 to 221 |
 | EX-33, EX-34 | Catalog and Home screens split. Not checked on a real phone |
@@ -119,7 +120,6 @@ These meet their own "Done when" and are in local `development` at `05d767d`. Th
 
 | Issue | Needs |
 | --- | --- |
-| EX-24 | Yours to accept. A test in local `development` meets the original criterion, and the separate Talos candidate awaits your acceptance as its note asks |
 | EX-8 | Needs your go-ahead to publish `development` and delete remote branches |
 | EX-9, EX-28 | Needs a second real phone and a two-phone run |
 | EX-15, EX-16 | Needs real shop crash reports over the seven-day window |
@@ -139,5 +139,5 @@ These meet their own "Done when" and are in local `development` at `05d767d`. Th
 ## Questions for you
 
 1. Do the per-distributor PDFs go to suppliers, or are they pick lists for your own staff? Metro, Auchan and Dedeman in the seed data suggest pick lists. This decides whether sending (feature 5) or a delivery check matters more.
-2. Did the production database hold anything you need? If so, ask Render support whether it can be recovered.
+2. Did the deleted production database hold anything you need? If so, ask Render support whether it can be recovered.
 3. Should registration stay open? It is what makes the presence finding and public-write surface matter.
