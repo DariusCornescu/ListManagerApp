@@ -36,4 +36,40 @@ class SpokenQuantityTest {
         assertEquals(true, SpokenQuantity.hasExplicitPrefix("două lapte Zuzu"))
         assertEquals(false, SpokenQuantity.hasExplicitPrefix("Lapte Zuzu 1L"))
     }
+
+    @Test
+    fun numbersAboveTen_inWords() {
+        assertEquals(11, SpokenQuantity.from("unsprezece pungi"))
+        assertEquals(12, SpokenQuantity.from("douăsprezece ouă"))
+        assertEquals(15, SpokenQuantity.from("cinspe cutii"))
+        assertEquals(20, SpokenQuantity.from("douăzeci de ouă"))
+        assertEquals(25, SpokenQuantity.from("douăzeci și cinci de cutii"))
+        assertEquals(100, SpokenQuantity.from("o sută de pungi"))
+        assertEquals(200, SpokenQuantity.from("două sute de pungi"))
+        assertEquals(125, SpokenQuantity.from("o sută douăzeci și cinci de cutii"))
+    }
+
+    @Test
+    fun countWords_areRemovedFromTheProduct() {
+        assertEquals("oua", SpokenQuantity.productText("douăzeci de ouă"))
+        assertEquals("cutii", SpokenQuantity.productText("douăzeci și cinci de cutii"))
+        assertEquals("pungi", SpokenQuantity.productText("două sute de pungi"))
+        assertEquals("oua", SpokenQuantity.productText("10 de ouă"))
+    }
+
+    @Test
+    fun aConnector_withoutACountAfterIt_isNotPartOfTheNumber() {
+        assertEquals(20, SpokenQuantity.from("douăzeci și lapte"))
+        assertEquals("si lapte", SpokenQuantity.productText("douăzeci și lapte"))
+    }
+
+    @Test
+    fun aNumberWithNoProduct_keepsItsText_soItIsNotAnEmptyQuery() {
+        assertEquals("o suta", SpokenQuantity.productText("o sută"))
+    }
+
+    @Test
+    fun aLoneDigit_isNotACount() {
+        assertEquals(1, SpokenQuantity.from("3"))
+    }
 }

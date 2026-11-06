@@ -133,4 +133,17 @@ class PhraseSegmenterTest {
     fun blankInput_returnsEmpty() {
         assertEquals(emptyList<String>(), PhraseSegmenter.segment("   ", threshold = 0.6, scoreOf = scorer()))
     }
+
+    @Test
+    fun aCompoundCount_staysWithItsProduct() {
+        val catalog = setOf("oua", "cutii", "lapte")
+        val segments = PhraseSegmenter.segment(
+            text = "douazeci si cinci de cutii si doua sute de oua",
+            threshold = 0.62,
+            maxWindow = 7,
+        ) { window -> if (TextNorm.normalize(window) in catalog) 1.0 else 0.0 }
+
+        assertEquals(listOf(25, 200), segments.map(SpokenQuantity::from))
+        assertEquals(listOf("cutii", "oua"), segments.map(SpokenQuantity::productText))
+    }
 }

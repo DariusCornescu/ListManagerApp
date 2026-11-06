@@ -51,8 +51,10 @@ object PhraseSegmenter {
                     segments.add(leftover.joinToString(" "))
                     leftover.clear()
                 }
-                quantityPrefix = tokens[i]
-                i++
+                // A count may be several words: "douazeci si cinci", "doua sute".
+                val used = SpokenQuantity.leadingTokenCount(tokens.subList(i, tokens.size)).coerceAtLeast(1)
+                quantityPrefix = tokens.subList(i, i + used).joinToString(" ")
+                i += used
                 continue
             }
 
