@@ -178,7 +178,7 @@ fun DrawerContent(
 
                 DrawerItem(Icons.Rounded.Home, "Home") { onNavigate("home") }
                 DrawerItem(Icons.Rounded.ShoppingCart, "Current Session") { onNavigate("session") }
-                DrawerItem(Icons.Rounded.Warning, "Unknown Products") { onNavigate("unknown") }
+                DrawerItem(Icons.Rounded.Warning, "De rezolvat") { onNavigate("resolve") }
                 DrawerItem(Icons.Rounded.Inventory, "Catalog") { onNavigate("catalog") }
                 DrawerItem(Icons.Rounded.FactCheck, "Liste inventar") { onNavigate("inventory") }
                 DrawerItem(Icons.Rounded.Groups, "Teams") { onNavigate("teams") }

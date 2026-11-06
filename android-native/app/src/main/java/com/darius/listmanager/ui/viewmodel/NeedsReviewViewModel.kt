@@ -81,7 +81,7 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
                 _uiState.value = _uiState.value.copy(message = "Adăugat: $productName")
             } catch (e: Exception) {
                 Log.e("NeedsReviewVM", "addCandidate failed", e)
-                _uiState.value = _uiState.value.copy(message = "Eroare: ${e.message}")
+                _uiState.value = _uiState.value.copy(message = "Nu am putut adăuga produsul. Încearcă din nou.")
             }
         }
     }
@@ -90,7 +90,7 @@ class NeedsReviewViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             unknownRepository.insert(spokenText)
             needsReviewRepository.deleteById(reviewId)
-            _uiState.value = _uiState.value.copy(message = "Mutat la necunoscute: '$spokenText'")
+            _uiState.value = _uiState.value.copy(message = "Mutat la necunoscute: „$spokenText”")
         }
     }
 

@@ -60,17 +60,24 @@ class UnknownViewModel(application: Application): AndroidViewModel(application) 
                 saveProductUseCase.execute( productName = productName, distributorName = distributorName, aliases = aliases, unknownProductId = unknownProductId )
 
                 val updatedDistributors = distributorRepository.getAll().map { it.distributorName }
-                _uiState.value = _uiState.value.copy(distributors = updatedDistributors, saveMessage = "Product '$productName' saved to catalog!" )
+                _uiState.value = _uiState.value.copy(distributors = updatedDistributors, saveMessage = "Salvat în catalog: $productName" )
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: SecurityException) {
+                _uiState.value = _uiState.value.copy(saveMessage = e.message)
             } catch (e: Exception) {
-                _uiState.value = _uiState.value.copy(
-                    error = "Failed to save product: ${e.message}"
-                )
+                // The list is still good, so a failed save only gets a message.
+                _uiState.value = _uiState.value.copy(saveMessage = "Nu am putut salva produsul. Încearcă din nou.")
             }
         }
     }
 
     fun deleteUnknownProduct(id: Long) {
         viewModelScope.launch { unknownRepository.deleteById(id) }
+    }
+
+    fun restoreUnknownProduct(spokenText: String) {
+        viewModelScope.launch { unknownRepository.insert(spokenText) }
     }
 
     fun clearSaveMessage() {

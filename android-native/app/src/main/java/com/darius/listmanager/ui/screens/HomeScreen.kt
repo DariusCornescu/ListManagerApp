@@ -31,8 +31,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     onOpenDrawer: () -> Unit,
     onNavigateToSession: () -> Unit,
-    onNavigateToUnknown: () -> Unit,
-    onNavigateToReview: () -> Unit,
+    onNavigateToResolve: () -> Unit,
     onNavigateToSettings: () -> Unit,
     onNavigateToAccount: () -> Unit,
     isLoggedIn: Boolean = false,
@@ -97,8 +96,7 @@ fun HomeScreen(
             onStop = viewModel::stopListening,
             onUndoLastAdded = viewModel::undoLastAdded,
             onOpenSession = onNavigateToSession,
-            // Both lists become one "De rezolvat" screen later in the redesign.
-            onOpenResolve = { if (uiState.reviewCount > 0) onNavigateToReview() else onNavigateToUnknown() },
+            onOpenResolve = onNavigateToResolve,
             modifier = Modifier.padding(padding),
         )
     }
