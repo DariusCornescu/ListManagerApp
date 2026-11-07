@@ -5,6 +5,44 @@ Newest entries on top.
 
 ---
 
+## 2026-11-07 - Admin area in sections, phase 1 (feat/admin-sections)
+
+**Changed**
+- `/admin` is split into seven Romanian sections: Panou, Produse și distribuitori, Utilizatori, Echipe,
+  Activitate, Comenzi and Erori. It stays one self-contained HTML file with no build step.
+- **Deletes:** user, product and distributor deletes answer 409 instead of 500 when PostgreSQL would
+  refuse them. A user with teams, lists, invites or live inventory rows is kept; the page offers
+  Dezactivează instead. The comment promising a cascade on distributor delete was false and is gone.
+- **New admin routes**, all admin-only and additive: `POST /api/admin/users/{id}/deactivate` and
+  `/reactivate`, `GET /api/admin/users/details` (no postal address), `GET /api/admin/orders` (who, when
+  and how much, not which products). `/api/admin/dashboard` gains per-day series and `documents_count`.
+- **Definitions:** an order is a list completed on the server. A document is one distributor on it, as
+  one PDF is. "Active" means changed a list on the server.
+- **Mobile clients:** no route they use changed shape. Android's offline queue now gets 409 instead of
+  500 for a blocked product or distributor delete, and holds it for review instead of retrying forever.
+
+**Checked**
+- Full suite with `POSTGRES_TEST_URL` set, so the new `tests/test_postgres_admin.py` ran on a real
+  PostgreSQL 16. SQLite in the main suite does not enforce foreign keys and could not prove the 409s.
+- Every section in a browser against a local server with invented sample data, at desktop and phone width.
+
+**Decided with the user**
+- Login events: keep 90 days, no IP. Crash reports: delete after 180 days. Per user, admins see account,
+  teams and activity, not the address or list contents. User delete: block and offer deactivation.
+
+**Next (phase 2, one PR each, each with a reviewed migration)**
+- 2A `auth_events` for login, failed login, logout and revocations, with a 90-day purge.
+- 2B crash report purge after 180 days. The first deploy deletes older production reports for good.
+- 2C ANRs and native crashes from `ApplicationExitInfo`, with a `kind` column on crash reports.
+- 2D voice quality needs its own plan: phrases would leave the phone for the first time.
+
+**Open questions**
+- There is no privacy notice for users in the repo. Worth adding before login events are recorded.
+- `/api/admin/users` still returns the address, kept to avoid changing an existing route.
+- Local `development` holds 33 commits that are not on `origin/development`.
+
+---
+
 ## 2026-11-06 - Android redesign: first run on a real phone, against production
 
 **Changed**
