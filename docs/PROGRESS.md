@@ -20,6 +20,13 @@ Newest entries on top.
   Three catalog-wide rankings went from about 1,000 ms to about 400 ms on a desktop JVM, on a synthetic
   3,196-product catalog.
 
+**Checked on the phone, preview build from this branch, against production**
+- The same phrase took 6.8 s from "Processing spoken result" to "Segmented utterance", against about
+  17 s before. The suggestion appeared 7.5 s after the phrase ended.
+- Matching ran on worker threads. The main thread kept drawing frames, at most 32 ms apart, and no ANR
+  was logged. No touch was logged during the wait, so the dialog case itself was not re-tried.
+- Unit tests: 428 passing.
+
 **Found, not fixed**
 - Inventory dictation still ranks the whole catalog on the main thread (`InventoryViewModel`), so it
   can freeze the same way.
@@ -27,8 +34,9 @@ Newest entries on top.
   much longer. A preview build is also debuggable, so its timings are not those of a release build.
 
 **Next**
-- Measure the same phrase on the phone, between the `HomeViewModel` "Processing spoken result" and
-  `ResolveUseCase` "Segmented utterance" log lines.
+- 6.8 s is still a long wait. Segmentation needs to score fewer products per word window, for example
+  only the FTS candidates, checked against `VoiceBenchmark` because it can change matches.
+- Move inventory dictation off the main thread the same way.
 
 ---
 
