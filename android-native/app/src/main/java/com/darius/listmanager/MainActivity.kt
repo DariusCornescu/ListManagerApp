@@ -82,6 +82,15 @@ class MainActivity : ComponentActivity() {
         // A refresh on a cold start may follow a socket refused for its expired token.
         RetrofitClient.onTokenRefreshed = { token -> webSocketService.connect(token) }
 
+        // A refused socket token says nothing about why. An authenticated request does:
+        // its 401 either refreshes the token, which reconnects above, or ends the login.
+        webSocketService.onTokenRejected = {
+            lifecycleScope.launch {
+                runCatching { RetrofitClient.api.getPresence() }
+                    .onFailure { Log.d(TAG, "Token check after a refused socket failed: ${it.message}") }
+            }
+        }
+
         SyncWorkManager.initialize(applicationContext)
         Log.d(TAG, "SyncWorkManager initialized")
         
@@ -346,11 +355,5 @@ class MainActivity : ComponentActivity() {
                 Log.e(TAG, "Database test failed: ${e.message}", e)
             }
         }
-    }
-    
-    override fun onDestroy() {
-        super.onDestroy()
-        webSocketService.disconnect()
-        Log.d(TAG, "WebSocket disconnected")
     }
 }

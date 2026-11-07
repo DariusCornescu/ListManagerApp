@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -61,6 +64,13 @@ class ListManagerApp : Application() {
             tokenService.getAuthenticatedUserId()?.let(AuthState::setUserId)
             Log.d("ListManagerApp", "Restored saved auth token")
         }
+
+        // Process-wide, so rotating the screen or replacing the activity doesn't count as
+        // leaving, and a process started only for background sync opens no live socket.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = WebSocketService.getInstance().setForeground(true)
+            override fun onStop(owner: LifecycleOwner) = WebSocketService.getInstance().setForeground(false)
+        })
 
         // Upload any crash reports saved by a previous run (background, offline-safe).
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
