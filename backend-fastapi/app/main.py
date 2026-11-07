@@ -74,7 +74,10 @@ def startup_event():
     
     logger.info("Creating admin user...")
     create_admin_user()
-    
+
+    from .auth_events import purge_at_startup
+    purge_at_startup()
+
     logger.info("Startup complete!")
 
 

@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .config import settings
 from .database import get_db
-from . import models
+from . import auth_events, models
 
 SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = settings.ALGORITHM
@@ -159,7 +159,9 @@ def issue_refresh_token(
     return raw_token
 
 
-def rotate_refresh_token(raw_token: str, database: Session) -> tuple[models.User, str]:
+def rotate_refresh_token(
+    raw_token: str, database: Session, request=None
+) -> tuple[models.User, str]:
     """Exchange a refresh token for its successor. Caller commits on success.
 
     A used token presented within the grace window gets a new successor, because the first
@@ -205,6 +207,13 @@ def rotate_refresh_token(raw_token: str, database: Session) -> tuple[models.User
     too_late = replayed and now - row.used_at > timedelta(seconds=REFRESH_REUSE_GRACE_SECONDS)
     if row.revoked_at is not None or too_late:
         revoke_refresh_family(row.family_id, database)
+        auth_events.record(
+            database,
+            auth_events.TOKEN_REUSE,
+            user_id=row.user_id,
+            reason="revoked" if row.revoked_at is not None else "replayed",
+            request=request,
+        )
         database.commit()
         raise invalid
     if user is None or not user.is_active:
@@ -230,13 +239,16 @@ def revoke_refresh_family(
     query.update({"revoked_at": _utcnow()}, synchronize_session=False)
 
 
-def revoke_refresh_token(raw_token: str, database: Session) -> None:
-    """Log one device out. Unknown tokens are ignored. Caller commits."""
+def revoke_refresh_token(raw_token: str, database: Session) -> Optional[int]:
+    """Log one device out and return its user id. Unknown tokens are ignored
+    and return None. Caller commits."""
     row = database.query(models.RefreshToken).filter(
         models.RefreshToken.token_hash == _hash_refresh_token(raw_token)
     ).first()
-    if row is not None:
-        revoke_refresh_family(row.family_id, database)
+    if row is None:
+        return None
+    revoke_refresh_family(row.family_id, database)
+    return row.user_id
 
 
 def revoke_all_user_tokens(user: models.User, database: Session) -> None:

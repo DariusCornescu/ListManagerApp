@@ -10,7 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import auth_events, models, schemas
 from ..auth import get_current_admin_user, revoke_all_user_tokens
 from ..config import settings
 from ..database import get_db
@@ -365,6 +365,7 @@ def get_user_details(
 @router.post("/api/admin/users/{user_id}/revoke-tokens")
 async def revoke_user_tokens(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -373,6 +374,9 @@ async def revoke_user_tokens(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     revoke_all_user_tokens(user, db)
+    auth_events.record(
+        db, auth_events.ADMIN_REVOKE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     await manager.close_user(user_id)
     return {"message": "Tokens revoked", "user_id": user_id}
@@ -381,6 +385,7 @@ async def revoke_user_tokens(
 @router.post("/api/admin/users/{user_id}/deactivate")
 async def deactivate_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -392,6 +397,9 @@ async def deactivate_user(
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = False
     revoke_all_user_tokens(user, db)
+    auth_events.record(
+        db, auth_events.ADMIN_DEACTIVATE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     await manager.close_user(user_id)
     return {"message": "User deactivated", "user_id": user_id, "is_active": False}
@@ -400,6 +408,7 @@ async def deactivate_user(
 @router.post("/api/admin/users/{user_id}/reactivate")
 def reactivate_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -408,6 +417,9 @@ def reactivate_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = True
+    auth_events.record(
+        db, auth_events.ADMIN_REACTIVATE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     return {"message": "User reactivated", "user_id": user_id, "is_active": True}
 
