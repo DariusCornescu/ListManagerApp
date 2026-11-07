@@ -157,3 +157,65 @@ def test_record_purges_at_most_once_a_day(db_session, sample_user, monkeypatch):
 def test_unknown_event_type_is_refused(db_session):
     with pytest.raises(ValueError):
         auth_events.record(db_session, "made_up")
+
+
+# ===== Admin reads =====
+
+def test_auth_events_route_is_admin_only(client, auth_headers):
+    assert client.get("/api/admin/auth-events").status_code in (
+        status.HTTP_401_UNAUTHORIZED,
+        status.HTTP_403_FORBIDDEN,
+    )
+    assert (
+        client.get("/api/admin/auth-events", headers=auth_headers).status_code
+        == status.HTTP_403_FORBIDDEN
+    )
+
+
+def test_auth_events_route_names_people_and_filters(
+    client, db_session, admin_headers, sample_user
+):
+    _login(client, password="wrong")
+    _login(client, username="nobody-here")
+    client.post(f"/api/admin/users/{sample_user.id}/revoke-tokens", headers=admin_headers)
+
+    body = client.get("/api/admin/auth-events", headers=admin_headers).json()
+    kinds = [e["event_type"] for e in body["items"]]
+    # Newest first: the revoke, the two failures, then the admin's own login.
+    assert kinds[:3] == ["admin_revoke", "login_failed", "login_failed"]
+    revoke = body["items"][0]
+    assert (revoke["username"], revoke["actor_username"]) == ("testuser", "adminuser")
+    unknown = body["items"][1]
+    assert (unknown["username"], unknown["reason"]) == (None, "unknown_user")
+
+    mine = client.get(
+        f"/api/admin/auth-events?user_id={sample_user.id}&event_type=login_failed",
+        headers=admin_headers,
+    ).json()
+    assert mine["total"] == 1
+    assert mine["items"][0]["reason"] == "wrong_password"
+
+
+def test_auth_events_limit_is_bounded(client, admin_headers):
+    response = client.get("/api/admin/auth-events?limit=201", headers=admin_headers)
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def test_dashboard_counts_sign_ins_per_day(client, db_session, admin_headers, sample_user):
+    tokens = _login(client).json()
+    _login(client, password="wrong")
+    client.post("/api/auth/logout", json={"refresh_token": tokens["refresh_token"]})
+
+    today = client.get("/api/admin/dashboard", headers=admin_headers).json()["activity"][-1]
+    assert today["sign_ins"] == 2  # sample_user and the admin fixture
+    assert today["failed_sign_ins"] == 1
+    assert today["sign_outs"] == 1
+
+
+def test_user_details_show_last_login(client, db_session, admin_headers, sample_user):
+    rows = client.get("/api/admin/users/details", headers=admin_headers).json()
+    assert next(u for u in rows if u["username"] == "testuser")["last_login_at"] is None
+
+    _login(client)
+    rows = client.get("/api/admin/users/details", headers=admin_headers).json()
+    assert next(u for u in rows if u["username"] == "testuser")["last_login_at"] is not None
