@@ -1,5 +1,6 @@
 package com.darius.listmanager.ui.components
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.darius.listmanager.data.websocket.OnlineUser
 import com.darius.listmanager.data.websocket.WebSocketState
+import kotlinx.coroutines.launch
 
 internal data class DrawerStatus(val title: String, val detail: String)
 
@@ -42,6 +44,15 @@ internal fun drawerStatus(
         else -> "Datele se salvează pe telefon"
     },
 )
+
+/** Back closes an open menu first. Otherwise it leaves the screen, or the app, behind the menu. */
+@Composable
+internal fun CloseDrawerOnBack(drawerState: DrawerState) {
+    val scope = rememberCoroutineScope()
+    BackHandler(enabled = drawerState.isOpen) {
+        scope.launch { drawerState.close() }
+    }
+}
 
 @Composable
 fun DrawerContent(

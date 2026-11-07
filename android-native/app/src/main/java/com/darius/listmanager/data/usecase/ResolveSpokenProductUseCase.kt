@@ -12,6 +12,9 @@ import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.repository.ProductEmbeddingRepository
 import com.darius.listmanager.util.EmbeddingSearch
 import com.darius.listmanager.util.VectorMath
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 sealed class ResolveResult {
     /**
@@ -41,7 +44,10 @@ sealed class ResolveResult {
 class ResolveSpokenProductUseCase(
     private val productRepository: ProductRepository,
     private val embeddingModel: EmbeddingModel? = null,
-    private val embeddingRepository: ProductEmbeddingRepository? = null
+    private val embeddingRepository: ProductEmbeddingRepository? = null,
+    // Scoring the whole catalog takes seconds on a phone, so callers on the main
+    // thread must not run it themselves.
+    private val computeDispatcher: CoroutineDispatcher = Dispatchers.Default
 ) {
     companion object {
         private const val AUTO_ADD_THRESHOLD = 0.82
@@ -88,6 +94,13 @@ class ResolveSpokenProductUseCase(
     suspend fun resolveMultiple(
         spokenText: String,
         alternatives: List<String> = emptyList()
+    ): List<Pair<String, ResolveResult>> = withContext(computeDispatcher) {
+        segmentAndResolve(spokenText, alternatives)
+    }
+
+    private suspend fun segmentAndResolve(
+        spokenText: String,
+        alternatives: List<String>
     ): List<Pair<String, ResolveResult>> {
         if (spokenText.isBlank()) {
             return listOf(spokenText to ResolveResult.Unknown(spokenText))
@@ -126,7 +139,14 @@ class ResolveSpokenProductUseCase(
         return mergeAdjacentAutoAdds(resolved)
     }
 
-    suspend fun execute(spokenText: String, alternatives: List<String> = emptyList()): ResolveResult {
+    suspend fun execute(
+        spokenText: String,
+        alternatives: List<String> = emptyList()
+    ): ResolveResult = withContext(computeDispatcher) {
+        resolve(spokenText, alternatives)
+    }
+
+    private suspend fun resolve(spokenText: String, alternatives: List<String>): ResolveResult {
         if (spokenText.isBlank()) {
             return ResolveResult.Unknown(spokenText)
         }

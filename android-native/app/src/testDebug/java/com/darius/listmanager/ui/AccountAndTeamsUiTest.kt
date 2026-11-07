@@ -6,7 +6,11 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.activity.compose.BackHandler
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Surface
@@ -32,6 +36,7 @@ import com.darius.listmanager.network.TeamDTO
 import com.darius.listmanager.network.TeamMemberDTO
 import com.darius.listmanager.ui.components.AppTopBar
 import com.darius.listmanager.ui.components.DrawerContent
+import com.darius.listmanager.ui.components.CloseDrawerOnBack
 import com.darius.listmanager.ui.components.drawerStatus
 import com.darius.listmanager.ui.screens.AccountContent
 import com.darius.listmanager.ui.screens.AccountFooter
@@ -48,6 +53,7 @@ import com.darius.listmanager.ui.theme.AppTheme
 import com.darius.listmanager.ui.viewmodel.ProfileInput
 import com.darius.listmanager.ui.viewmodel.workspaceOptions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -365,5 +371,29 @@ class AccountAndTeamsUiTest {
         rule.onNodeWithContentDescription("Elimină Utilizator 18").assertDoesNotExist()
         rule.onNodeWithText("Părăsește echipa").assertIsEnabled()
         shoot("team-member-dark")
+    }
+
+    @Test fun back_closesAnOpenMenu_beforeWhatIsBehindIt() {
+        var behind = 0
+        lateinit var drawer: DrawerState
+        rule.setContent {
+            drawer = rememberDrawerState(DrawerValue.Open)
+            ModalNavigationDrawer(
+                drawerState = drawer,
+                drawerContent = { ModalDrawerSheet { Text("Meniu") } },
+            ) {
+                BackHandler { behind++ }
+                CloseDrawerOnBack(drawer)
+            }
+        }
+
+        rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+        assertTrue(drawer.isClosed)
+        assertEquals(0, behind)
+
+        rule.runOnIdle { rule.activity.onBackPressedDispatcher.onBackPressed() }
+        rule.waitForIdle()
+        assertEquals(1, behind)
     }
 }
