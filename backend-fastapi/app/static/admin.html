@@ -1,124 +1,668 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ro">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Catalog Admin</title>
+  <title>Administrare List Manager</title>
+  <link rel="icon" href="data:," />
   <style>
-    :root { --gold:#DDA92B; --charcoal:#2A2A2A; --cream:#F6F2E9; --sage:#71805C; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; margin:0; background:var(--cream); color:var(--charcoal); }
-    header { background:var(--charcoal); color:var(--cream); padding:14px 20px; font-weight:700; }
-    main { max-width:900px; margin:0 auto; padding:20px; }
-    .card { background:#fff; border:1px solid #DAD3C4; border-radius:12px; padding:16px; margin-bottom:16px; }
-    input, button { font-size:15px; padding:8px 10px; border-radius:8px; border:1px solid #DAD3C4; }
-    button { background:var(--gold); color:var(--charcoal); border:none; cursor:pointer; font-weight:600; }
-    button.secondary { background:var(--sage); color:#fff; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #EDE8DC; }
-    .hidden { display:none; }
-    .err { color:#C4553F; }
-    .muted { color:#6E6A60; font-size:13px; }
-    #preview { white-space:pre-wrap; }
-    .stats { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0; }
-    .stat { background:var(--cream); border:1px solid #DAD3C4; border-radius:10px; padding:8px 14px; min-width:110px; }
-    .stat b { display:block; font-size:22px; }
-    .stat span { font-size:12px; color:#6E6A60; }
-    .chip { display:inline-block; background:var(--cream); border:1px solid #DAD3C4; border-radius:999px; padding:3px 10px; margin:2px 4px 2px 0; font-size:13px; }
-    .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 12px; }
-    #chartBox { overflow-x:auto; }
+    /* ===== Tokens: light by default, dark from the system or the toggle ===== */
+    :root {
+      color-scheme: light;
+      --bg:#F4F4F2; --surface:#FFFFFF; --surface-2:#F9F9F7; --hover:#F1F0EC;
+      --border:#E3E2DD; --border-strong:#CFCDC6;
+      --text:#1B1B19; --muted:#6A6963; --faint:#9A988F;
+      --accent:#DDA92B; --accent-ink:#1B1B19; --accent-soft:rgba(221,169,43,.16);
+      --chart:#A87C12; --grid:#ECEBE6; --axis:#CFCDC6;
+      --good:#2F7D4A; --good-soft:rgba(47,125,74,.12);
+      --bad:#B3412C; --bad-soft:rgba(179,65,44,.12);
+      --shadow:0 12px 40px rgba(20,20,18,.18);
+      --mono:ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+      --sans:system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg:#0E0F11; --surface:#16181B; --surface-2:#1B1E22; --hover:#20242A;
+        --border:#2A2E34; --border-strong:#3A3F46;
+        --text:#E7E6E2; --muted:#9097A0; --faint:#646B74;
+        --accent:#DDA92B; --accent-ink:#141414; --accent-soft:rgba(221,169,43,.14);
+        --chart:#B8891A; --grid:#23272D; --axis:#3A3F46;
+        --good:#5BBF7E; --good-soft:rgba(91,191,126,.14);
+        --bad:#F07A62; --bad-soft:rgba(240,122,98,.14);
+        --shadow:0 12px 40px rgba(0,0,0,.5);
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg:#0E0F11; --surface:#16181B; --surface-2:#1B1E22; --hover:#20242A;
+      --border:#2A2E34; --border-strong:#3A3F46;
+      --text:#E7E6E2; --muted:#9097A0; --faint:#646B74;
+      --accent:#DDA92B; --accent-ink:#141414; --accent-soft:rgba(221,169,43,.14);
+      --chart:#B8891A; --grid:#23272D; --axis:#3A3F46;
+      --good:#5BBF7E; --good-soft:rgba(91,191,126,.14);
+      --bad:#F07A62; --bad-soft:rgba(240,122,98,.14);
+      --shadow:0 12px 40px rgba(0,0,0,.5);
+    }
+
+    /* ===== Base ===== */
+    * { box-sizing:border-box; }
+    html, body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 var(--sans); }
+    .mono, code, pre, .num { font-family:var(--mono); }
+    .num { font-variant-numeric:tabular-nums; }
+    .muted { color:var(--muted); }
+    .hidden { display:none !important; }
+    a { color:inherit; }
+    :focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    input, select, button, textarea { font:inherit; color:inherit; }
+    input, select {
+      background:var(--surface); border:1px solid var(--border); border-radius:6px;
+      padding:6px 9px; height:32px; min-width:0;
+    }
+    input:focus, select:focus { border-color:var(--accent); outline:none; box-shadow:0 0 0 3px var(--accent-soft); }
+    .btn {
+      display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px;
+      border:1px solid var(--border); border-radius:6px; background:var(--surface);
+      cursor:pointer; font-weight:500; white-space:nowrap;
+    }
+    .btn:hover:not(:disabled) { background:var(--hover); border-color:var(--border-strong); }
+    .btn.primary { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:600; }
+    .btn.primary:hover:not(:disabled) { background:var(--accent); filter:brightness(1.06); }
+    .btn.danger { color:var(--bad); border-color:var(--bad); }
+    .btn.danger:hover:not(:disabled) { background:var(--bad-soft); }
+    .btn.ghost { border-color:transparent; background:transparent; }
+    .btn.sm { height:26px; padding:0 8px; font-size:12px; }
+    .btn:disabled { opacity:.45; cursor:not-allowed; }
+    .label { font:600 11px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+
+    /* ===== Shell ===== */
+    .shell { display:grid; grid-template-columns:216px minmax(0,1fr); grid-template-rows:48px minmax(0,1fr); min-height:100vh; }
+    .topbar {
+      grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:0 12px 0 0;
+      background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5;
+    }
+    .brand { width:216px; padding:0 16px; display:flex; align-items:center; gap:8px; font:700 13px var(--mono); letter-spacing:.04em; border-right:1px solid var(--border); height:100%; }
+    .brand i { color:var(--accent); font-style:normal; }
+    .crumb { flex:1; min-width:0; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .crumb span { color:var(--muted); font-weight:400; }
+    .who { font:12px var(--mono); color:var(--muted); }
+    .sidebar { background:var(--surface); border-right:1px solid var(--border); padding:10px 8px; display:flex; flex-direction:column; gap:2px; position:sticky; top:48px; height:calc(100vh - 48px); }
+    .sidebar a {
+      display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; text-decoration:none;
+      color:var(--muted); font-weight:500; position:relative;
+    }
+    .sidebar a:hover { background:var(--hover); color:var(--text); }
+    .sidebar a[aria-current="page"] { background:var(--accent-soft); color:var(--text); }
+    .sidebar a[aria-current="page"]::before { content:""; position:absolute; left:-8px; top:6px; bottom:6px; width:3px; border-radius:0 3px 3px 0; background:var(--accent); }
+    .sidebar a kbd { margin-left:auto; font:11px var(--mono); color:var(--faint); }
+    .sidebar a .count { margin-left:auto; font:600 11px var(--mono); color:var(--bad); background:var(--bad-soft); border-radius:999px; padding:1px 7px; }
+    .sidebar .foot { margin-top:auto; padding:8px 10px; font:11px var(--mono); color:var(--faint); }
+    main { padding:16px 20px 40px; min-width:0; }
+
+    /* ===== Section chrome ===== */
+    .head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:14px; }
+    .head h1 { font-size:18px; margin:0; flex:1; min-width:160px; }
+    .head .sub { flex-basis:100%; margin-top:-4px; color:var(--muted); font-size:13px; }
+    .seg { display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; background:var(--surface); }
+    .seg button { border:0; background:transparent; height:30px; padding:0 10px; cursor:pointer; font:500 12px var(--mono); color:var(--muted); }
+    .seg button + button { border-left:1px solid var(--border); }
+    .seg button[aria-pressed="true"] { background:var(--text); color:var(--surface); }
+    .panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; margin-bottom:14px; overflow:hidden; }
+    .panel > .panel-head { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border); }
+    .panel > .panel-head h2 { font-size:13px; margin:0; flex:1; }
+    .panel > .panel-body { padding:14px; }
+    .note { border:1px dashed var(--border-strong); border-radius:8px; padding:9px 12px; margin-bottom:14px; color:var(--muted); font-size:13px; }
+    .note b { color:var(--text); }
+
+    /* ===== KPI strip ===== */
+    .kpis { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px,1fr)); background:var(--surface); border:1px solid var(--border); border-radius:8px; margin-bottom:14px; overflow:hidden; }
+    .kpi { padding:12px 14px; border-right:1px solid var(--border); border-bottom:1px solid var(--border); margin:0 -1px -1px 0; min-width:0; }
+    .kpi .value { font:600 24px/1.2 var(--mono); margin-top:6px; font-variant-numeric:tabular-nums; }
+    .kpi .hint { font-size:12px; color:var(--muted); margin-top:2px; }
+    .kpi svg { display:block; width:100%; height:22px; margin-top:6px; }
+
+    /* ===== Charts ===== */
+    .charts { display:grid; grid-template-columns:repeat(auto-fit, minmax(440px,1fr)); gap:14px; margin-bottom:14px; }
+    .expander { font-size:14px; width:26px; justify-content:center; }
+    .charts .panel { margin-bottom:0; }
+    .chart-meta { font:12px var(--mono); color:var(--muted); }
+    .chart svg { display:block; width:100%; height:auto; }
+    .chart .grid-line { stroke:var(--grid); }
+    .chart .base-line { stroke:var(--axis); }
+    .chart .axis-label { fill:var(--muted); font:11px var(--mono); }
+    .chart .bar { fill:var(--chart); }
+    .chart .hit { fill:transparent; }
+    .chart .hit:hover { fill:var(--hover); }
+    .chart details { margin-top:8px; font-size:12px; }
+    .chart details summary { cursor:pointer; color:var(--muted); font-family:var(--mono); }
+    .plot { position:relative; }
+    .tooltip { position:absolute; pointer-events:none; background:var(--text); color:var(--surface); font:12px var(--mono); padding:4px 8px; border-radius:4px; white-space:nowrap; transform:translate(-50%,-100%); margin-top:-6px; }
+    .empty { padding:28px 0; text-align:center; color:var(--muted); font-size:13px; }
+
+    /* ===== Tables ===== */
+    .table-wrap { overflow:auto; max-height:70vh; }
+    table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+    th, td { text-align:left; padding:0 12px; height:36px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    td.wrap { white-space:normal; padding-top:8px; padding-bottom:8px; }
+    th { position:sticky; top:0; z-index:1; background:var(--surface-2); height:32px; font:600 11px var(--mono); letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+    th.sortable { cursor:pointer; user-select:none; }
+    th.sortable:hover { color:var(--text); }
+    th[aria-sort="ascending"]::after { content:" ▲"; }
+    th[aria-sort="descending"]::after { content:" ▼"; }
+    th.num, td.num { text-align:right; }
+    tbody tr:hover td { background:var(--hover); }
+    tbody tr.clickable { cursor:pointer; }
+    tbody tr:last-child td { border-bottom:0; }
+    td.actions { text-align:right; }
+    td .sub { color:var(--muted); font-size:12px; }
+    .pager { display:flex; align-items:center; gap:8px; padding:10px 14px; border-top:1px solid var(--border); font:12px var(--mono); color:var(--muted); }
+    .pager .grow { flex:1; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:8px; padding:10px 14px; border-bottom:1px solid var(--border); }
+    .toolbar input[type="search"] { flex:1; min-width:180px; max-width:360px; }
+
+    /* ===== Status and chips ===== */
+    .status { display:inline-flex; align-items:center; gap:6px; font:12px var(--mono); }
+    .status::before { content:""; width:8px; height:8px; border-radius:50%; }
+    .status.on::before { background:var(--good); }
+    .status.on { color:var(--good); }
+    .status.off::before { border:1.5px solid var(--bad); }
+    .status.off { color:var(--bad); }
+    .tag { display:inline-block; border:1px solid var(--border); border-radius:4px; padding:1px 6px; margin:1px 4px 1px 0; font:12px var(--mono); color:var(--text); background:var(--surface-2); }
+    .tag.role { border-color:var(--accent); color:var(--text); background:var(--accent-soft); }
+    pre { margin:0; white-space:pre-wrap; word-break:break-word; font-size:12px; line-height:1.5; background:var(--surface-2); border:1px solid var(--border); border-radius:6px; padding:10px; max-height:320px; overflow:auto; }
+
+    /* ===== Dialogs, drawer, toasts ===== */
+    dialog { border:1px solid var(--border); border-radius:10px; padding:0; background:var(--surface); color:var(--text); box-shadow:var(--shadow); width:min(440px, calc(100vw - 32px)); }
+    dialog::backdrop { background:rgba(10,10,10,.45); }
+    dialog .dlg-head { padding:14px 16px 0; font-weight:600; font-size:15px; }
+    dialog .dlg-body { padding:10px 16px 4px; color:var(--muted); }
+    dialog .dlg-body .field { display:flex; flex-direction:column; gap:4px; margin-top:10px; color:var(--text); }
+    dialog .dlg-body .field input, dialog .dlg-body .field select { width:100%; }
+    dialog .dlg-foot { display:flex; justify-content:flex-end; gap:8px; padding:14px 16px; }
+    dialog.drawer { margin:0 0 0 auto; height:100vh; max-height:100vh; width:min(460px, 100vw); border-radius:0; border-width:0 0 0 1px; }
+    .drawer .dlg-head { display:flex; align-items:center; gap:8px; padding:14px 16px; border-bottom:1px solid var(--border); }
+    .drawer .dlg-head .grow { flex:1; }
+    .kv { display:grid; grid-template-columns:140px minmax(0,1fr); gap:0; margin:0; }
+    .kv dt, .kv dd { margin:0; padding:8px 16px; border-bottom:1px solid var(--border); }
+    .kv dt { color:var(--muted); font:11px/1.8 var(--mono); text-transform:uppercase; letter-spacing:.05em; }
+    .kv dd { font-family:var(--mono); font-size:13px; word-break:break-word; }
+    .drawer-actions { padding:16px; display:flex; flex-direction:column; gap:10px; }
+    .drawer-actions .act { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; }
+    .drawer-actions .act p { margin:0; color:var(--muted); font-size:12px; max-width:250px; }
+    .toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:50; max-width:min(420px, calc(100vw - 32px)); }
+    .toast { background:var(--surface); border:1px solid var(--border); border-left:3px solid var(--good); border-radius:6px; box-shadow:var(--shadow); padding:10px 12px; font-size:13px; display:flex; gap:10px; align-items:flex-start; }
+    .toast.error { border-left-color:var(--bad); }
+    .toast .msg { flex:1; }
+    .toast button { border:0; background:transparent; cursor:pointer; color:var(--muted); font-size:16px; line-height:1; }
+
+    /* ===== Login ===== */
+    .login { min-height:100vh; display:grid; place-items:center; padding:16px; }
+    .login form { width:min(360px, 100%); background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:22px; display:flex; flex-direction:column; gap:10px; }
+    .login .brandline { font:700 14px var(--mono); letter-spacing:.04em; margin-bottom:6px; }
+    .login .brandline i { color:var(--accent); font-style:normal; }
+    .login .err { color:var(--bad); font-size:13px; min-height:18px; }
+
+    /* ===== Narrow screens ===== */
+    @media (max-width: 860px) {
+      .shell { grid-template-columns:minmax(0,1fr); grid-template-rows:48px auto minmax(0,1fr); }
+      .brand { width:auto; border-right:0; }
+      .crumb { display:none; }
+      .sidebar { position:static; height:auto; flex-direction:row; overflow-x:auto; border-right:0; border-bottom:1px solid var(--border); padding:6px 8px; }
+      .sidebar a { white-space:nowrap; }
+      .sidebar a kbd, .sidebar .foot { display:none; }
+      .sidebar a[aria-current="page"]::before { left:8px; right:8px; top:auto; bottom:-6px; width:auto; height:3px; border-radius:3px 3px 0 0; }
+      main { padding:14px 16px 32px; }
+      .charts { grid-template-columns:minmax(0,1fr); }
+      .who { display:none; }
+    }
   </style>
 </head>
 <body>
-  <header>List Manager — Catalog Admin</header>
-  <main>
-    <div id="loginCard" class="card">
-      <h3>Sign in</h3>
-      <div><input id="username" placeholder="username" /></div>
-      <div style="margin-top:8px"><input id="password" type="password" placeholder="password" /></div>
-      <div style="margin-top:8px"><button onclick="login()">Login</button></div>
-      <div id="loginErr" class="err"></div>
-    </div>
+  <!-- ===== Login ===== -->
+  <div id="loginView" class="login">
+    <form id="loginForm" autocomplete="on">
+      <div class="brandline"><i>◆</i> LIST MANAGER · ADMIN</div>
+      <label class="label" for="username">Utilizator</label>
+      <input id="username" autocomplete="username" required />
+      <label class="label" for="password">Parolă</label>
+      <input id="password" type="password" autocomplete="current-password" required />
+      <button class="btn primary" type="submit" style="justify-content:center;margin-top:6px">Intră</button>
+      <div id="loginErr" class="err" role="alert"></div>
+    </form>
+  </div>
 
-    <div id="appCard" class="hidden">
-      <div id="status" class="muted"></div>
-      <div class="card">
-        <h3>Privire de ansamblu</h3>
-        <div id="statRow" class="stats"></div>
-        <div id="storeList"></div>
-        <p class="muted legend" style="margin-bottom:4px">
-          Activitate pe zi (ultimele 30 de zile) —
-          <i style="background:var(--gold)"></i>produse înregistrate
-          <i style="background:var(--sage)"></i>liste finalizate
-        </p>
-        <div id="chartBox" class="muted">Se încarcă…</div>
-        <button onclick="loadDashboard()">Refresh</button>
-      </div>
-      <div class="card">
-        <h3>Import CSV</h3>
-        <p class="muted">Columns: <code>distributor, product_name, aliases, price</code>. First two required. Re-upload is an upsert (updates + adds, never deletes).</p>
-        <input type="file" id="csvFile" accept=".csv" />
-        <button onclick="preview()">Preview</button>
-        <button class="secondary" id="confirmBtn" onclick="commit()" disabled>Confirm import</button>
-        <div id="preview" class="muted"></div>
-      </div>
-      <div class="card">
-        <h3>Distributors</h3>
-        <input id="distName" placeholder="new distributor" />
-        <button onclick="createDistributor()">Add</button>
-        <ul id="distList"></ul>
-      </div>
-      <div class="card">
-        <h3>Add / edit product</h3>
-        <div><input id="pName" placeholder="product name" /></div>
-        <div style="margin-top:8px"><select id="pDist"></select></div>
-        <div style="margin-top:8px"><input id="pAliases" placeholder="aliases (a|b|c)" /></div>
-        <div style="margin-top:8px"><input id="pPrice" type="number" step="0.01" placeholder="price" /></div>
-        <div style="margin-top:8px">
-          <button id="saveProductBtn" onclick="saveProduct()">Add</button>
-          <button class="secondary" onclick="clearProductForm()">Cancel</button>
+  <!-- ===== App ===== -->
+  <div id="appShell" class="shell hidden">
+    <header class="topbar">
+      <div class="brand"><i>◆</i> LM ADMIN</div>
+      <div class="crumb" id="crumb">Panou</div>
+      <button class="btn ghost sm" id="themeBtn" type="button" title="Schimbă tema">◐ Temă</button>
+      <span class="who" id="whoami"></span>
+      <button class="btn sm" id="logoutBtn" type="button">Deconectare</button>
+    </header>
+
+    <nav class="sidebar" aria-label="Secțiuni">
+      <a href="#panou" data-section="panou">Panou<kbd>1</kbd></a>
+      <a href="#produse" data-section="produse">Produse și distribuitori<kbd>2</kbd></a>
+      <a href="#utilizatori" data-section="utilizatori">Utilizatori<kbd>3</kbd></a>
+      <a href="#echipe" data-section="echipe">Echipe<kbd>4</kbd></a>
+      <a href="#activitate" data-section="activitate">Activitate<kbd>5</kbd></a>
+      <a href="#comenzi" data-section="comenzi">Comenzi<kbd>6</kbd></a>
+      <a href="#erori" data-section="erori">Erori<span class="count hidden" id="errorCount" title="Rapoarte în ultimele 7 zile"></span><kbd id="errorKbd">7</kbd></a>
+      <div class="foot">1–7 secțiuni · / caută<br />Zilele sunt în UTC</div>
+    </nav>
+
+    <main>
+      <!-- ===== Panou ===== -->
+      <section data-section="panou" hidden>
+        <div class="head">
+          <h1>Panou</h1>
+          <div class="seg" data-period></div>
+          <button class="btn" type="button" data-refresh="panou">⟳ Reîncarcă</button>
         </div>
-      </div>
-      <div class="card">
-        <h3>Catalog</h3>
-        <input id="search" placeholder="search name or alias…" oninput="onSearchInput()" />
-        <button onclick="loadProducts()">Refresh</button>
-        <div style="margin-top:8px">
-          <button class="secondary" id="prevPage" onclick="changePage(-1)">Previous</button>
-          <button class="secondary" id="nextPage" onclick="changePage(1)">Next</button>
-          <span id="pageInfo" class="muted" style="margin-left:8px"></span>
+        <div id="panouKpis" class="kpis"></div>
+        <div id="panouCharts" class="charts"></div>
+      </section>
+
+      <!-- ===== Produse și distribuitori ===== -->
+      <section data-section="produse" hidden>
+        <div class="head">
+          <h1>Produse și distribuitori</h1>
+          <div class="seg" id="catalogTabs">
+            <button type="button" data-tab="catalog" aria-pressed="true">Catalog</button>
+            <button type="button" data-tab="distribuitori" aria-pressed="false">Distribuitori</button>
+            <button type="button" data-tab="import" aria-pressed="false">Import CSV</button>
+          </div>
+          <button class="btn" type="button" data-refresh="produse">⟳ Reîncarcă</button>
         </div>
-        <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th><th>Actions</th></tr></thead>
-          <tbody id="rows"></tbody></table>
+
+        <div class="panel" data-tab-panel="catalog">
+          <div class="toolbar">
+            <input id="search" type="search" placeholder="Caută după nume sau alias…" aria-label="Caută produs" data-search />
+            <select id="distFilter" aria-label="Filtru distribuitor"></select>
+            <button class="btn primary" id="newProductBtn" type="button">+ Produs nou</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th class="num">ID</th><th>Produs</th><th>Distribuitor</th><th>Aliasuri</th><th class="num">Preț</th><th></th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span id="pageInfo" class="grow"></span>
+            <button class="btn sm" id="prevPage" type="button">← Înapoi</button>
+            <button class="btn sm" id="nextPage" type="button">Înainte →</button>
+          </div>
+        </div>
+
+        <div class="panel hidden" data-tab-panel="distribuitori">
+          <div class="toolbar">
+            <input id="distName" placeholder="Nume distribuitor nou" aria-label="Nume distribuitor nou" />
+            <button class="btn primary" id="addDistBtn" type="button">+ Adaugă</button>
+          </div>
+          <div class="note" style="margin:12px 14px">Un distribuitor se poate șterge doar după ce nu mai are produse. Un produs folosit pe o listă nu se poate șterge, ca să rămână lizibile comenzile vechi.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th class="num">ID</th><th>Nume</th><th></th></tr></thead>
+              <tbody id="distRows"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel hidden" data-tab-panel="import">
+          <div class="panel-head"><h2>Import CSV</h2></div>
+          <div class="panel-body">
+            <p class="muted" style="margin-top:0">Coloane: <code>distributor, product_name, aliases, price</code>. Primele două sunt obligatorii. Reîncărcarea actualizează și adaugă, nu șterge nimic.</p>
+            <div class="head" style="margin-bottom:8px">
+              <input type="file" id="csvFile" accept=".csv" style="height:auto;padding:5px" />
+              <button class="btn" id="previewBtn" type="button">Previzualizează</button>
+              <button class="btn primary" id="confirmBtn" type="button" disabled>Confirmă importul</button>
+            </div>
+            <div id="preview" class="mono" style="font-size:13px"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Utilizatori ===== -->
+      <section data-section="utilizatori" hidden>
+        <div class="head">
+          <h1>Utilizatori</h1>
+          <button class="btn" type="button" data-refresh="utilizatori">⟳ Reîncarcă</button>
+          <div class="sub">„Ultima activitate” înseamnă ultima modificare a unei liste pe server, nu ultima deschidere a aplicației. Apasă pe un rând pentru detalii și acțiuni.</div>
+        </div>
+        <div id="userKpis" class="kpis"></div>
+        <div class="panel">
+          <div class="toolbar">
+            <input id="userSearch" type="search" placeholder="Caută după nume, email sau firmă…" aria-label="Caută utilizator" data-search />
+            <select id="userFilter" aria-label="Filtru stare">
+              <option value="">Toți</option>
+              <option value="active">Activi</option>
+              <option value="inactive">Dezactivați</option>
+              <option value="admin">Admini</option>
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th class="num sortable" data-table="users" data-key="id">ID</th>
+                <th class="sortable" data-table="users" data-key="username">Utilizator</th>
+                <th class="sortable" data-table="users" data-key="email">Email</th>
+                <th class="sortable" data-table="users" data-key="is_active">Stare</th>
+                <th>Echipe</th>
+                <th class="sortable" data-table="users" data-key="created_at">Creat</th>
+                <th class="sortable" data-table="users" data-key="last_activity_at">Ultima activitate</th>
+                <th class="num sortable" data-table="users" data-key="active_logins">Login-uri</th>
+                <th></th>
+              </tr></thead>
+              <tbody id="userRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Echipe ===== -->
+      <section data-section="echipe" hidden>
+        <div class="head">
+          <h1>Echipe</h1>
+          <div class="seg" data-period></div>
+          <button class="btn" type="button" data-refresh="echipe">⟳ Reîncarcă</button>
+        </div>
+        <div id="teamKpis" class="kpis"></div>
+        <div id="teamCharts" class="charts"></div>
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th class="num sortable" data-table="teams" data-key="id">ID</th>
+                <th class="sortable" data-table="teams" data-key="name">Echipă</th>
+                <th class="num sortable" data-table="teams" data-key="member_count">Membri</th>
+                <th class="sortable" data-table="teams" data-key="created_at">Creată</th>
+                <th class="num sortable" data-table="teams" data-key="lists_completed">Comenzi</th>
+              </tr></thead>
+              <tbody id="teamRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Activitate ===== -->
+      <section data-section="activitate" hidden>
+        <div class="head">
+          <h1>Activitate</h1>
+          <div class="seg" data-period></div>
+          <button class="btn" type="button" data-refresh="activitate">⟳ Reîncarcă</button>
+        </div>
+        <div class="note"><b>Autentificările și deconectările nu se înregistrează încă.</b> Vor apărea aici după etapa următoare. Până atunci, activitatea înseamnă modificări ale listelor pe server.</div>
+        <div id="activityCharts" class="charts"></div>
+        <div class="panel">
+          <div class="panel-head"><h2>Cei mai recent activi</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th class="sortable" data-table="recent" data-key="username">Utilizator</th>
+                <th class="sortable" data-table="recent" data-key="last_activity_at">Ultima activitate</th>
+                <th class="num sortable" data-table="recent" data-key="active_logins">Login-uri active</th>
+              </tr></thead>
+              <tbody id="recentRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Comenzi ===== -->
+      <section data-section="comenzi" hidden>
+        <div class="head">
+          <h1>Comenzi</h1>
+          <div class="seg" data-period></div>
+          <button class="btn" type="button" data-refresh="comenzi">⟳ Reîncarcă</button>
+        </div>
+        <div class="note"><b>Comandă</b> = o listă finalizată pe server. <b>Document</b> = câte un distribuitor din acea listă, adică un PDF. PDF-urile de inventar și retrimiterile nu se numără, iar mutarea unui produs la alt distribuitor schimbă numărul de documente.</div>
+        <div id="orderKpis" class="kpis"></div>
+        <div id="orderCharts" class="charts"></div>
+        <div class="panel">
+          <div class="panel-head"><h2>Comenzi recente</h2></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th class="num">ID</th><th>Finalizată</th><th>Listă</th><th>Echipă sau proprietar</th><th class="num">Poziții</th><th class="num">Cantitate</th><th class="num">Documente</th></tr></thead>
+              <tbody id="orderRows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span id="orderPageInfo" class="grow"></span>
+            <button class="btn sm" id="orderPrev" type="button">← Înapoi</button>
+            <button class="btn sm" id="orderNext" type="button">Înainte →</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Erori ===== -->
+      <section data-section="erori" hidden>
+        <div class="head">
+          <h1>Erori</h1>
+          <button class="btn" type="button" data-refresh="erori">⟳ Reîncarcă</button>
+          <div class="sub">Semnături de crash: probleme grupate după excepție și cadrele stabile din stack trace. Impact = rapoarte × utilizatori afectați.</div>
+        </div>
+        <div class="note">Se raportează doar crash-urile din aplicația Android. <b>Blocajele (ANR) nu ajung încă aici.</b></div>
+        <div class="panel">
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                <th></th>
+                <th class="num sortable" data-table="crashes" data-key="triage_score">Impact</th>
+                <th class="num sortable" data-table="crashes" data-key="count">Rapoarte</th>
+                <th class="num sortable" data-table="crashes" data-key="affected_users">Utilizatori</th>
+                <th>Excepție</th>
+                <th>Versiuni</th>
+                <th class="sortable" data-table="crashes" data-key="last_seen">Ultima</th>
+                <th>Semnătură</th>
+              </tr></thead>
+              <tbody id="crashRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ===== Dialogs ===== -->
+  <dialog id="dlg" aria-labelledby="dlgTitle">
+    <form method="dialog" id="dlgForm">
+      <div class="dlg-head" id="dlgTitle"></div>
+      <div class="dlg-body" id="dlgBody"></div>
+      <div class="dlg-foot">
+        <button class="btn" value="cancel" type="submit" formnovalidate id="dlgCancel">Renunță</button>
+        <button class="btn primary" value="ok" type="submit" id="dlgOk">OK</button>
       </div>
-      <div class="card">
-        <h3>Semnături de crash</h3>
-        <p class="muted">Probleme grupate după excepție și cadrele stabile din stack trace.</p>
-        <button onclick="loadCrashes()">Refresh</button>
-        <div id="crashList" class="muted">Se încarcă…</div>
-      </div>
+    </form>
+  </dialog>
+
+  <dialog id="drawer" class="drawer" aria-labelledby="drawerTitle">
+    <div class="dlg-head">
+      <span class="grow" id="drawerTitle"></span>
+      <button class="btn ghost sm" type="button" id="drawerClose" aria-label="Închide">✕</button>
     </div>
-  </main>
+    <div id="drawerBody"></div>
+  </dialog>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
   <script>
-    let token = localStorage.getItem("lm_token") || null;
-    let products = [], distributors = {};
-    let previewedFile = null;
-    let editingProductId = null;
-    let distributorList = [];
+    // Every value from the server is shown with textContent: crash reports
+    // arrive without sign-in, and this page holds an admin token.
+    const SECTIONS = ["panou", "produse", "utilizatori", "echipe", "activitate", "comenzi", "erori"];
+    const TITLES = {
+      panou: "Panou", produse: "Produse și distribuitori", utilizatori: "Utilizatori",
+      echipe: "Echipe", activitate: "Activitate", comenzi: "Comenzi", erori: "Erori",
+    };
+    const PERIODS = [7, 30, 90];
     const CATALOG_PAGE_SIZE = 50;
-    let catalogOffset = 0;
-    let catalogTotal = 0;
-    let catalogRequest = 0;
-    let searchTimer = null;
+    const ORDER_PAGE_SIZE = 25;
 
-    function setStatus(msg, isError) {
-      const el = document.getElementById("status");
-      el.textContent = msg || "";
-      el.className = isError ? "err" : "muted";
+    let token = storageGet(localStorage, "lm_token");
+    let me = null;
+    let period = 30;
+    let loaded = new Set();
+    let dashboardCache = {};
+    let usersCache = null;
+    const sortState = {
+      users: { key: "username", dir: 1 },
+      teams: { key: "name", dir: 1 },
+      recent: { key: "last_activity_at", dir: -1 },
+      crashes: { key: "triage_score", dir: -1 },
+    };
+
+    // ----- small helpers -----
+    function storageGet(store, key) { try { return store.getItem(key); } catch (e) { return null; } }
+    function storageSet(store, key, value) { try { value === null ? store.removeItem(key) : store.setItem(key, value); } catch (e) {} }
+
+    function el(tag, props, ...children) {
+      const node = document.createElement(tag);
+      Object.entries(props || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === false) return;
+        if (key === "class") node.className = value;
+        else if (key === "text") node.textContent = value;
+        else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+        else node.setAttribute(key, value === true ? "" : value);
+      });
+      children.flat().forEach(child => {
+        if (child === null || child === undefined || child === false) return;
+        node.appendChild(typeof child === "string" || typeof child === "number" ? document.createTextNode(String(child)) : child);
+      });
+      return node;
+    }
+    const $ = id => document.getElementById(id);
+    function clear(node) { node.textContent = ""; return node; }
+    function emptyRow(tbody, cols, text, isError) {
+      clear(tbody).appendChild(el("tr", {}, el("td", { colspan: cols, class: "empty" + (isError ? " err" : ""), text })));
+    }
+    const NUM = new Intl.NumberFormat("ro-RO");
+    function num(n) { return NUM.format(n || 0); }
+    // Romanian counts: "1 listă", "3 liste", "20 de liste".
+    function countRo(n, one, many) {
+      if (n === 1) return `1 ${one}`;
+      const tail = n % 100;
+      return `${num(n)} ${tail === 0 || tail >= 20 ? "de " : ""}${many}`;
+    }
+    // The server sends naive UTC timestamps; show them in the viewer's time zone.
+    function toDate(s) {
+      if (!s) return null;
+      const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z";
+      const d = new Date(iso);
+      return isNaN(d) ? null : d;
+    }
+    function fmtDateTime(s) {
+      const d = toDate(s);
+      return d ? d.toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+    }
+    function fmtDate(s) {
+      const d = toDate(s);
+      return d ? d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+    }
+    function fmtDay(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
+    function relTime(s) {
+      const d = toDate(s);
+      if (!d) return "—";
+      const minutes = Math.round((Date.now() - d.getTime()) / 60000);
+      if (minutes < 1) return "acum";
+      if (minutes < 60) return `acum ${minutes} min`;
+      const hours = Math.round(minutes / 60);
+      if (hours < 24) return `acum ${hours} h`;
+      const days = Math.round(hours / 24);
+      if (days <= 30) return `acum ${countRo(days, "zi", "zile")}`;
+      return fmtDate(s);
+    }
+    // A timestamp cell: relative time, with the exact moment on hover.
+    function timeCell(s) {
+      return el("td", { class: "num", title: s ? fmtDateTime(s) : undefined, text: s ? relTime(s) : "—" });
     }
 
+    // ----- theme -----
+    function applyTheme(theme) {
+      if (theme) document.documentElement.setAttribute("data-theme", theme);
+      else document.documentElement.removeAttribute("data-theme");
+    }
+    function currentTheme() {
+      const set = document.documentElement.getAttribute("data-theme");
+      if (set) return set;
+      return window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    applyTheme(storageGet(localStorage, "lm_theme"));
+
+    // ----- toasts and dialogs -----
+    function toast(message, isError) {
+      const node = el("div", { class: "toast" + (isError ? " error" : "") },
+        el("span", { class: "msg", text: message }),
+        el("button", { type: "button", "aria-label": "Închide", text: "×", onclick: () => node.remove() }));
+      $("toasts").appendChild(node);
+      setTimeout(() => node.remove(), isError ? 9000 : 4000);
+    }
+
+    // Resolves to the entered value (prompt), true (confirm) or null when cancelled.
+    function openDialog({ title, body, okLabel, danger, fields }) {
+      const dlg = $("dlg");
+      $("dlgTitle").textContent = title;
+      const bodyNode = clear($("dlgBody"));
+      if (body) bodyNode.appendChild(el("div", { text: body }));
+      const inputs = {};
+      (fields || []).forEach(f => {
+        let input;
+        if (f.options) {
+          input = el("select", { id: "fld-" + f.name });
+          f.options.forEach(o => input.appendChild(el("option", { value: o.value, text: o.label })));
+          if (f.value !== undefined && f.value !== null) input.value = String(f.value);
+        } else {
+          input = el("input", { id: "fld-" + f.name, type: f.type || "text", step: f.step, placeholder: f.placeholder, required: f.required });
+          input.value = f.value === undefined || f.value === null ? "" : String(f.value);
+        }
+        inputs[f.name] = input;
+        bodyNode.appendChild(el("div", { class: "field" }, el("label", { class: "label", for: "fld-" + f.name, text: f.label }), input));
+      });
+      $("dlgOk").textContent = okLabel || "OK";
+      $("dlgOk").className = "btn " + (danger ? "danger" : "primary");
+      return new Promise(resolve => {
+        dlg.onclose = () => {
+          if (dlg.returnValue !== "ok") return resolve(null);
+          if (!fields || !fields.length) return resolve(true);
+          const values = {};
+          Object.entries(inputs).forEach(([name, input]) => { values[name] = input.value; });
+          resolve(values);
+        };
+        dlg.returnValue = "";
+        dlg.showModal();
+        const first = Object.values(inputs)[0];
+        (first || $("dlgCancel")).focus();
+      });
+    }
+    const confirmDialog = (title, body, okLabel, danger) => openDialog({ title, body, okLabel, danger });
+
+    // ----- auth -----
+    function showApp(on) {
+      $("loginView").classList.toggle("hidden", on);
+      $("appShell").classList.toggle("hidden", !on);
+      if (!on) $("whoami").textContent = "";
+    }
+
+    function denied(status) {
+      token = null;
+      me = null;
+      storageSet(localStorage, "lm_token", null);
+      if ($("drawer").open) $("drawer").close();
+      showApp(false);
+      $("loginErr").textContent = status === 403
+        ? "Contul nu are drepturi de administrator."
+        : "Sesiunea a expirat. Autentifică-te din nou.";
+    }
+
+    function authHeaders() { return { "Authorization": "Bearer " + token }; }
+
+    async function apiGet(url) {
+      const r = await fetch(url, { headers: authHeaders() });
+      if (r.status === 401 || r.status === 403) { denied(r.status); throw new Error("denied"); }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }
+
+    // Returns { ok, status, body }; 401/403 end the admin session.
     async function apiMutate(url, method, body) {
       const opts = { method, headers: { ...authHeaders() } };
       if (body !== undefined) {
@@ -127,102 +671,385 @@
       }
       let r;
       try { r = await fetch(url, opts); }
-      catch (e) { setStatus("Network error", true); return false; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return false; }
-      if (!r.ok) {
-        let detail = "Error " + r.status;
-        try { detail = (await r.json()).detail || detail; } catch (e) {}
-        setStatus(detail, true);
-        return false;
+      catch (e) { toast("Eroare de rețea.", true); return { ok: false }; }
+      let data = null;
+      try { data = await r.json(); } catch (e) {}
+      if (r.status === 401 || r.status === 403) { denied(r.status); return { ok: false, status: r.status }; }
+      const result = { ok: r.ok, status: r.status, body: data };
+      if (!r.ok) toast(errorText(result), true);
+      return result;
+    }
+
+    function errorText(result) {
+      const detail = result.body && result.body.detail;
+      if (result.status === 409 && detail && typeof detail === "object") {
+        if (detail.code === "user_has_linked_data") {
+          const labels = {
+            team_memberships: ["apartenență la o echipă", "apartenențe la echipe"],
+            teams_created: ["echipă creată", "echipe create"],
+            invites_created: ["invitație creată", "invitații create"],
+            lists: ["listă", "liste"],
+            inventory_items: ["poziție de inventar", "poziții de inventar"],
+          };
+          const parts = Object.entries(detail.blockers || {}).map(([k, v]) =>
+            labels[k] ? countRo(v, ...labels[k]) : `${v} ${k}`);
+          return "Contul nu se poate șterge" + (parts.length ? ": are " + parts.join(", ") : ", pentru că are date legate") + ". Folosește Dezactivează.";
+        }
+        if (detail.code === "distributor_has_products") {
+          return detail.product_count
+            ? `Distribuitorul are încă ${countRo(detail.product_count, "produs", "produse")}. Șterge-le sau mută-le întâi.`
+            : "Distribuitorul are încă produse. Șterge-le sau mută-le întâi.";
+        }
+        if (detail.code === "product_on_lists") {
+          return "Produsul apare pe liste, așa că nu se poate șterge. Comenzile vechi trebuie să rămână lizibile.";
+        }
       }
-      return true;
+      if (typeof detail === "string") return detail;
+      return "Eroare " + (result.status || "");
     }
 
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
-
-    function authHeaders() { return { "Authorization": "Bearer " + token }; }
-    function showApp(on) {
-      document.getElementById("loginCard").classList.toggle("hidden", on);
-      document.getElementById("appCard").classList.toggle("hidden", !on);
-    }
-
-    async function login() {
-      const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
-      const r = await fetch("/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-      });
-      if (!r.ok) { document.getElementById("loginErr").textContent = "Login failed"; return; }
-      token = (await r.json()).access_token;
-      localStorage.setItem("lm_token", token);
-      showApp(true); loadDashboard(); loadProducts(); loadCrashes();
-    }
-
-    async function importCsv(dryRun, file) {
-      if (!file) { alert("Choose a CSV file first"); return null; }
-      const fd = new FormData(); fd.append("file", file);
+    async function login(event) {
+      event.preventDefault();
+      $("loginErr").textContent = "";
       let r;
       try {
-        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, {
-          method: "POST", headers: authHeaders(), body: fd
+        r = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: $("username").value, password: $("password").value })
         });
-      } catch (e) {
-        document.getElementById("preview").innerHTML = '<span class="err">Network error</span>';
-        return null;
-      }
-      if (r.status === 401 || r.status === 403) { showApp(false); return null; }
+      } catch (e) { $("loginErr").textContent = "Eroare de rețea."; return; }
+      if (!r.ok) { $("loginErr").textContent = "Autentificare eșuată."; return; }
       const body = await r.json();
-      if (!r.ok) {
-        document.getElementById("preview").innerHTML = '<span class="err">' + escapeHtml(body.detail || "Error") + '</span>';
-        return null;
+      token = body.access_token;
+      storageSet(localStorage, "lm_token", token);
+      // Kept only for this tab, so Deconectare can end this login on the server.
+      if (body.refresh_token) storageSet(sessionStorage, "lm_refresh", body.refresh_token);
+      $("password").value = "";
+      start();
+    }
+
+    async function logout() {
+      const refresh = storageGet(sessionStorage, "lm_refresh");
+      storageSet(sessionStorage, "lm_refresh", null);
+      if (refresh) {
+        try {
+          await fetch("/api/auth/logout", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refresh })
+          });
+        } catch (e) {}
       }
-      return body;
+      token = null; me = null;
+      storageSet(localStorage, "lm_token", null);
+      $("loginErr").textContent = "";
+      showApp(false);
     }
 
-    function renderSummary(b, prefix) {
-      let html = prefix + `New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
-      if (b.errors.length) {
-        html += `<br><span class="err">${b.errors.length} row(s) skipped: ` +
-          b.errors.map(e => `line ${e.line}: ${escapeHtml(e.reason)}`).join("; ") + "</span>";
+    async function start() {
+      loaded = new Set();
+      dashboardCache = {};
+      usersCache = null;
+      try {
+        me = await apiGet("/api/auth/me");
+      } catch (e) {
+        if (token) { showApp(false); $("loginErr").textContent = "Serverul nu răspunde."; }
+        return;
       }
-      document.getElementById("preview").innerHTML = html;
+      if (me.role !== "ADMIN") { denied(403); return; }
+      $("whoami").textContent = me.username;
+      showApp(true);
+      route();
+      loadErrorBadge();
     }
 
-    async function preview() {
-      previewedFile = document.getElementById("csvFile").files[0];
-      const b = await importCsv(true, previewedFile);
-      if (!b) { document.getElementById("confirmBtn").disabled = true; return; }
-      renderSummary(b, "");
-      document.getElementById("confirmBtn").disabled = false;
+    // ----- navigation -----
+    const loaders = {
+      panou: loadPanou,
+      produse: loadProducts,
+      utilizatori: loadUsers,
+      echipe: loadTeams,
+      activitate: loadActivity,
+      comenzi: loadOrders,
+      erori: loadCrashes,
+    };
+
+    function currentSection() {
+      const name = location.hash.replace("#", "");
+      return SECTIONS.includes(name) ? name : "panou";
     }
 
-    async function commit() {
-      const b = await importCsv(false, previewedFile);
-      if (!b) return;
-      renderSummary(b, "<b>Imported.</b> ");
-      document.getElementById("confirmBtn").disabled = true;
-      previewedFile = null;
-      loadProducts();
+    function route() {
+      if (!token || !me) return;
+      const name = currentSection();
+      document.querySelectorAll("main > section").forEach(s => { s.hidden = s.dataset.section !== name; });
+      document.querySelectorAll(".sidebar a").forEach(a => {
+        if (a.dataset.section === name) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
+      clear($("crumb")).append(el("span", { text: "admin / " }), TITLES[name]);
+      if (!loaded.has(name)) { loaded.add(name); loaders[name](); }
+    }
+
+    function refresh(name) {
+      dashboardCache = {};
+      usersCache = null;
+      loaded = new Set([name]);
+      loaders[name]();
+      loadErrorBadge();
+    }
+
+    function renderPeriodControls() {
+      document.querySelectorAll("[data-period]").forEach(box => {
+        clear(box);
+        PERIODS.forEach(days => {
+          box.appendChild(el("button", {
+            type: "button",
+            "aria-pressed": String(days === period),
+            text: days + "z",
+            title: countRo(days, "zi", "zile"),
+            onclick: () => {
+              if (days === period) return;
+              period = days;
+              renderPeriodControls();
+              const name = currentSection();
+              loaded = new Set([name]);
+              loaders[name]();
+            },
+          }));
+        });
+      });
+    }
+
+    // ----- sorting -----
+    function sortRows(table, rows) {
+      const { key, dir } = sortState[table];
+      const value = row => {
+        const v = row[key];
+        if (key.endsWith("_at") || key === "last_seen") { const d = toDate(v); return d ? d.getTime() : -Infinity; }
+        if (typeof v === "boolean") return v ? 1 : 0;
+        if (typeof v === "string") return v.toLocaleLowerCase("ro");
+        return v === null || v === undefined ? -Infinity : v;
+      };
+      return rows.slice().sort((a, b) => {
+        const x = value(a), y = value(b);
+        return (x < y ? -1 : x > y ? 1 : 0) * dir;
+      });
+    }
+    function paintSortHeaders() {
+      document.querySelectorAll("th.sortable").forEach(th => {
+        const state = sortState[th.dataset.table];
+        if (state.key === th.dataset.key) th.setAttribute("aria-sort", state.dir === 1 ? "ascending" : "descending");
+        else th.removeAttribute("aria-sort");
+      });
+    }
+    const sortRenderers = {};
+    document.querySelectorAll("th.sortable").forEach(th => {
+      th.tabIndex = 0;
+      const activate = () => {
+        const state = sortState[th.dataset.table];
+        if (state.key === th.dataset.key) state.dir = -state.dir;
+        else { state.key = th.dataset.key; state.dir = th.classList.contains("num") || th.dataset.key.endsWith("_at") ? -1 : 1; }
+        paintSortHeaders();
+        if (sortRenderers[th.dataset.table]) sortRenderers[th.dataset.table]();
+      };
+      th.addEventListener("click", activate);
+      th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } });
+    });
+    paintSortHeaders();
+
+    // ----- shared data -----
+    async function getDashboard(days) {
+      days = days || period;
+      if (!dashboardCache[days]) {
+        dashboardCache[days] = apiGet("/api/admin/dashboard?days=" + days).catch(e => {
+          delete dashboardCache[days];
+          throw e;
+        });
+      }
+      return dashboardCache[days];
+    }
+
+    async function getUsers() {
+      if (!usersCache) {
+        usersCache = apiGet("/api/admin/users/details").catch(e => { usersCache = null; throw e; });
+      }
+      return usersCache;
+    }
+
+    async function loadErrorBadge() {
+      try {
+        const d = await getDashboard(7);
+        const recent = d.activity.reduce((sum, a) => sum + a.crash_reports, 0);
+        $("errorCount").textContent = num(recent);
+        $("errorCount").classList.toggle("hidden", !recent);
+        $("errorKbd").classList.toggle("hidden", !!recent);
+      } catch (e) {}
+    }
+
+    function loadingInto(...nodes) { nodes.forEach(n => { clear(n).appendChild(el("div", { class: "empty", text: "Se încarcă…" })); }); }
+    function failInto(...nodes) { nodes.forEach(n => { clear(n).appendChild(el("div", { class: "empty err", text: "Nu s-au putut încărca datele." })); }); }
+
+    // ----- charts -----
+    const NS = "http://www.w3.org/2000/svg";
+    function svgEl(tag, attrs) {
+      const node = document.createElementNS(NS, tag);
+      Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+      return node;
+    }
+
+    // A KPI cell, optionally with a sparkline of the period behind it.
+    function kpi(label, value, hint, series) {
+      const shown = typeof value === "string" ? value : num(value);
+      const cell = el("div", { class: "kpi" }, el("div", { class: "label", text: label }), el("div", { class: "value", text: shown }));
+      if (hint) cell.appendChild(el("div", { class: "hint", text: hint }));
+      if (series && series.some(v => v)) {
+        const max = Math.max(...series), W = 120, H = 22;
+        const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none", "aria-hidden": "true" });
+        const points = series.map((v, i) => `${(i / Math.max(1, series.length - 1)) * W},${H - 2 - (v / max) * (H - 4)}`).join(" ");
+        svg.appendChild(svgEl("polyline", { points, fill: "none", stroke: "var(--chart)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke", "stroke-linejoin": "round" }));
+        cell.appendChild(svg);
+      }
+      return cell;
+    }
+
+    // One series per chart, bars from a zero baseline.
+    // perDay: the series counts distinct people per day, so days must not be summed.
+    function barChart(title, activity, key, perDay) {
+      const total = activity.reduce((sum, a) => sum + (a[key] || 0), 0);
+      const peak = Math.max(0, ...activity.map(a => a[key] || 0));
+      const summary = perDay ? `max ${num(peak)}/zi` : `Σ ${num(total)} · ${countRo(activity.length, "zi", "zile")}`;
+      const panel = el("div", { class: "panel chart" },
+        el("div", { class: "panel-head" }, el("h2", { text: title }), el("span", { class: "chart-meta", text: summary })));
+      const body = el("div", { class: "panel-body" });
+      panel.appendChild(body);
+      if (!total) {
+        body.appendChild(el("div", { class: "empty", text: "Nimic în perioada aleasă." }));
+        return panel;
+      }
+      const W = 520, H = 160, L = 34, R = 6, T = 10, B = 22;
+      const plotW = W - L - R, plotH = H - T - B;
+      const top = niceMax(peak);
+      const step = plotW / activity.length;
+      const gap = Math.min(2, step * 0.25);
+      const barW = Math.max(1, step - gap);
+      const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": `${title}: ${summary}` });
+      const y = v => T + plotH - (v / top) * plotH;
+
+      [0, top / 2, top].forEach(v => {
+        if (v !== Math.round(v)) return;
+        svg.appendChild(svgEl("line", { class: v ? "grid-line" : "base-line", x1: L, x2: W - R, y1: y(v), y2: y(v), "stroke-width": 1 }));
+        const label = svgEl("text", { class: "axis-label", x: L - 6, y: y(v) + 4, "text-anchor": "end" });
+        label.textContent = num(v);
+        svg.appendChild(label);
+      });
+
+      const tooltip = el("div", { class: "tooltip hidden" });
+      activity.forEach((a, i) => {
+        const value = a[key] || 0;
+        const x = L + i * step + gap / 2;
+        if (value) {
+          const h = Math.max(1, plotH * value / top);
+          const r = Math.min(3, barW / 2, h);
+          const yTop = T + plotH - h, base = T + plotH;
+          svg.appendChild(svgEl("path", {
+            class: "bar",
+            d: `M${x},${base} V${yTop + r} Q${x},${yTop} ${x + r},${yTop} H${x + barW - r} Q${x + barW},${yTop} ${x + barW},${yTop + r} V${base} Z`,
+          }));
+        }
+        // The hit area spans the whole column, so even a zero day can be read.
+        const hit = svgEl("rect", { class: "hit", x: L + i * step, y: T, width: step, height: plotH });
+        hit.addEventListener("mouseenter", () => {
+          tooltip.textContent = `${a.date} · ${num(value)}`;
+          const share = (L + i * step + step / 2) / W;
+          tooltip.style.left = (share * 100) + "%";
+          // Keep the label inside the panel near either edge.
+          tooltip.style.transform = share > 0.8 ? "translate(-100%, -100%)" : share < 0.2 ? "translate(0, -100%)" : "";
+          tooltip.style.top = (y(value) / H * 100) + "%";
+          tooltip.classList.remove("hidden");
+        });
+        hit.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
+        svg.appendChild(hit);
+      });
+
+      const marks = [...new Set([0, Math.floor((activity.length - 1) / 2), activity.length - 1])];
+      marks.forEach((i, n) => {
+        const t = svgEl("text", {
+          class: "axis-label", y: H - 6,
+          x: n === 0 ? L : n === marks.length - 1 ? W - R : L + i * step + step / 2,
+          "text-anchor": n === 0 ? "start" : n === marks.length - 1 ? "end" : "middle",
+        });
+        t.textContent = fmtDay(activity[i].date);
+        svg.appendChild(t);
+      });
+
+      body.appendChild(el("div", { class: "plot" }, svg, tooltip));
+      const rows = activity.filter(a => a[key]).map(a =>
+        el("tr", {}, el("td", { class: "num", text: a.date }), el("td", { class: "num", text: num(a[key]) })));
+      body.appendChild(el("details", {},
+        el("summary", { text: "tabel" }),
+        el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Ziua (UTC)" }), el("th", { class: "num", text: "Valoare" }))),
+          el("tbody", {}, rows))));
+      return panel;
+    }
+
+    // The smallest round top at or above the peak; the middle label shows only when whole.
+    function niceMax(max) {
+      if (max <= 2) return 2;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(max)));
+      for (const m of [1, 2, 2.5, 5, 10]) {
+        const candidate = m * magnitude;
+        if (candidate >= max && Number.isInteger(candidate)) return candidate;
+      }
+      return 10 * magnitude;
+    }
+
+    const series = (activity, key) => activity.map(a => a[key] || 0);
+    const sum = (activity, key) => activity.reduce((s, a) => s + (a[key] || 0), 0);
+
+    // ----- Panou -----
+    async function loadPanou() {
+      loadingInto($("panouKpis"), $("panouCharts"));
+      let d;
+      try { d = await getDashboard(); } catch (e) { failInto($("panouKpis"), $("panouCharts")); return; }
+      const days = countRo(d.activity.length, "zi", "zile");
+      clear($("panouKpis")).append(
+        kpi("Echipe", d.stores.length, `+${num(sum(d.activity, "teams_created"))} în ${days}`, series(d.activity, "teams_created")),
+        kpi("Utilizatori", d.users_count, `+${num(sum(d.activity, "users_registered"))} în ${days}`, series(d.activity, "users_registered")),
+        kpi("Comenzi", d.lists_completed_count, `${num(sum(d.activity, "lists_completed"))} în ${days}`, series(d.activity, "lists_completed")),
+        kpi("Documente", d.documents_count, `${num(sum(d.activity, "documents"))} în ${days}`, series(d.activity, "documents")),
+        kpi("Produse", d.products_count, `${countRo(d.distributors_count, "distribuitor", "distribuitori")}`),
+        kpi("Erori", d.crashes_count, `${num(sum(d.activity, "crash_reports"))} în ${days}`, series(d.activity, "crash_reports")),
+      );
+      clear($("panouCharts")).append(
+        barChart("Comenzi pe zi", d.activity, "lists_completed"),
+        barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
+        barChart("Produse puse pe liste", d.activity, "items_added"),
+        barChart("Rapoarte de erori pe zi", d.activity, "crash_reports"),
+      );
+    }
+
+    // ----- Produse și distribuitori -----
+    let products = [], distributorList = [], distributors = {};
+    let catalogOffset = 0, catalogTotal = 0, catalogRequest = 0, searchTimer = null;
+    let previewedFile = null;
+
+    function showCatalogTab(tab) {
+      document.querySelectorAll("#catalogTabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tab === tab)));
+      document.querySelectorAll("[data-tab-panel]").forEach(p => p.classList.toggle("hidden", p.dataset.tabPanel !== tab));
     }
 
     async function loadProducts() {
       const request = ++catalogRequest;
       const params = new URLSearchParams({ limit: CATALOG_PAGE_SIZE, offset: catalogOffset });
-      const q = (document.getElementById("search").value || "").trim();
+      const q = ($("search").value || "").trim();
       if (q) params.set("q", q);
+      if ($("distFilter").value) params.set("distributor_id", $("distFilter").value);
       try {
-        const [pr, dr] = await Promise.all([
-          fetch("/api/admin/catalog/products?" + params, { headers: authHeaders() }),
-          fetch("/api/catalog/distributors").then(r => r.json())
+        const [page, dr] = await Promise.all([
+          apiGet("/api/admin/catalog/products?" + params),
+          fetch("/api/catalog/distributors").then(r => { if (!r.ok) throw new Error(); return r.json(); }),
         ]);
         if (request !== catalogRequest) return;   // a newer search or page already started
-        if (pr.status === 401 || pr.status === 403) { showApp(false); return; }
-        if (!pr.ok) throw new Error("catalog " + pr.status);
-        const page = await pr.json();
-        if (request !== catalogRequest) return;
         if (!page.items.length && page.total > 0 && catalogOffset > 0) {
           // The last row on this page was deleted, so step back to a page that has rows.
           catalogOffset = Math.max(0, catalogOffset - CATALOG_PAGE_SIZE);
@@ -230,22 +1057,41 @@
         }
         products = page.items;
         catalogTotal = page.total;
+        distributorList = dr.slice().sort((a, b) => a.distributor_name.localeCompare(b.distributor_name, "ro"));
         distributors = {};
         dr.forEach(d => distributors[d.id] = d.distributor_name);
-        distributorList = dr;
-        renderTable();
+        renderProducts();
         renderPager();
         renderDistributors();
-        populateDistributorSelect();
+        populateDistributorFilter();
       } catch (e) {
-        if (request !== catalogRequest) return;
-        document.getElementById("rows").innerHTML = '<tr><td colspan="5" class="err">Failed to load catalog</td></tr>';
+        if (request !== catalogRequest || e.message === "denied") return;
+        emptyRow($("rows"), 6, "Catalogul nu s-a putut încărca.", true);
       }
     }
 
-    function onSearchInput() {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { catalogOffset = 0; loadProducts(); }, 250);
+    function renderProducts() {
+      const tbody = clear($("rows"));
+      if (!products.length) { emptyRow(tbody, 6, "Niciun produs."); return; }
+      products.forEach(p => {
+        tbody.appendChild(el("tr", {},
+          el("td", { class: "num muted", text: p.id }),
+          el("td", { text: p.name }),
+          el("td", { class: "muted", text: distributors[p.distributor_id] || "" }),
+          el("td", { class: "mono muted", text: p.aliases || "" }),
+          el("td", { class: "num", text: p.price == null ? "—" : String(p.price) }),
+          el("td", { class: "actions" },
+            el("button", { class: "btn sm", type: "button", text: "Editează", onclick: () => editProduct(p) }), " ",
+            el("button", { class: "btn sm danger", type: "button", text: "Șterge", onclick: () => deleteProduct(p) }))));
+      });
+    }
+
+    function renderPager() {
+      const first = catalogTotal === 0 ? 0 : catalogOffset + 1;
+      const last = catalogOffset + products.length;
+      $("pageInfo").textContent = `${num(first)}–${num(last)} din ${num(catalogTotal)}`;
+      $("prevPage").disabled = catalogOffset === 0;
+      $("nextPage").disabled = last >= catalogTotal;
     }
 
     function changePage(direction) {
@@ -255,328 +1101,456 @@
       loadProducts();
     }
 
-    function renderPager() {
-      const first = catalogTotal === 0 ? 0 : catalogOffset + 1;
-      const last = catalogOffset + products.length;
-      document.getElementById("pageInfo").textContent = `${first}–${last} of ${catalogTotal}`;
-      document.getElementById("prevPage").disabled = catalogOffset === 0;
-      document.getElementById("nextPage").disabled = last >= catalogTotal;
-    }
-
-    function renderTable() {
-      const tbody = document.getElementById("rows");
-      tbody.innerHTML = "";
-      products
-        .forEach(p => {
-          const tr = document.createElement("tr");
-          const cells = [p.name, distributors[p.distributor_id] || "", p.aliases || "", p.price == null ? "" : p.price];
-          cells.forEach(v => {
-            const td = document.createElement("td");
-            td.textContent = v;
-            tr.appendChild(td);
-          });
-
-          const actionsTd = document.createElement("td");
-          const editBtn = document.createElement("button");
-          editBtn.textContent = "Edit";
-          editBtn.addEventListener("click", () => editProduct(p));
-          const delBtn = document.createElement("button");
-          delBtn.className = "secondary";
-          delBtn.textContent = "Delete";
-          delBtn.style.marginLeft = "6px";
-          delBtn.addEventListener("click", () => deleteProduct(p));
-          actionsTd.appendChild(editBtn);
-          actionsTd.appendChild(delBtn);
-          tr.appendChild(actionsTd);
-
-          tbody.appendChild(tr);
-        });
-    }
-
     function renderDistributors() {
-      const list = document.getElementById("distList");
-      list.innerHTML = "";
+      const tbody = clear($("distRows"));
+      if (!distributorList.length) { emptyRow(tbody, 3, "Niciun distribuitor."); return; }
       distributorList.forEach(d => {
-        const li = document.createElement("li");
-        const span = document.createElement("span");
-        span.textContent = d.distributor_name;
-        const renameBtn = document.createElement("button");
-        renameBtn.textContent = "Rename";
-        renameBtn.style.marginLeft = "8px";
-        renameBtn.addEventListener("click", () => renameDistributor(d.id, d.distributor_name));
-        const delBtn = document.createElement("button");
-        delBtn.className = "secondary";
-        delBtn.textContent = "Delete";
-        delBtn.style.marginLeft = "6px";
-        delBtn.addEventListener("click", () => deleteDistributor(d.id, d.distributor_name));
-        li.appendChild(span);
-        li.appendChild(renameBtn);
-        li.appendChild(delBtn);
-        list.appendChild(li);
+        tbody.appendChild(el("tr", {},
+          el("td", { class: "num muted", text: d.id }),
+          el("td", { text: d.distributor_name }),
+          el("td", { class: "actions" },
+            el("button", { class: "btn sm", type: "button", text: "Redenumește", onclick: () => renameDistributor(d) }), " ",
+            el("button", { class: "btn sm danger", type: "button", text: "Șterge", onclick: () => deleteDistributor(d) }))));
       });
     }
 
-    function populateDistributorSelect() {
-      const select = document.getElementById("pDist");
+    function populateDistributorFilter() {
+      const select = $("distFilter");
       const current = select.value;
-      select.innerHTML = "";
-      distributorList.forEach(d => {
-        const option = document.createElement("option");
-        option.value = d.id;
-        option.textContent = d.distributor_name;
-        select.appendChild(option);
-      });
-      if (current && distributorList.some(d => String(d.id) === current)) {
-        select.value = current;
-      }
+      clear(select);
+      select.appendChild(el("option", { value: "", text: "Toți distribuitorii" }));
+      distributorList.forEach(d => select.appendChild(el("option", { value: d.id, text: d.distributor_name })));
+      if (current && distributorList.some(d => String(d.id) === current)) select.value = current;
     }
 
     async function createDistributor() {
-      const input = document.getElementById("distName");
-      const name = input.value.trim();
-      if (!name) return;
-      const ok = await apiMutate("/api/catalog/distributors", "POST", { distributor_name: name });
-      if (!ok) return;
-      input.value = "";
-      setStatus("Distributor added");
+      const name = $("distName").value.trim();
+      if (!name) { $("distName").focus(); return; }
+      const result = await apiMutate("/api/catalog/distributors", "POST", { distributor_name: name });
+      if (!result.ok) return;
+      $("distName").value = "";
+      toast(`Distribuitorul „${name}” a fost adăugat.`);
       loadProducts();
     }
 
-    async function renameDistributor(id, current) {
-      const name = prompt("New name", current);
-      if (name === null) return;                 // user cancelled
-      if (!name.trim()) { setStatus("Name required", true); return; }
-      const ok = await apiMutate("/api/catalog/distributors/" + id, "PUT", { distributor_name: name.trim() });
-      if (!ok) return;
-      setStatus("Distributor renamed");
+    async function renameDistributor(d) {
+      const values = await openDialog({
+        title: "Redenumește distribuitorul", okLabel: "Salvează",
+        fields: [{ name: "name", label: "Nume nou", value: d.distributor_name, required: true }],
+      });
+      if (!values) return;
+      const name = values.name.trim();
+      if (!name) { toast("Numele este obligatoriu.", true); return; }
+      const result = await apiMutate("/api/catalog/distributors/" + d.id, "PUT", { distributor_name: name });
+      if (!result.ok) return;
+      toast("Distribuitor redenumit.");
       loadProducts();
     }
 
-    async function deleteDistributor(id, name) {
-      if (!confirm('Delete distributor "' + name + '"? This will ALSO permanently delete every product under it.')) return;
-      const ok = await apiMutate("/api/catalog/distributors/" + id, "DELETE");
-      if (!ok) return;
-      setStatus("Distributor deleted");
+    async function deleteDistributor(d) {
+      if (!await confirmDialog(`Ștergi „${d.distributor_name}”?`, "Merge doar dacă distribuitorul nu mai are produse.", "Șterge", true)) return;
+      const result = await apiMutate("/api/catalog/distributors/" + d.id, "DELETE");
+      if (!result.ok) return;
+      toast("Distribuitor șters.");
       loadProducts();
     }
 
-    async function saveProduct() {
-      const name = document.getElementById("pName").value.trim();
-      const distSelect = document.getElementById("pDist");
-      const aliasesVal = document.getElementById("pAliases").value.trim();
-      const priceVal = document.getElementById("pPrice").value;
-
-      if (!name || !distSelect.value) {
-        setStatus("Name and distributor required", true);
-        return;
-      }
-
+    async function productDialog(p) {
+      const values = await openDialog({
+        title: p ? "Editează produsul" : "Produs nou", okLabel: p ? "Salvează" : "Adaugă",
+        fields: [
+          { name: "name", label: "Nume", value: p && p.name, required: true },
+          { name: "distributor_id", label: "Distribuitor", value: p ? p.distributor_id : ($("distFilter").value || (distributorList[0] && distributorList[0].id)),
+            options: distributorList.map(d => ({ value: d.id, label: d.distributor_name })) },
+          { name: "aliases", label: "Aliasuri (a|b|c)", value: p && p.aliases },
+          { name: "price", label: "Preț", type: "number", step: "0.01", value: p && p.price },
+        ],
+      });
+      if (!values) return;
+      if (!values.name.trim() || !values.distributor_id) { toast("Numele și distribuitorul sunt obligatorii.", true); return; }
       const body = {
-        name,
-        distributor_id: Number(distSelect.value),
-        aliases: aliasesVal || null,
-        price: priceVal === "" ? null : Number(priceVal)
+        name: values.name.trim(),
+        distributor_id: Number(values.distributor_id),
+        aliases: values.aliases.trim() || null,
+        price: values.price === "" ? null : Number(values.price),
       };
-
-      let ok;
-      if (editingProductId) {
-        ok = await apiMutate("/api/catalog/products/" + editingProductId, "PUT", body);
-      } else {
-        ok = await apiMutate("/api/catalog/products", "POST", body);
-      }
-      if (!ok) return;
-      clearProductForm();
-      setStatus("Saved");
+      const result = p
+        ? await apiMutate("/api/catalog/products/" + p.id, "PUT", body)
+        : await apiMutate("/api/catalog/products", "POST", body);
+      if (!result.ok) return;
+      toast("Produs salvat.");
       loadProducts();
     }
-
-    function editProduct(p) {
-      document.getElementById("pName").value = p.name || "";
-      document.getElementById("pDist").value = p.distributor_id;
-      document.getElementById("pAliases").value = p.aliases || "";
-      document.getElementById("pPrice").value = p.price == null ? "" : p.price;
-      editingProductId = p.id;
-      document.getElementById("saveProductBtn").textContent = "Update";
-    }
-
-    function clearProductForm() {
-      document.getElementById("pName").value = "";
-      document.getElementById("pAliases").value = "";
-      document.getElementById("pPrice").value = "";
-      editingProductId = null;
-      document.getElementById("saveProductBtn").textContent = "Add";
-    }
+    const editProduct = p => productDialog(p);
 
     async function deleteProduct(p) {
-      if (!confirm('Delete product "' + p.name + '"?')) return;
-      const ok = await apiMutate("/api/catalog/products/" + p.id, "DELETE");
-      if (!ok) return;
-      setStatus("Product deleted");
+      if (!await confirmDialog(`Ștergi „${p.name}”?`, "Un produs folosit pe o listă nu se poate șterge.", "Șterge", true)) return;
+      const result = await apiMutate("/api/catalog/products/" + p.id, "DELETE");
+      if (!result.ok) return;
+      toast("Produs șters.");
       loadProducts();
     }
 
-    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
-
-    // ===== Overview dashboard (stat cards + activity chart) =====
-    function statEl(value, label) {
-      const div = document.createElement("div");
-      div.className = "stat";
-      const b = document.createElement("b");
-      b.textContent = value;
-      const span = document.createElement("span");
-      span.textContent = label;
-      div.appendChild(b); div.appendChild(span);
-      return div;
-    }
-
-    function renderChart(activity) {
-      const box = document.getElementById("chartBox");
-      box.textContent = "";
-      const n = activity.length;
-      if (!n) { box.textContent = "Fără date încă."; return; }
-      const W = 860, H = 180, PAD_L = 30, PAD_B = 22, PAD_T = 10;
-      const plotW = W - PAD_L - 8, plotH = H - PAD_B - PAD_T;
-      const step = plotW / n;
-      const maxItems = Math.max(1, ...activity.map(a => a.items_added));
-      const maxLists = Math.max(1, ...activity.map(a => a.lists_completed));
-      const NS = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(NS, "svg");
-      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-      svg.setAttribute("width", "100%");
-      svg.style.minWidth = "600px";
-
-      // Bars: products registered per day (own scale).
-      activity.forEach((a, i) => {
-        const h = (a.items_added / maxItems) * plotH;
-        const rect = document.createElementNS(NS, "rect");
-        rect.setAttribute("x", PAD_L + i * step + 1);
-        rect.setAttribute("y", PAD_T + plotH - h);
-        rect.setAttribute("width", Math.max(2, step - 2));
-        rect.setAttribute("height", h);
-        rect.setAttribute("fill", "#DDA92B");
-        const title = document.createElementNS(NS, "title");
-        title.textContent = `${a.date}: ${a.items_added} produse, ${a.lists_completed} liste`;
-        rect.appendChild(title);
-        svg.appendChild(rect);
-      });
-
-      // Line: lists completed per day (own scale, so 1 list is still visible).
-      const points = activity.map((a, i) => {
-        const x = PAD_L + i * step + step / 2;
-        const y = PAD_T + plotH - (a.lists_completed / maxLists) * plotH;
-        return `${x},${y}`;
-      }).join(" ");
-      const line = document.createElementNS(NS, "polyline");
-      line.setAttribute("points", points);
-      line.setAttribute("fill", "none");
-      line.setAttribute("stroke", "#71805C");
-      line.setAttribute("stroke-width", "2");
-      svg.appendChild(line);
-      activity.forEach((a, i) => {
-        if (!a.lists_completed) return;
-        const dot = document.createElementNS(NS, "circle");
-        dot.setAttribute("cx", PAD_L + i * step + step / 2);
-        dot.setAttribute("cy", PAD_T + plotH - (a.lists_completed / maxLists) * plotH);
-        dot.setAttribute("r", "3");
-        dot.setAttribute("fill", "#71805C");
-        svg.appendChild(dot);
-      });
-
-      // Axis: max value on the left, a date label every ~week.
-      const axisMax = document.createElementNS(NS, "text");
-      axisMax.setAttribute("x", 2); axisMax.setAttribute("y", PAD_T + 10);
-      axisMax.setAttribute("font-size", "11"); axisMax.setAttribute("fill", "#6E6A60");
-      axisMax.textContent = maxItems;
-      svg.appendChild(axisMax);
-      activity.forEach((a, i) => {
-        if (i % 7 !== 0 && i !== n - 1) return;
-        const t = document.createElementNS(NS, "text");
-        t.setAttribute("x", PAD_L + i * step);
-        t.setAttribute("y", H - 6);
-        t.setAttribute("font-size", "10");
-        t.setAttribute("fill", "#6E6A60");
-        t.textContent = a.date.slice(5); // MM-DD
-        svg.appendChild(t);
-      });
-      box.appendChild(svg);
-    }
-
-    async function loadDashboard() {
+    async function importCsv(dryRun, file) {
+      const out = $("preview");
+      if (!file) { out.textContent = "Alege întâi un fișier CSV."; return null; }
+      const fd = new FormData();
+      fd.append("file", file);
       let r;
       try {
-        r = await fetch("/api/admin/dashboard", { headers: authHeaders() });
-      } catch (e) { document.getElementById("chartBox").textContent = "Network error"; return; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return; }
-      const d = await r.json();
-
-      const row = document.getElementById("statRow");
-      row.textContent = "";
-      row.appendChild(statEl(d.stores.length, "Magazine"));
-      row.appendChild(statEl(d.users_count, "Angajați"));
-      row.appendChild(statEl(d.products_count, "Produse"));
-      row.appendChild(statEl(d.distributors_count, "Distribuitori"));
-      row.appendChild(statEl(d.lists_completed_count, "Liste finalizate"));
-      row.appendChild(statEl(d.crashes_count, "Bug reports"));
-
-      const storeBox = document.getElementById("storeList");
-      storeBox.textContent = "";
-      if (d.stores.length) {
-        d.stores.forEach(s => {
-          const chip = document.createElement("span");
-          chip.className = "chip";
-          chip.textContent = `${s.name} · ${s.member_count} angajați`;
-          storeBox.appendChild(chip);
-        });
-      } else {
-        storeBox.textContent = "Niciun magazin (echipă) creat încă.";
-        storeBox.className = "muted";
+        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, { method: "POST", headers: authHeaders(), body: fd });
+      } catch (e) { clear(out).appendChild(el("span", { class: "err", text: "Eroare de rețea." })); return null; }
+      if (r.status === 401 || r.status === 403) { denied(r.status); return null; }
+      let body = {};
+      try { body = await r.json(); } catch (e) {}
+      if (!r.ok) {
+        clear(out).appendChild(el("span", { style: "color:var(--bad)", text: typeof body.detail === "string" ? body.detail : "Eroare " + r.status }));
+        return null;
       }
-
-      renderChart(d.activity);
+      return body;
     }
+
+    function renderImportSummary(b, done) {
+      const out = clear($("preview"));
+      out.appendChild(el("div", { text: `${done ? "importat" : "previzualizare"} · noi ${b.new} · actualizate ${b.updated} · neschimbate ${b.unchanged}` }));
+      if (b.errors.length) {
+        out.appendChild(el("div", { style: "color:var(--bad);margin-top:6px", text: `${b.errors.length} rânduri sărite: ` +
+          b.errors.map(e => `rândul ${e.line}: ${e.reason}`).join("; ") }));
+      }
+    }
+
+    async function previewImport() {
+      previewedFile = $("csvFile").files[0];
+      const b = await importCsv(true, previewedFile);
+      $("confirmBtn").disabled = !b;
+      if (b) renderImportSummary(b, false);
+    }
+
+    async function commitImport() {
+      const b = await importCsv(false, previewedFile);
+      if (!b) return;
+      renderImportSummary(b, true);
+      toast("Import încheiat.");
+      $("confirmBtn").disabled = true;
+      previewedFile = null;
+      loadProducts();
+    }
+
+    // ----- Utilizatori -----
+    let users = [];
+
+    async function loadUsers() {
+      emptyRow($("userRows"), 9, "Se încarcă…");
+      try { users = await getUsers(); }
+      catch (e) { if (e.message !== "denied") emptyRow($("userRows"), 9, "Utilizatorii nu s-au putut încărca.", true); return; }
+      const active = users.filter(u => u.is_active).length;
+      const loggedIn = users.filter(u => u.active_logins > 0).length;
+      const inTeams = users.filter(u => u.teams.length).length;
+      clear($("userKpis")).append(
+        kpi("Conturi", users.length),
+        kpi("Active", active, users.length - active ? countRo(users.length - active, "dezactivat", "dezactivate") : "niciunul dezactivat"),
+        kpi("Cu login activ", loggedIn),
+        kpi("În echipe", inTeams),
+      );
+      renderUsers();
+    }
+
+    function renderUsers() {
+      const q = ($("userSearch").value || "").trim().toLowerCase();
+      const filter = $("userFilter").value;
+      const tbody = clear($("userRows"));
+      const rows = sortRows("users", users.filter(u =>
+        (!q || [u.username, u.email, u.full_name, u.company].some(v => (v || "").toLowerCase().includes(q))) &&
+        (!filter || (filter === "active" && u.is_active) || (filter === "inactive" && !u.is_active) || (filter === "admin" && u.role === "ADMIN"))));
+      if (!rows.length) { emptyRow(tbody, 9, "Niciun utilizator găsit."); return; }
+      rows.forEach(u => {
+        const subtitle = [u.full_name, u.company].filter(Boolean).join(" · ");
+        const tr = el("tr", { class: "clickable", onclick: () => openUser(u) },
+          el("td", { class: "num muted", text: u.id }),
+          el("td", { class: "wrap" },
+            el("div", {}, el("span", { class: "mono", text: u.username }), u.role === "ADMIN" ? el("span", { class: "tag role", style: "margin-left:6px", text: "admin" }) : null),
+            subtitle ? el("div", { class: "sub", text: subtitle }) : null),
+          el("td", { class: "mono", text: u.email }),
+          el("td", {}, el("span", { class: "status " + (u.is_active ? "on" : "off"), text: u.is_active ? "activ" : "dezactivat" })),
+          el("td", { class: "wrap" }, u.teams.length ? u.teams.map(t => el("span", { class: "tag", text: t.role === "admin" ? `${t.name} ★` : t.name, title: t.role === "admin" ? "admin al echipei" : undefined })) : el("span", { class: "muted", text: "—" })),
+          el("td", { class: "num", text: fmtDate(u.created_at) }),
+          timeCell(u.last_activity_at),
+          el("td", { class: "num", text: num(u.active_logins) }),
+          el("td", { class: "actions" }, el("button", { class: "btn sm", type: "button", text: "Detalii", onclick: e => { e.stopPropagation(); openUser(u); } })));
+        tbody.appendChild(tr);
+      });
+    }
+    sortRenderers.users = renderUsers;
+
+    function openUser(u) {
+      const self = me && u.id === me.id;
+      $("drawerTitle").textContent = u.username;
+      const body = clear($("drawerBody"));
+      const row = (k, v) => [el("dt", { text: k }), el("dd", {}, v)];
+      body.appendChild(el("dl", { class: "kv" },
+        row("ID", String(u.id)),
+        row("Nume", u.full_name || "—"),
+        row("Email", u.email),
+        row("Firmă", u.company || "—"),
+        row("Rol", u.role === "ADMIN" ? "Admin" : "Utilizator"),
+        row("Stare", el("span", { class: "status " + (u.is_active ? "on" : "off"), text: u.is_active ? "activ" : "dezactivat" })),
+        row("Echipe", u.teams.length ? u.teams.map(t => el("span", { class: "tag", text: t.role === "admin" ? `${t.name} (admin)` : t.name })) : "—"),
+        row("Creat", fmtDateTime(u.created_at)),
+        row("Ultima activitate", u.last_activity_at ? `${fmtDateTime(u.last_activity_at)} (${relTime(u.last_activity_at)})` : "—"),
+        row("Login-uri active", String(u.active_logins)),
+      ));
+      const act = (label, text, button) => el("div", { class: "act" }, el("div", {}, el("b", { text: label }), el("p", { text })), button);
+      const lock = self ? { disabled: true, title: "Nu se aplică propriului cont." } : {};
+      body.appendChild(el("div", { class: "drawer-actions" },
+        el("div", { class: "label", text: "Acțiuni" }),
+        act("Deconectează peste tot", "Închide toate sesiunile. Va trebui să se autentifice din nou pe fiecare dispozitiv.",
+          el("button", { class: "btn sm", type: "button", text: "Deconectează", onclick: () => revokeUser(u), ...lock })),
+        u.is_active
+          ? act("Dezactivează", "Blochează autentificarea și închide sesiunile acum. Datele rămân.",
+              el("button", { class: "btn sm", type: "button", text: "Dezactivează", onclick: () => setUserActive(u, false), ...lock }))
+          : act("Reactivează", "Permite din nou autentificarea.",
+              el("button", { class: "btn sm primary", type: "button", text: "Reactivează", onclick: () => setUserActive(u, true) })),
+        act("Șterge contul", "Definitiv. Merge doar pentru conturi fără echipe, liste sau inventar.",
+          el("button", { class: "btn sm danger", type: "button", text: "Șterge", onclick: () => deleteUser(u), ...lock })),
+        self ? el("p", { class: "muted", style: "margin:0;font-size:12px", text: "Acesta este contul tău, așa că acțiunile sunt oprite." }) : null,
+      ));
+      if (!$("drawer").open) $("drawer").showModal();
+    }
+
+    async function afterUserChange(u, message, keepOpen) {
+      usersCache = null;
+      loaded.delete("activitate");
+      toast(message);
+      await loadUsers();
+      const fresh = users.find(x => x.id === u.id);
+      if (keepOpen && fresh && $("drawer").open) openUser(fresh);
+      else if ($("drawer").open) $("drawer").close();
+    }
+
+    async function revokeUser(u) {
+      if (!await confirmDialog(`Deconectezi ${u.username} peste tot?`, "Va trebui să se autentifice din nou pe fiecare dispozitiv.", "Deconectează")) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}/revoke-tokens`, "POST");
+      if (result.ok) afterUserChange(u, `Sesiunile lui ${u.username} au fost închise.`, true);
+    }
+
+    async function setUserActive(u, active) {
+      if (!active && !await confirmDialog(`Dezactivezi ${u.username}?`, "Nu se va mai putea autentifica, iar sesiunile lui se închid acum. Datele rămân.", "Dezactivează", true)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}/${active ? "reactivate" : "deactivate"}`, "POST");
+      if (result.ok) afterUserChange(u, active ? `Contul ${u.username} a fost reactivat.` : `Contul ${u.username} a fost dezactivat.`, true);
+    }
+
+    async function deleteUser(u) {
+      if (!await confirmDialog(`Ștergi definitiv ${u.username}?`, "Nu se poate anula.", "Șterge", true)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}`, "DELETE");
+      if (result.ok) afterUserChange(u, `Contul ${u.username} a fost șters.`, false);
+    }
+
+    // ----- Echipe -----
+    let teams = [];
+
+    async function loadTeams() {
+      loadingInto($("teamKpis"), $("teamCharts"));
+      emptyRow($("teamRows"), 5, "Se încarcă…");
+      let d;
+      try { d = await getDashboard(); }
+      catch (e) { failInto($("teamKpis"), $("teamCharts")); emptyRow($("teamRows"), 5, ""); return; }
+      teams = d.stores;
+      const members = teams.reduce((s, t) => s + t.member_count, 0);
+      clear($("teamKpis")).append(
+        kpi("Echipe înregistrate", teams.length, `+${num(sum(d.activity, "teams_created"))} în ${countRo(d.activity.length, "zi", "zile")}`, series(d.activity, "teams_created")),
+        kpi("Locuri în echipe", members),
+        kpi("Echipe cu comenzi", teams.filter(t => t.lists_completed > 0).length),
+      );
+      clear($("teamCharts")).append(barChart("Echipe noi pe zi", d.activity, "teams_created"));
+      renderTeams();
+    }
+
+    function renderTeams() {
+      const tbody = clear($("teamRows"));
+      if (!teams.length) { emptyRow(tbody, 5, "Nicio echipă creată încă."); return; }
+      sortRows("teams", teams).forEach(t => tbody.appendChild(el("tr", {},
+        el("td", { class: "num muted", text: t.id }),
+        el("td", { text: t.name }),
+        el("td", { class: "num", text: num(t.member_count) }),
+        el("td", { class: "num", text: fmtDate(t.created_at) }),
+        el("td", { class: "num", text: num(t.lists_completed) }))));
+    }
+    sortRenderers.teams = renderTeams;
+
+    // ----- Activitate -----
+    let recent = [];
+
+    async function loadActivity() {
+      loadingInto($("activityCharts"));
+      emptyRow($("recentRows"), 3, "Se încarcă…");
+      try {
+        const d = await getDashboard();
+        clear($("activityCharts")).append(
+          barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
+          barChart("Conturi noi pe zi", d.activity, "users_registered"),
+        );
+      } catch (e) { failInto($("activityCharts")); }
+      try {
+        recent = (await getUsers()).filter(u => u.last_activity_at);
+        renderRecent();
+      } catch (e) { if (e.message !== "denied") emptyRow($("recentRows"), 3, "Datele nu s-au putut încărca.", true); }
+    }
+
+    function renderRecent() {
+      const tbody = clear($("recentRows"));
+      if (!recent.length) { emptyRow(tbody, 3, "Nicio activitate înregistrată încă."); return; }
+      sortRows("recent", recent).slice(0, 25).forEach(u => tbody.appendChild(el("tr", {},
+        el("td", { class: "mono", text: u.username }),
+        timeCell(u.last_activity_at),
+        el("td", { class: "num", text: num(u.active_logins) }))));
+    }
+    sortRenderers.recent = renderRecent;
+
+    // ----- Comenzi -----
+    let orderOffset = 0, orderTotal = 0, orderRequest = 0;
+
+    async function loadOrders() {
+      loadingInto($("orderKpis"), $("orderCharts"));
+      try {
+        const d = await getDashboard();
+        const days = countRo(d.activity.length, "zi", "zile");
+        const orders = sum(d.activity, "lists_completed");
+        const avg = orders ? (sum(d.activity, "documents") / orders).toLocaleString("ro-RO", { maximumFractionDigits: 1 }) : "—";
+        clear($("orderKpis")).append(
+          kpi("Comenzi", d.lists_completed_count, `${num(orders)} în ${days}`, series(d.activity, "lists_completed")),
+          kpi("Documente", d.documents_count, `${num(sum(d.activity, "documents"))} în ${days}`, series(d.activity, "documents")),
+          kpi("Documente / comandă", avg, `media pe ${days}`),
+        );
+        clear($("orderCharts")).append(
+          barChart("Comenzi pe zi", d.activity, "lists_completed"),
+          barChart("Documente pe zi", d.activity, "documents"),
+        );
+      } catch (e) { failInto($("orderKpis"), $("orderCharts")); }
+      loadOrderPage();
+    }
+
+    async function loadOrderPage() {
+      const request = ++orderRequest;
+      emptyRow($("orderRows"), 7, "Se încarcă…");
+      let page;
+      try { page = await apiGet(`/api/admin/orders?limit=${ORDER_PAGE_SIZE}&offset=${orderOffset}`); }
+      catch (e) { if (request === orderRequest && e.message !== "denied") emptyRow($("orderRows"), 7, "Comenzile nu s-au putut încărca.", true); return; }
+      if (request !== orderRequest) return;
+      orderTotal = page.total;
+      const tbody = clear($("orderRows"));
+      if (!page.items.length) emptyRow(tbody, 7, "Nicio comandă încă.");
+      page.items.forEach(o => tbody.appendChild(el("tr", {},
+        el("td", { class: "num muted", text: o.session_id }),
+        el("td", { class: "num", title: relTime(o.completed_at), text: fmtDateTime(o.completed_at) }),
+        el("td", { text: o.name }),
+        el("td", {}, o.team_name ? el("span", { text: o.team_name }) : (o.owner_username ? [el("span", { class: "mono", text: o.owner_username }), el("span", { class: "muted", text: " · personal" })] : "—")),
+        el("td", { class: "num", text: num(o.item_lines) }),
+        el("td", { class: "num", text: num(o.total_quantity) }),
+        el("td", { class: "num", text: num(o.documents) }))));
+      const first = orderTotal ? orderOffset + 1 : 0;
+      const last = orderOffset + page.items.length;
+      $("orderPageInfo").textContent = `${num(first)}–${num(last)} din ${num(orderTotal)}`;
+      $("orderPrev").disabled = orderOffset === 0;
+      $("orderNext").disabled = last >= orderTotal;
+    }
+
+    function changeOrderPage(direction) {
+      const next = orderOffset + direction * ORDER_PAGE_SIZE;
+      if (next < 0 || next >= orderTotal) return;
+      orderOffset = next;
+      loadOrderPage();
+    }
+
+    // ----- Erori -----
+    let crashGroups = [];
+    const openCrashes = new Set();
 
     async function loadCrashes() {
-      const box = document.getElementById("crashList");
-      let r;
-      try {
-        r = await fetch("/api/admin/crashes/groups", { headers: authHeaders() });
-      } catch (e) { box.textContent = "Network error"; return; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return; }
-      const groups = await r.json();
-      box.textContent = "";
-      if (!groups.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
-      groups.forEach(group => {
-        const det = document.createElement("details");
-        det.style.marginBottom = "8px";
-        const sum = document.createElement("summary");
-        const firstLine = (group.reports[0]?.stacktrace || "").split("\n")[0];
-        sum.textContent = `impact ${group.triage_score} · ${group.count}× · ` +
-          `${group.affected_users} utilizatori · ${firstLine.slice(0, 80)} · ${group.signature.slice(0, 10)}`;
-        det.appendChild(sum);
-        const meta = document.createElement("p");
-        meta.className = "muted";
-        meta.textContent = `Prima: ${(group.first_seen || "").replace("T", " ").slice(0, 16)} · ` +
-          `Ultima: ${(group.last_seen || "").replace("T", " ").slice(0, 16)} · ` +
-          `Versiuni: ${group.app_versions.join(", ") || "?"} · Dispozitive: ${group.devices.join(", ") || "?"}`;
-        det.appendChild(meta);
-        group.reports.forEach(c => {
-          const instance = document.createElement("details");
-          const instanceSummary = document.createElement("summary");
-          instanceSummary.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
-            `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"}`;
-          const pre = document.createElement("pre");
-          pre.style.whiteSpace = "pre-wrap";
-          pre.style.fontSize = "12px";
-          pre.textContent = c.stacktrace;
-          instance.appendChild(instanceSummary);
-          instance.appendChild(pre);
-          det.appendChild(instance);
-        });
-        box.appendChild(det);
-      });
+      emptyRow($("crashRows"), 8, "Se încarcă…");
+      try { crashGroups = await apiGet("/api/admin/crashes/groups"); }
+      catch (e) { if (e.message !== "denied") emptyRow($("crashRows"), 8, "Erorile nu s-au putut încărca.", true); return; }
+      renderCrashes();
     }
 
-    if (token) { showApp(true); loadDashboard(); loadProducts(); loadCrashes(); } else { showApp(false); }
+    function renderCrashes() {
+      const tbody = clear($("crashRows"));
+      if (!crashGroups.length) { emptyRow(tbody, 8, "Niciun crash raportat."); return; }
+      sortRows("crashes", crashGroups).forEach(group => {
+        const isOpen = openCrashes.has(group.signature);
+        const firstLine = (group.reports[0]?.stacktrace || "").split("\n")[0];
+        const toggle = () => {
+          if (openCrashes.has(group.signature)) openCrashes.delete(group.signature);
+          else openCrashes.add(group.signature);
+          renderCrashes();
+        };
+        tbody.appendChild(el("tr", { class: "clickable", onclick: toggle },
+          el("td", {}, el("button", { class: "btn ghost sm expander", type: "button", "aria-expanded": String(isOpen), "aria-label": "Detalii", text: isOpen ? "▾" : "▸", onclick: e => { e.stopPropagation(); toggle(); } })),
+          el("td", { class: "num", text: num(group.triage_score) }),
+          el("td", { class: "num", text: num(group.count) }),
+          el("td", { class: "num", text: num(group.affected_users) }),
+          el("td", { class: "mono", style: "max-width:420px;overflow:hidden;text-overflow:ellipsis", title: firstLine, text: firstLine }),
+          el("td", { class: "mono muted", text: group.app_versions.join(", ") || "?" }),
+          timeCell(group.last_seen),
+          el("td", { class: "mono muted", text: group.signature.slice(0, 10) })));
+        if (!isOpen) return;
+        const detail = el("td", { colspan: 8, class: "wrap", style: "background:var(--surface-2)" },
+          el("div", { class: "mono muted", style: "font-size:12px;margin-bottom:8px",
+            text: `prima ${fmtDateTime(group.first_seen)} · ultima ${fmtDateTime(group.last_seen)} · dispozitive: ${group.devices.join(", ") || "?"}` }));
+        group.reports.forEach((c, i) => {
+          detail.appendChild(el("details", { open: i === 0, style: "margin-bottom:6px" },
+            el("summary", { class: "mono", style: "font-size:12px;cursor:pointer",
+              text: `${fmtDateTime(c.created_at)} · ${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"}` }),
+            el("pre", { style: "margin-top:6px", text: c.stacktrace })));
+        });
+        tbody.appendChild(el("tr", {}, detail));
+      });
+    }
+    sortRenderers.crashes = renderCrashes;
+
+    // ----- wiring -----
+    $("loginForm").addEventListener("submit", login);
+    $("logoutBtn").addEventListener("click", logout);
+    $("themeBtn").addEventListener("click", () => {
+      const next = currentTheme() === "dark" ? "light" : "dark";
+      applyTheme(next);
+      storageSet(localStorage, "lm_theme", next);
+    });
+    $("drawerClose").addEventListener("click", () => $("drawer").close());
+    $("drawer").addEventListener("click", e => { if (e.target === $("drawer")) $("drawer").close(); });
+    document.querySelectorAll("[data-refresh]").forEach(b => b.addEventListener("click", () => refresh(b.dataset.refresh)));
+    document.querySelectorAll("#catalogTabs button").forEach(b => b.addEventListener("click", () => showCatalogTab(b.dataset.tab)));
+    $("search").addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { catalogOffset = 0; loadProducts(); }, 250);
+    });
+    $("distFilter").addEventListener("change", () => { catalogOffset = 0; loadProducts(); });
+    $("prevPage").addEventListener("click", () => changePage(-1));
+    $("nextPage").addEventListener("click", () => changePage(1));
+    $("newProductBtn").addEventListener("click", () => productDialog(null));
+    $("addDistBtn").addEventListener("click", createDistributor);
+    $("distName").addEventListener("keydown", e => { if (e.key === "Enter") createDistributor(); });
+    $("previewBtn").addEventListener("click", previewImport);
+    $("confirmBtn").addEventListener("click", commitImport);
+    $("userSearch").addEventListener("input", renderUsers);
+    $("userFilter").addEventListener("change", renderUsers);
+    $("orderPrev").addEventListener("click", () => changeOrderPage(-1));
+    $("orderNext").addEventListener("click", () => changeOrderPage(1));
+    window.addEventListener("hashchange", route);
+
+    // Keyboard: 1–7 jump to a section, "/" focuses the section's search.
+    document.addEventListener("keydown", e => {
+      if (!me || e.ctrlKey || e.metaKey || e.altKey) return;
+      const typing = /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName);
+      if (typing || $("dlg").open || $("drawer").open) return;
+      if (e.key >= "1" && e.key <= "7") { location.hash = "#" + SECTIONS[Number(e.key) - 1]; }
+      else if (e.key === "/") {
+        const search = document.querySelector(`section[data-section="${currentSection()}"] [data-search]`);
+        if (search) { e.preventDefault(); search.focus(); }
+      }
+    });
+
+    renderPeriodControls();
+    if (token) start(); else showApp(false);
   </script>
 </body>
 </html>
