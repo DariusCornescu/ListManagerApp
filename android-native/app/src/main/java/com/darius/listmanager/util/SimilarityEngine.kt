@@ -1,6 +1,15 @@
 package com.darius.listmanager.util
 
 object SimilarityEngine {
+    // Compiled once: phoneticKey runs for every product and alias on each voice match.
+    private val VOWELS = Regex("[aeiou]+")
+    private val C_OR_K = Regex("c|k")
+    private val S_OR_Z = Regex("s|z")
+    private val D_OR_T = Regex("d|t")
+    private val B_OR_P = Regex("b|p")
+    private val G_OR_J = Regex("g|j")
+    private val REPEATED_LETTER = Regex("([A-Z])\\1+")
+
     fun levenshteinDistance(s1: String, s2: String): Int {
         val len1 = s1.length
         val len2 = s2.length
@@ -88,13 +97,13 @@ object SimilarityEngine {
         val normalized = TextNorm.normalize(text)
 
         return normalized
-            .replace(Regex("[aeiou]+"), "A") // All vowels to A
-            .replace(Regex("c|k"), "C")       // C and K same
-            .replace(Regex("s|z"), "S")       // S and Z same
-            .replace(Regex("d|t"), "T")       // D and T similar
-            .replace(Regex("b|p"), "P")       // B and P similar
-            .replace(Regex("g|j"), "G")       // G and J similar
-            .replace(Regex("([A-Z])\\1+"), "$1") // Remove duplicates
+            .replace(VOWELS, "A") // All vowels to A
+            .replace(C_OR_K, "C")       // C and K same
+            .replace(S_OR_Z, "S")       // S and Z same
+            .replace(D_OR_T, "T")       // D and T similar
+            .replace(B_OR_P, "P")       // B and P similar
+            .replace(G_OR_J, "G")       // G and J similar
+            .replace(REPEATED_LETTER, "$1") // Remove duplicates
     }
 
     fun phoneticSimilarity(s1: String, s2: String): Double {

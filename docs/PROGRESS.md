@@ -5,19 +5,38 @@ Newest entries on top.
 
 ---
 
-## 2026-11-07 - Android: Back closes the open menu
+## 2026-11-07 - Android dictation no longer freezes the app
+
+**Cause, from the phone's ANR report (Galaxy S25, Android 17, preview build)**
+- A two-word phrase froze the app for about 17 seconds. A touch during that time brought up Android's
+  "isn't responding" dialog. It was an ANR, not a crash.
+- Voice matching ran on the main thread. Segmentation ranks the whole catalog (3,196 products) once per
+  word window, and every product compiled about 100 regular expressions per ranking.
 
 **Changed**
-- Back with the menu open closes the menu. Before, it left the screen behind the menu, and on Home it
-  left the app. Seen on the phone on 2026-11-06.
-- The handler is composed after `NavGraph` in `ListManagerApp.kt`, so it answers Back before navigation.
-  It is off while the menu is closed.
-- This fix was pushed to `feat/android-design-finish` after PR 33 had merged, so it lands here instead.
+- `ResolveSpokenProductUseCase` runs on `Dispatchers.Default`, so Home and "De rezolvat" stay
+  responsive while it works. A new test fails if the work starts on the caller's thread.
+- `TextNorm` and `SimilarityEngine` compile their regular expressions once. Matching is unchanged.
+  Three catalog-wide rankings went from about 1,000 ms to about 400 ms on a desktop JVM, on a synthetic
+  3,196-product catalog.
 
-**Checked**
-- A new test fails without the fix: an open menu closes on Back, nothing behind it gets that Back, and
-  the next Back reaches the screen.
-- Not yet checked on the phone.
+**Checked on the phone, preview build from this branch, against production**
+- The same phrase took 6.8 s from "Processing spoken result" to "Segmented utterance", against about
+  17 s before. The suggestion appeared 7.5 s after the phrase ended.
+- Matching ran on worker threads. The main thread kept drawing frames, at most 32 ms apart, and no ANR
+  was logged. No touch was logged during the wait, so the dialog case itself was not re-tried.
+- Unit tests: 428 passing.
+
+**Found, not fixed**
+- Inventory dictation still ranks the whole catalog on the main thread (`InventoryViewModel`), so it
+  can freeze the same way.
+- Segmentation still ranks the whole catalog for every word window, so a phrase with more words waits
+  much longer. A preview build is also debuggable, so its timings are not those of a release build.
+
+**Next**
+- 6.8 s is still a long wait. Segmentation needs to score fewer products per word window, for example
+  only the FTS candidates, checked against `VoiceBenchmark` because it can change matches.
+- Move inventory dictation off the main thread the same way.
 
 ---
 
