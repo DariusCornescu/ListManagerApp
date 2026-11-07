@@ -57,6 +57,10 @@ object WeightSweep {
                 baseline.copy(numberSeq = baseline.numberSeq * factor),
             )
             candidates += WeightCandidate(
+                "size:$factor",
+                baseline.copy(size = baseline.size * factor),
+            )
+            candidates += WeightCandidate(
                 "embedding:$factor",
                 baseline.copy(embedding = baseline.embedding * factor),
             )

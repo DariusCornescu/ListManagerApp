@@ -9,7 +9,7 @@ class WeightSweepTest {
     fun generatesCandidatesForEveryScoringWeight() {
         val labels = WeightSweep.oneAtATimeCandidates().map { it.label }
 
-        assertEquals(17, labels.size)
+        assertEquals(19, labels.size)
         listOf(
             "levenshtein",
             "jaccard",
@@ -19,6 +19,7 @@ class WeightSweepTest {
             "contains",
             "numberSeq",
             "embedding",
+            "size",
         ).forEach { field ->
             assertEquals(2, labels.count { it.startsWith("$field:") })
         }
@@ -37,7 +38,7 @@ class WeightSweepTest {
                     "mrr=${"%.4f".format(result.metrics.mrr)}"
             )
         }
-        assertEquals(17, results.size)
+        assertEquals(19, results.size)
         assertTrue(
             results.zipWithNext().all { (left, right) ->
                 left.metrics.top1 > right.metrics.top1 ||

@@ -13,11 +13,16 @@ data class RankedProduct(
  * Ranking used to recompute these for every product on every spoken phrase.
  */
 class PreparedText internal constructor(internal val text: String) {
-    internal val tokens: Set<String> = TextNorm.tokenize(text).toSet()
+    // Numbers are compared without their decimal dot: the recognizer often loses it
+    // ("26 * 175" for 26*1.75).
+    internal val tokens: Set<String> = TextNorm.tokenize(text).map { it.replace(".", "") }.toSet()
     internal val phoneticKey: String = SimilarityEngine.phoneticKey(text)
     internal val bigrams: Set<String> = SimilarityEngine.bigrams(text)
     internal val hasDigits: Boolean = TextNorm.containsDigits(text)
-    internal val numbers: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) { TextNorm.extractNumbers(text) }
+    internal val numbers: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        TextNorm.extractNumbers(text).map { it.replace(".", "") }
+    }
+    internal val sizes: Set<String> = if (hasDigits) TextNorm.sizes(text) else emptySet()
 }
 
 class PreparedProduct internal constructor(val product: ProductEntity) {
@@ -126,6 +131,7 @@ object ProductRanker {
         val numberSim: Double,
         val maxAliasScore: Double,
         val embeddingContribution: Double,
+        val sizeAdjustment: Double,
         val total: Double,
     )
 
@@ -191,6 +197,11 @@ object ProductRanker {
         // Embedding contribution (0 when no cached vector / no model → regression-safe)
         val embeddingContribution = (embeddingSim * weights.embedding).coerceIn(0.0, 1.0)
 
+        // A size said aloud is strong evidence: the same size in the name raises the product.
+        // A different size does not lower it, because the recognizer often mishears a digit
+        // and the nearest size is then still the best guess.
+        val sizeAdjustment = sizeAgreement(spoken, name) * weights.size / 7.0
+
         if (floor != null) {
             var ceiling = maxOf(
                 nameScore(
@@ -202,7 +213,7 @@ object ProductRanker {
                 embeddingContribution,
             )
             for (prepared in product.aliases) {
-                if (ceiling > floor) break
+                if (ceiling + sizeAdjustment > floor) break
                 ceiling = maxOf(
                     ceiling,
                     aliasScore(
@@ -215,7 +226,7 @@ object ProductRanker {
                     ),
                 )
             }
-            if (ceiling <= floor) return null
+            if ((ceiling + sizeAdjustment).coerceAtLeast(0.0) <= floor) return null
         }
 
         // Calculate scores against product name
@@ -246,13 +257,17 @@ object ProductRanker {
 
         // Take the best of fuzzy name score, alias score, or embedding similarity
         val aliasMax = maxAliasScore ?: 0.0
-        val finalScore = maxOf(nameTotal, aliasMax, embeddingContribution)
+        val finalScore = (maxOf(nameTotal, aliasMax, embeddingContribution) + sizeAdjustment).coerceAtLeast(0.0)
 
         return Components(
             nameLevenshtein, nameJaccard, nameToken, namePhonetic, namePrefix, containsBonus,
-            numberSim, aliasMax, embeddingContribution, finalScore,
+            numberSim, aliasMax, embeddingContribution, sizeAdjustment, finalScore,
         )
     }
+
+    /** 1 when the phrase and the name share a size, else 0. */
+    private fun sizeAgreement(spoken: PreparedText, name: PreparedText): Double =
+        if (spoken.sizes.any { it in name.sizes }) 1.0 else 0.0
 
     private fun calculateScore(
         spoken: PreparedText,
@@ -273,6 +288,7 @@ object ProductRanker {
                 "number" to c.numberSim,
                 "aliasMax" to c.maxAliasScore,
                 "embedding" to c.embeddingContribution,
+                "size" to c.sizeAdjustment,
                 "final" to c.total
             )
         )
@@ -292,5 +308,6 @@ data class ScoringWeights(
     val prefix: Double = 0.7,       // Prefix matching
     val containsBonus: Double = 2.0,// Contains/exact match bonus - highest
     val numberSeq: Double = 1.0,    // Number sequence matching
-    val embedding: Double = 1.0     // Semantic embedding similarity
+    val embedding: Double = 1.0,    // Semantic embedding similarity
+    val size: Double = 2.0          // The size said is the size in the name
 )

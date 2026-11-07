@@ -68,6 +68,11 @@ object QueryVariants {
             if (token.length >= 3) {
                 variants.add("$token*") // Prefix match
             }
+            // Other endings of the same word: "camera" also finds "camere"
+            val stem = TextNorm.wordStem(token)
+            if (stem != token) {
+                variants.add("$stem*")
+            }
         }
 
         return variants.filter { it.isNotBlank() }.distinct()
