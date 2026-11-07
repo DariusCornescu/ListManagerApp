@@ -51,6 +51,7 @@ EXPECTED_HTTP_ROUTES = {
     ("GET", "/api/admin/crashes/groups"),
     ("GET", "/api/admin/dashboard"),
     ("GET", "/api/admin/orders"),
+    ("GET", "/api/admin/auth-events"),
     ("GET", "/api/admin/users"),
     ("GET", "/api/admin/users/details"),
     ("DELETE", "/api/admin/users/{user_id}"),

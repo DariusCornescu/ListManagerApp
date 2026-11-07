@@ -23,6 +23,9 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = "sqlite:///./listmanager.db"
 
+    # Sign-in and sign-out events are personal data; older rows are deleted.
+    AUTH_EVENT_RETENTION_DAYS: int = 90
+
     RATE_LIMIT_ENABLED: bool = True
 
     # Comma-separated browser origins allowed by CORS, e.g.

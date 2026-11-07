@@ -8,9 +8,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Upl
 from fastapi.responses import HTMLResponse
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
-from .. import models, schemas
+from .. import auth_events, models, schemas
 from ..auth import get_current_admin_user, revoke_all_user_tokens
 from ..config import settings
 from ..database import get_db
@@ -159,17 +159,22 @@ def get_admin_dashboard(
         )
     ]
 
-    def count_by_day(timestamp, counted=None):
+    def count_by_day(timestamp, counted=None, *conditions):
         # func.date() returns 'YYYY-MM-DD' text on SQLite but a date object on
         # Postgres — normalize keys through str() so both backends bucket alike.
         day = func.date(timestamp)
         rows = (
             db.query(day, func.count() if counted is None else func.count(counted.distinct()))
-            .filter(timestamp.isnot(None), day >= since.isoformat())
+            .filter(timestamp.isnot(None), day >= since.isoformat(), *conditions)
             .group_by(day)
             .all()
         )
         return {str(row_day)[:10]: count for row_day, count in rows}
+
+    def auth_events_by_day(*event_types):
+        return count_by_day(
+            models.AuthEvent.created_at, None, models.AuthEvent.event_type.in_(event_types)
+        )
 
     # One PDF is made per distributor on a completed list.
     completed_documents = (
@@ -192,6 +197,9 @@ def get_admin_dashboard(
     active_by_day = count_by_day(models.SessionOp.created_at, models.SessionOp.actor_user_id)
     crashes_by_day = count_by_day(models.CrashReport.created_at)
     documents_by_day = count_by_day(completed_documents.c.completed_at)
+    sign_ins_by_day = auth_events_by_day(auth_events.LOGIN)
+    failed_by_day = auth_events_by_day(auth_events.LOGIN_FAILED)
+    sign_outs_by_day = auth_events_by_day(auth_events.LOGOUT, auth_events.LOGOUT_ALL)
 
     activity = []
     for offset in range(days):
@@ -206,6 +214,9 @@ def get_admin_dashboard(
                 active_users=active_by_day.get(key, 0),
                 crash_reports=crashes_by_day.get(key, 0),
                 documents=documents_by_day.get(key, 0),
+                sign_ins=sign_ins_by_day.get(key, 0),
+                failed_sign_ins=failed_by_day.get(key, 0),
+                sign_outs=sign_outs_by_day.get(key, 0),
             )
         )
 
@@ -224,6 +235,52 @@ def get_admin_dashboard(
         .distinct()
         .count(),
         activity=activity,
+    )
+
+
+@router.get("/api/admin/auth-events", response_model=schemas.AuthEventPageDTO)
+def list_auth_events(
+    user_id: Optional[int] = None,
+    event_type: Optional[str] = Query(default=None, max_length=30),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    current_user: models.User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db),
+):
+    """Sign-in, sign-out and admin account events, newest first."""
+    subject = aliased(models.User)
+    actor = aliased(models.User)
+    query = db.query(models.AuthEvent)
+    if user_id is not None:
+        query = query.filter(models.AuthEvent.user_id == user_id)
+    if event_type:
+        query = query.filter(models.AuthEvent.event_type == event_type)
+    rows = (
+        query.outerjoin(subject, subject.id == models.AuthEvent.user_id)
+        .outerjoin(actor, actor.id == models.AuthEvent.actor_user_id)
+        .with_entities(models.AuthEvent, subject.username, actor.username)
+        .order_by(models.AuthEvent.created_at.desc(), models.AuthEvent.id.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
+    return schemas.AuthEventPageDTO(
+        items=[
+            schemas.AuthEventDTO(
+                id=event.id,
+                event_type=event.event_type,
+                reason=event.reason,
+                client=event.client,
+                created_at=event.created_at,
+                user_id=event.user_id,
+                username=username,
+                actor_username=actor_username,
+            )
+            for event, username, actor_username in rows
+        ],
+        total=query.count(),
+        limit=limit,
+        offset=offset,
     )
 
 
@@ -327,6 +384,15 @@ def get_user_details(
         .group_by(models.SessionOp.actor_user_id)
         .all()
     )
+    last_login = dict(
+        db.query(models.AuthEvent.user_id, func.max(models.AuthEvent.created_at))
+        .filter(
+            models.AuthEvent.user_id.isnot(None),
+            models.AuthEvent.event_type == auth_events.LOGIN,
+        )
+        .group_by(models.AuthEvent.user_id)
+        .all()
+    )
 
     # A login is one token family, and only its newest token is still unused.
     now = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -356,6 +422,7 @@ def get_user_details(
             created_at=user.created_at,
             teams=teams_by_user.get(user.id, []),
             last_activity_at=last_activity.get(user.id),
+            last_login_at=last_login.get(user.id),
             active_logins=active_logins.get(user.id, 0),
         )
         for user in db.query(models.User).order_by(func.lower(models.User.username)).all()
@@ -365,6 +432,7 @@ def get_user_details(
 @router.post("/api/admin/users/{user_id}/revoke-tokens")
 async def revoke_user_tokens(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -373,6 +441,9 @@ async def revoke_user_tokens(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     revoke_all_user_tokens(user, db)
+    auth_events.record(
+        db, auth_events.ADMIN_REVOKE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     await manager.close_user(user_id)
     return {"message": "Tokens revoked", "user_id": user_id}
@@ -381,6 +452,7 @@ async def revoke_user_tokens(
 @router.post("/api/admin/users/{user_id}/deactivate")
 async def deactivate_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -392,6 +464,9 @@ async def deactivate_user(
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = False
     revoke_all_user_tokens(user, db)
+    auth_events.record(
+        db, auth_events.ADMIN_DEACTIVATE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     await manager.close_user(user_id)
     return {"message": "User deactivated", "user_id": user_id, "is_active": False}
@@ -400,6 +475,7 @@ async def deactivate_user(
 @router.post("/api/admin/users/{user_id}/reactivate")
 def reactivate_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -408,6 +484,9 @@ def reactivate_user(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     user.is_active = True
+    auth_events.record(
+        db, auth_events.ADMIN_REACTIVATE, user_id=user_id, actor_user_id=current_user.id, request=request
+    )
     db.commit()
     return {"message": "User reactivated", "user_id": user_id, "is_active": True}
 

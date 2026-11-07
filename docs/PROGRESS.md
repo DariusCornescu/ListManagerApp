@@ -5,36 +5,34 @@ Newest entries on top.
 
 ---
 
-## 2026-11-07 - Android dictation: faster matching, and sizes understood
+## 2026-11-08 - Admin phase 2A: sign-in and sign-out events (feat/admin-auth-events)
 
 **Changed**
-- **Speed:** segmentation scores each word window against a catalog prepared once per phrase, and only
-  needs the best score, so products that cannot beat it skip the edit distances. Scores are unchanged
-  bit for bit on 469 phrases against a local catalog export.
-- **Sizes are not counts:** "20 * 175", "4 x 40", "6 pe 100" and "3,5/35" become one size token, joined
-  to the product before it when the pair still matches. A comma between digits is a decimal. Before,
-  "175" was read as a count and 175 screws were added without asking.
-- **Sizes match:** a product whose name has the size said gets a bonus, compared without the decimal dot
-  the recognizer often drops ("26 * 175" finds 26*1.75). A different size does not lower a product.
-- **Word endings:** catalog search also tries the word without its ending, so "cameră" finds "CAMERE".
-- **Ties are asked about:** a product is added without asking only when it leads the next by 0.05, so
-  supplier variants with the same name are offered instead of guessed.
-- **Catalog search:** a prefix term such as `3.5x35*` narrowed the whole FTS query to products
-  containing "5x35". Prefix terms are now only added for plain words.
+- **Schema:** new table `auth_events` (migration `34d3f798632e`, additive). Columns: account,
+  acting admin, event type, failure reason and client kind. Both user columns are `SET NULL`
+  on delete. No IP address, typed username or token is stored.
+- **Recorded:** login, failed login (`wrong_password`, `unknown_user`, `inactive`), logout,
+  logout everywhere, password change, refresh token reuse (`replayed`, `revoked`), and the
+  admin revoke, deactivate and reactivate actions. Plain refreshes are not recorded. The client
+  (Android, Flutter, web, other) is read from the User-Agent, and the header is not kept.
+- **Retention:** 90 days (`AUTH_EVENT_RETENTION_DAYS`). Older rows are purged at startup and at
+  most once a day on write, since the Render service has no scheduled jobs.
+- **Admin:** new admin-only route `GET /api/admin/auth-events`. The dashboard gains
+  `sign_ins`, `failed_sign_ins` and `sign_outs` per day, and user details gain
+  `last_login_at`. In the page, Activitate shows the charts and an events table, and each
+  user's side panel shows their last login and 20 most recent events.
+- **Mobile clients:** unchanged. No existing response changed shape.
 
-**Checked on a Galaxy S25 against production, preview build**
-- A 7-word phrase took 46.5 s to segment before. A 10-word phrase then took 4.3 s with the faster
-  scoring, and the same 8-word phrase takes 1.4 s now, 2.3 s until the last product is added.
-- A phrase with a detergent, an inner tube with its size and a screw with its size: the detergent and
-  the right inner tube were added, and the screw asked "Ai vrut să zici?" with a 3.5*35 screw first.
-  No ANR.
-- Unit tests: 448 passing. The synthetic benchmark is unchanged: 94.4% top-1, no wrong auto-adds.
+**Limits, also shown on the page**
+- An offline logout and a login that simply expires never reach the server.
+- History starts at deploy; nothing older is rebuilt.
 
-**Found, not fixed**
-- "Șuruburi 4x40mm 100buc" with the alias "surub" looks like demo seed data in the real catalog. Its
-  alias makes it a strong match for almost any phrase with "șurub".
-- Brand names the recognizer spells by sound are not matched.
-- Inventory dictation still ranks on the main thread (`InventoryViewModel`).
+**Next**
+- 2B crash report purge after 180 days. The first deploy deletes older production reports.
+- 2C ANRs and native crashes from `ApplicationExitInfo`.
+- 2D voice quality, which needs its own plan.
+- Open question kept from phase 1: there is no privacy notice for users, and sign-ins are now
+  recorded.
 
 ---
 
