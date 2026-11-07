@@ -252,3 +252,22 @@ def test_dashboard_and_orders_report_on_postgres(pg_client, pg_session, admin_he
     assert details.status_code == 200
     row = next(u for u in details.json() if u["username"] == "pg-buyer")
     assert row["last_activity_at"] is not None
+
+
+def test_auth_events_survive_account_delete_on_postgres(pg_client, pg_session, admin_headers):
+    user = _user(pg_session, "pg-leaver")
+    user_id = user.id
+    login = pg_client.post(
+        "/api/auth/login", json={"username": "pg-leaver", "password": "test-only-password"}
+    )
+    assert login.status_code == 200
+
+    assert pg_client.delete(f"/api/admin/users/{user_id}", headers=admin_headers).status_code == 200
+
+    pg_session.expire_all()
+    events = pg_session.query(models.AuthEvent).filter(models.AuthEvent.event_type == "login").all()
+    assert len(events) == 1
+    assert events[0].user_id is None  # SET NULL kept the row, not the person
+
+    today = pg_client.get("/api/admin/dashboard", headers=admin_headers).json()["activity"][-1]
+    assert today["sign_ins"] == 1

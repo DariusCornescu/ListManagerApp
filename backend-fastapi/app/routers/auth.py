@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import auth_events, models, schemas
 from ..auth import (
     create_user_access_token,
     get_current_user,
@@ -88,6 +88,9 @@ def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends
     ).first()
 
     if not user:
+        # The typed username is not stored: it may be someone's password.
+        auth_events.record(db, auth_events.LOGIN_FAILED, reason="unknown_user", request=request)
+        db.commit()
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password"
@@ -103,6 +106,10 @@ def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends
     
     # Verify password
     if not verify_password(login_data.password, user.hashed_password):
+        auth_events.record(
+            db, auth_events.LOGIN_FAILED, user_id=user.id, reason="wrong_password", request=request
+        )
+        db.commit()
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password"
@@ -110,12 +117,17 @@ def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends
 
     # Check if user is active
     if not user.is_active:
+        auth_events.record(
+            db, auth_events.LOGIN_FAILED, user_id=user.id, reason="inactive", request=request
+        )
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail="User account is inactive"
         )
 
     refresh_token = issue_refresh_token(user, db)
+    auth_events.record(db, auth_events.LOGIN, user_id=user.id, request=request)
     db.commit()
 
     return {
@@ -129,7 +141,7 @@ def login(request: Request, login_data: schemas.UserLogin, db: Session = Depends
 @limiter.limit("30/minute")
 def refresh(request: Request, data: schemas.RefreshRequest, db: Session = Depends(get_db)):
     """Exchange a refresh token for a new access + refresh pair (single use)."""
-    user, refresh_token = rotate_refresh_token(data.refresh_token, db)
+    user, refresh_token = rotate_refresh_token(data.refresh_token, db, request=request)
     db.commit()
 
     return {
@@ -144,18 +156,22 @@ def refresh(request: Request, data: schemas.RefreshRequest, db: Session = Depend
 def logout(request: Request, data: schemas.RefreshRequest, db: Session = Depends(get_db)):
     """Revoke this device's login. Works without a valid access token, so a device
     holding an expired one can still log out; unknown tokens succeed silently."""
-    revoke_refresh_token(data.refresh_token, db)
+    user_id = revoke_refresh_token(data.refresh_token, db)
+    if user_id is not None:
+        auth_events.record(db, auth_events.LOGOUT, user_id=user_id, request=request)
     db.commit()
     return {"message": "Logged out"}
 
 
 @router.post("/api/auth/logout-all")
 async def logout_all(
+    request: Request,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Revoke every token of the caller, on all devices, including this one."""
     revoke_all_user_tokens(current_user, db)
+    auth_events.record(db, auth_events.LOGOUT_ALL, user_id=current_user.id, request=request)
     db.commit()
     await manager.close_user(current_user.id)
     return {"message": "All sessions revoked"}
@@ -172,6 +188,7 @@ def get_current_user_info(current_user: models.User = Depends(get_current_user))
 
 @router.put("/api/auth/me", response_model=schemas.UserDTO)
 async def update_current_user_info(
+    request: Request,
     update_data: schemas.UserUpdate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -209,6 +226,9 @@ async def update_current_user_info(
         current_user.hashed_password = get_password_hash(update_data.password)
         # A changed password ends every login, including this device's.
         revoke_all_user_tokens(current_user, db)
+        auth_events.record(
+            db, auth_events.PASSWORD_CHANGED, user_id=current_user.id, request=request
+        )
 
     db.commit()
     db.refresh(current_user)

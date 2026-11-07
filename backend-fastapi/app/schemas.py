@@ -211,6 +211,10 @@ class ActivityDayDTO(BaseModel):
     crash_reports: int = 0
     # One per distributor on each list completed that day, as one PDF is.
     documents: int = 0
+    sign_ins: int = 0
+    failed_sign_ins: int = 0
+    # Logout and logout-everywhere; expired logins are not counted.
+    sign_outs: int = 0
 
 
 class AdminDashboardDTO(BaseModel):
@@ -244,7 +248,26 @@ class AdminUserDetailDTO(BaseModel):
     teams: list[AdminUserTeamDTO]
     # Last list change on the server, not the last time the app was opened.
     last_activity_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
     active_logins: int
+
+
+class AuthEventDTO(BaseModel):
+    id: int
+    event_type: str
+    reason: Optional[str] = None
+    client: str
+    created_at: datetime
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    actor_username: Optional[str] = None
+
+
+class AuthEventPageDTO(BaseModel):
+    items: list[AuthEventDTO]
+    total: int
+    limit: int
+    offset: int
 
 
 class AdminOrderDTO(BaseModel):

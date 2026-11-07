@@ -5,6 +5,37 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Admin phase 2A: sign-in and sign-out events (feat/admin-auth-events)
+
+**Changed**
+- **Schema:** new table `auth_events` (migration `34d3f798632e`, additive). Columns: account,
+  acting admin, event type, failure reason and client kind. Both user columns are `SET NULL`
+  on delete. No IP address, typed username or token is stored.
+- **Recorded:** login, failed login (`wrong_password`, `unknown_user`, `inactive`), logout,
+  logout everywhere, password change, refresh token reuse (`replayed`, `revoked`), and the
+  admin revoke, deactivate and reactivate actions. Plain refreshes are not recorded. The client
+  (Android, Flutter, web, other) is read from the User-Agent, and the header is not kept.
+- **Retention:** 90 days (`AUTH_EVENT_RETENTION_DAYS`). Older rows are purged at startup and at
+  most once a day on write, since the Render service has no scheduled jobs.
+- **Admin:** new admin-only route `GET /api/admin/auth-events`. The dashboard gains
+  `sign_ins`, `failed_sign_ins` and `sign_outs` per day, and user details gain
+  `last_login_at`. In the page, Activitate shows the charts and an events table, and each
+  user's side panel shows their last login and 20 most recent events.
+- **Mobile clients:** unchanged. No existing response changed shape.
+
+**Limits, also shown on the page**
+- An offline logout and a login that simply expires never reach the server.
+- History starts at deploy; nothing older is rebuilt.
+
+**Next**
+- 2B crash report purge after 180 days. The first deploy deletes older production reports.
+- 2C ANRs and native crashes from `ApplicationExitInfo`.
+- 2D voice quality, which needs its own plan.
+- Open question kept from phase 1: there is no privacy notice for users, and sign-ins are now
+  recorded.
+
+---
+
 ## 2026-11-07 - Admin area in sections, phase 1 (feat/admin-sections)
 
 **Changed**

@@ -48,8 +48,7 @@
     /* ===== Base ===== */
     * { box-sizing:border-box; }
     html, body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 var(--sans); }
-    .mono, code, pre, .num { font-family:var(--mono); }
-    .num { font-variant-numeric:tabular-nums; }
+    .mono, code, pre, .num { font-family:var(--mono); font-variant-numeric:tabular-nums; }
     .muted { color:var(--muted); }
     .hidden { display:none !important; }
     a { color:inherit; }
@@ -76,7 +75,11 @@
     .label { font:600 11px/1 var(--mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
 
     /* ===== Shell ===== */
-    .shell { display:grid; grid-template-columns:216px minmax(0,1fr); grid-template-rows:48px minmax(0,1fr); min-height:100vh; }
+    .shell {
+      display:grid; grid-template-columns:216px minmax(0,1fr); grid-template-rows:48px minmax(0,1fr); min-height:100vh;
+      /* Paints the menu column down the whole page, past the sticky menu's own height. */
+      background:linear-gradient(90deg, var(--surface) 0 215px, var(--border) 215px 216px, transparent 216px);
+    }
     .topbar {
       grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:0 12px 0 0;
       background:var(--surface); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5;
@@ -204,7 +207,7 @@
 
     /* ===== Narrow screens ===== */
     @media (max-width: 860px) {
-      .shell { grid-template-columns:minmax(0,1fr); grid-template-rows:48px auto minmax(0,1fr); }
+      .shell { grid-template-columns:minmax(0,1fr); grid-template-rows:48px auto minmax(0,1fr); background:none; }
       .brand { width:auto; border-right:0; }
       .crumb { display:none; }
       .sidebar { position:static; height:auto; flex-direction:row; overflow-x:auto; border-right:0; border-bottom:1px solid var(--border); padding:6px 8px; }
@@ -392,8 +395,26 @@
           <div class="seg" data-period></div>
           <button class="btn" type="button" data-refresh="activitate">⟳ Reîncarcă</button>
         </div>
-        <div class="note"><b>Autentificările și deconectările nu se înregistrează încă.</b> Vor apărea aici după etapa următoare. Până atunci, activitatea înseamnă modificări ale listelor pe server.</div>
+        <div class="note"><b>Ce lipsește:</b> un logout făcut fără rețea și o sesiune care doar expiră nu ajung pe server. Istoricul începe de la activarea înregistrării și se păstrează 90 de zile, fără adrese IP. „Utilizatori activi” înseamnă modificări ale listelor pe server.</div>
+        <div id="authKpis" class="kpis"></div>
         <div id="activityCharts" class="charts"></div>
+        <div class="panel">
+          <div class="panel-head"><h2>Evenimente de autentificare</h2></div>
+          <div class="toolbar">
+            <select id="eventFilter" aria-label="Filtru tip eveniment"></select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Când</th><th>Eveniment</th><th>Utilizator</th><th>Motiv</th><th>Client</th><th>De către</th></tr></thead>
+              <tbody id="eventRows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <span id="eventPageInfo" class="grow"></span>
+            <button class="btn sm" id="eventPrev" type="button">← Înapoi</button>
+            <button class="btn sm" id="eventNext" type="button">Înainte →</button>
+          </div>
+        </div>
         <div class="panel">
           <div class="panel-head"><h2>Cei mai recent activi</h2></div>
           <div class="table-wrap">
@@ -401,6 +422,7 @@
               <thead><tr>
                 <th class="sortable" data-table="recent" data-key="username">Utilizator</th>
                 <th class="sortable" data-table="recent" data-key="last_activity_at">Ultima activitate</th>
+                <th class="sortable" data-table="recent" data-key="last_login_at">Ultimul login</th>
                 <th class="num sortable" data-table="recent" data-key="active_logins">Login-uri active</th>
               </tr></thead>
               <tbody id="recentRows"></tbody>
@@ -573,7 +595,7 @@
     }
     // A timestamp cell: relative time, with the exact moment on hover.
     function timeCell(s) {
-      return el("td", { class: "num", title: s ? fmtDateTime(s) : undefined, text: s ? relTime(s) : "—" });
+      return el("td", { class: "mono", title: s ? fmtDateTime(s) : undefined, text: s ? relTime(s) : "—" });
     }
 
     // ----- theme -----
@@ -1023,8 +1045,10 @@
       clear($("panouCharts")).append(
         barChart("Comenzi pe zi", d.activity, "lists_completed"),
         barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
+        barChart("Autentificări pe zi", d.activity, "sign_ins"),
         barChart("Produse puse pe liste", d.activity, "items_added"),
         barChart("Rapoarte de erori pe zi", d.activity, "crash_reports"),
+        barChart("Conturi noi pe zi", d.activity, "users_registered"),
       );
     }
 
@@ -1297,8 +1321,13 @@
         row("Echipe", u.teams.length ? u.teams.map(t => el("span", { class: "tag", text: t.role === "admin" ? `${t.name} (admin)` : t.name })) : "—"),
         row("Creat", fmtDateTime(u.created_at)),
         row("Ultima activitate", u.last_activity_at ? `${fmtDateTime(u.last_activity_at)} (${relTime(u.last_activity_at)})` : "—"),
+        row("Ultimul login", u.last_login_at ? `${fmtDateTime(u.last_login_at)} (${relTime(u.last_login_at)})` : "—"),
         row("Login-uri active", String(u.active_logins)),
       ));
+      const history = el("div", { class: "drawer-actions" },
+        el("div", { class: "label", text: "Istoric autentificare (ultimele 20)" }),
+        el("div", { class: "muted", style: "font-size:12px", text: "Se încarcă…" }));
+      loadUserEvents(u, history);
       const act = (label, text, button) => el("div", { class: "act" }, el("div", {}, el("b", { text: label }), el("p", { text })), button);
       const lock = self ? { disabled: true, title: "Nu se aplică propriului cont." } : {};
       body.appendChild(el("div", { class: "drawer-actions" },
@@ -1314,7 +1343,24 @@
           el("button", { class: "btn sm danger", type: "button", text: "Șterge", onclick: () => deleteUser(u), ...lock })),
         self ? el("p", { class: "muted", style: "margin:0;font-size:12px", text: "Acesta este contul tău, așa că acțiunile sunt oprite." }) : null,
       ));
+      body.appendChild(history);
       if (!$("drawer").open) $("drawer").showModal();
+    }
+
+    async function loadUserEvents(u, box) {
+      let page;
+      try { page = await apiGet(`/api/admin/auth-events?user_id=${u.id}&limit=20`); }
+      catch (e) { if (e.message !== "denied") box.lastChild.textContent = "Istoricul nu s-a putut încărca."; return; }
+      if ($("drawerTitle").textContent !== u.username) return;   // another user opened meanwhile
+      box.removeChild(box.lastChild);
+      if (!page.items.length) {
+        box.appendChild(el("div", { class: "muted", style: "font-size:12px", text: "Niciun eveniment în ultimele 90 de zile." }));
+        return;
+      }
+      box.appendChild(el("table", {}, el("tbody", {}, page.items.map(ev => el("tr", {},
+        timeCell(ev.created_at),
+        el("td", {}, eventBadge(ev.event_type)),
+        el("td", { class: "muted", text: [REASON_LABELS[ev.reason], CLIENT_LABELS[ev.client], ev.actor_username && `de ${ev.actor_username}`].filter(Boolean).join(" · ") }))))));
     }
 
     async function afterUserChange(u, message, keepOpen) {
@@ -1379,29 +1425,111 @@
 
     // ----- Activitate -----
     let recent = [];
+    let eventOffset = 0, eventTotal = 0, eventRequest = 0;
+    const EVENT_PAGE_SIZE = 50;
+    const EVENT_LABELS = {
+      login: "autentificare",
+      login_failed: "autentificare eșuată",
+      logout: "deconectare",
+      logout_all: "deconectare peste tot",
+      password_changed: "parolă schimbată",
+      token_reuse: "token refolosit",
+      admin_revoke: "deconectat de admin",
+      admin_deactivate: "dezactivat de admin",
+      admin_reactivate: "reactivat de admin",
+    };
+    const REASON_LABELS = {
+      wrong_password: "parolă greșită",
+      unknown_user: "utilizator inexistent",
+      inactive: "cont dezactivat",
+      replayed: "token folosit din nou",
+      revoked: "token revocat",
+    };
+    const CLIENT_LABELS = { android: "Android", flutter: "Flutter", web: "web", other: "altul" };
+    const ALARMING = new Set(["login_failed", "token_reuse"]);
+
+    // An event name with a status mark, so failures read without relying on color.
+    function eventBadge(type) {
+      const label = EVENT_LABELS[type] || type;
+      if (type === "login") return el("span", { class: "status on", text: label });
+      if (ALARMING.has(type)) return el("span", { class: "status off", text: label });
+      return el("span", { class: "mono", text: label });
+    }
 
     async function loadActivity() {
-      loadingInto($("activityCharts"));
-      emptyRow($("recentRows"), 3, "Se încarcă…");
+      loadingInto($("authKpis"), $("activityCharts"));
+      emptyRow($("recentRows"), 4, "Se încarcă…");
       try {
         const d = await getDashboard();
+        const days = countRo(d.activity.length, "zi", "zile");
+        clear($("authKpis")).append(
+          kpi("Autentificări", sum(d.activity, "sign_ins"), `în ${days}`, series(d.activity, "sign_ins")),
+          kpi("Eșuate", sum(d.activity, "failed_sign_ins"), `în ${days}`, series(d.activity, "failed_sign_ins")),
+          kpi("Deconectări", sum(d.activity, "sign_outs"), `în ${days}`, series(d.activity, "sign_outs")),
+          kpi("Activi într-o zi", Math.max(0, ...series(d.activity, "active_users")), "maxim pe perioadă", series(d.activity, "active_users")),
+        );
         clear($("activityCharts")).append(
+          barChart("Autentificări pe zi", d.activity, "sign_ins"),
+          barChart("Autentificări eșuate pe zi", d.activity, "failed_sign_ins"),
           barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
           barChart("Conturi noi pe zi", d.activity, "users_registered"),
         );
-      } catch (e) { failInto($("activityCharts")); }
+      } catch (e) { failInto($("authKpis"), $("activityCharts")); }
+      eventOffset = 0;
+      loadEventPage();
       try {
-        recent = (await getUsers()).filter(u => u.last_activity_at);
+        recent = (await getUsers()).filter(u => u.last_activity_at || u.last_login_at);
         renderRecent();
-      } catch (e) { if (e.message !== "denied") emptyRow($("recentRows"), 3, "Datele nu s-au putut încărca.", true); }
+      } catch (e) { if (e.message !== "denied") emptyRow($("recentRows"), 4, "Datele nu s-au putut încărca.", true); }
+    }
+
+    function populateEventFilter() {
+      const select = $("eventFilter");
+      if (select.options.length) return;
+      select.appendChild(el("option", { value: "", text: "Toate evenimentele" }));
+      Object.entries(EVENT_LABELS).forEach(([value, text]) => select.appendChild(el("option", { value, text })));
+    }
+
+    async function loadEventPage() {
+      const request = ++eventRequest;
+      emptyRow($("eventRows"), 6, "Se încarcă…");
+      const params = new URLSearchParams({ limit: EVENT_PAGE_SIZE, offset: eventOffset });
+      if ($("eventFilter").value) params.set("event_type", $("eventFilter").value);
+      let page;
+      try { page = await apiGet("/api/admin/auth-events?" + params); }
+      catch (e) { if (request === eventRequest && e.message !== "denied") emptyRow($("eventRows"), 6, "Evenimentele nu s-au putut încărca.", true); return; }
+      if (request !== eventRequest) return;
+      eventTotal = page.total;
+      const tbody = clear($("eventRows"));
+      if (!page.items.length) emptyRow(tbody, 6, "Niciun eveniment în ultimele 90 de zile.");
+      page.items.forEach(ev => tbody.appendChild(el("tr", {},
+        timeCell(ev.created_at),
+        el("td", {}, eventBadge(ev.event_type)),
+        el("td", { class: "mono", text: ev.username || (ev.reason === "unknown_user" ? "—" : "cont șters") }),
+        el("td", { class: "muted", text: REASON_LABELS[ev.reason] || ev.reason || "" }),
+        el("td", { class: "mono muted", text: CLIENT_LABELS[ev.client] || ev.client }),
+        el("td", { class: "mono muted", text: ev.actor_username || "" }))));
+      const first = eventTotal ? eventOffset + 1 : 0;
+      const last = eventOffset + page.items.length;
+      $("eventPageInfo").textContent = `${num(first)}–${num(last)} din ${num(eventTotal)}`;
+      $("eventPrev").disabled = eventOffset === 0;
+      $("eventNext").disabled = last >= eventTotal;
+    }
+
+    function changeEventPage(direction) {
+      const next = eventOffset + direction * EVENT_PAGE_SIZE;
+      if (next < 0 || next >= eventTotal) return;
+      eventOffset = next;
+      loadEventPage();
     }
 
     function renderRecent() {
       const tbody = clear($("recentRows"));
-      if (!recent.length) { emptyRow(tbody, 3, "Nicio activitate înregistrată încă."); return; }
+      if (!recent.length) { emptyRow(tbody, 4, "Nicio activitate înregistrată încă."); return; }
       sortRows("recent", recent).slice(0, 25).forEach(u => tbody.appendChild(el("tr", {},
         el("td", { class: "mono", text: u.username }),
         timeCell(u.last_activity_at),
+        timeCell(u.last_login_at),
         el("td", { class: "num", text: num(u.active_logins) }))));
     }
     sortRenderers.recent = renderRecent;
@@ -1533,6 +1661,10 @@
     $("confirmBtn").addEventListener("click", commitImport);
     $("userSearch").addEventListener("input", renderUsers);
     $("userFilter").addEventListener("change", renderUsers);
+    populateEventFilter();
+    $("eventFilter").addEventListener("change", () => { eventOffset = 0; loadEventPage(); });
+    $("eventPrev").addEventListener("click", () => changeEventPage(-1));
+    $("eventNext").addEventListener("click", () => changeEventPage(1));
     $("orderPrev").addEventListener("click", () => changeOrderPage(-1));
     $("orderNext").addEventListener("click", () => changeOrderPage(1));
     window.addEventListener("hashchange", route);
