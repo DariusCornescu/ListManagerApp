@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-11-07 - Android: Back closes the open menu
+
+**Changed**
+- Back with the menu open closes the menu. Before, it left the screen behind the menu, and on Home it
+  left the app. Seen on the phone on 2026-11-06.
+- The handler is composed after `NavGraph` in `ListManagerApp.kt`, so it answers Back before navigation.
+  It is off while the menu is closed.
+- This fix was pushed to `feat/android-design-finish` after PR 33 had merged, so it lands here instead.
+
+**Checked**
+- A new test fails without the fix: an open menu closes on Back, nothing behind it gets that Back, and
+  the next Back reaches the screen.
+- Not yet checked on the phone.
+
+---
+
 ## 2026-11-06 - Android live connection recovers by itself
 
 **Changed**
