@@ -18,12 +18,30 @@ object PhraseSegmenter {
         "sticla", "sticle", "kilogram", "kilograme", "kg", "litru", "litri",
     )
 
-    private fun tokenize(text: String): List<String> = text
-        .replace(Regex("[,;:\\n]+"), " | ")
+    // "3,5" is a decimal, not two items.
+    private val DECIMAL_COMMA = Regex("(?<=\\d),(?=\\d)")
+    // "20 * 175", "4 x 40", "6 pe 100", "40 x 30 x 20": a size, written as one token so its
+    // numbers are not read as counts.
+    private val DIMENSION = Regex(
+        "\\d+(?:\\.\\d+)?(?:\\s*(?:[x×*]|\\bpe\\b)\\s*\\d+(?:\\.\\d+)?)+",
+        RegexOption.IGNORE_CASE,
+    )
+    private val DIMENSION_SEPARATOR = Regex("\\s*(?:[x×*]|\\bpe\\b)\\s*", RegexOption.IGNORE_CASE)
+    private val DIMENSION_TOKEN = Regex("^\\d+(?:\\.\\d+)?(?:x\\d+(?:\\.\\d+)?)+$")
+    private val LIST_SEPARATORS = Regex("[,;:\\n]+")
+    private val WHITESPACE = Regex("\\s+")
+
+    private fun joinDimensions(text: String): String =
+        DIMENSION.replace(text) { it.value.split(DIMENSION_SEPARATOR).joinToString("x") }
+
+    private fun tokenize(text: String): List<String> = joinDimensions(text.replace(DECIMAL_COMMA, "."))
+        .replace(LIST_SEPARATORS, " | ")
         .trim()
-        .split(Regex("\\s+"))
+        .split(WHITESPACE)
         .map { it.trim('.', '!', '?') }
         .filter { it.isNotBlank() }
+
+    internal fun isDimension(token: String): Boolean = DIMENSION_TOKEN.matches(token)
 
     /**
      * Greedily segment [text]. At each position, evaluate windows of 1..[maxWindow]
@@ -74,6 +92,8 @@ object PhraseSegmenter {
                     segments.add(leftover.joinToString(" "))
                     leftover.clear()
                 }
+                // A size right after a product describes that product ("cameră 26x1.75").
+                while (i + bestLen < tokens.size && isDimension(tokens[i + bestLen])) bestLen++
                 val matched = tokens.subList(i, i + bestLen).joinToString(" ")
                 segments.add(listOfNotNull(quantityPrefix, matched).joinToString(" "))
                 quantityPrefix = null

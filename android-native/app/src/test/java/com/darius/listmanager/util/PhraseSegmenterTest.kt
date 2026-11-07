@@ -135,6 +135,32 @@ class PhraseSegmenterTest {
     }
 
     @Test
+    fun aSizeStaysWithItsProductAndIsNotACount() {
+        val segments = PhraseSegmenter.segment(
+            "cameră nova 20 * 175 șurub 3,5 * 35",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = scorer("cameră nova", "șurub"),
+        )
+
+        assertEquals(listOf("cameră nova 20x175", "șurub 3.5x35"), segments)
+        assertEquals(listOf(1, 1), segments.map(SpokenQuantity::from))
+    }
+
+    @Test
+    fun aSizeSaidWithPeOrXIsOneToken() {
+        val segments = PhraseSegmenter.segment(
+            "două șurub 6 pe 100 cutii 40 x 30 x 20",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = scorer("șurub", "cutii"),
+        )
+
+        assertEquals(listOf("două șurub 6x100", "cutii 40x30x20"), segments)
+        assertEquals(listOf(2, 1), segments.map(SpokenQuantity::from))
+    }
+
+    @Test
     fun aCompoundCount_staysWithItsProduct() {
         val catalog = setOf("oua", "cutii", "lapte")
         val segments = PhraseSegmenter.segment(
