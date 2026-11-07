@@ -5,6 +5,39 @@ Newest entries on top.
 
 ---
 
+## 2026-11-07 - Android dictation: faster matching, and sizes understood
+
+**Changed**
+- **Speed:** segmentation scores each word window against a catalog prepared once per phrase, and only
+  needs the best score, so products that cannot beat it skip the edit distances. Scores are unchanged
+  bit for bit on 469 phrases against a local catalog export.
+- **Sizes are not counts:** "20 * 175", "4 x 40", "6 pe 100" and "3,5/35" become one size token, joined
+  to the product before it when the pair still matches. A comma between digits is a decimal. Before,
+  "175" was read as a count and 175 screws were added without asking.
+- **Sizes match:** a product whose name has the size said gets a bonus, compared without the decimal dot
+  the recognizer often drops ("26 * 175" finds 26*1.75). A different size does not lower a product.
+- **Word endings:** catalog search also tries the word without its ending, so "cameră" finds "CAMERE".
+- **Ties are asked about:** a product is added without asking only when it leads the next by 0.05, so
+  supplier variants with the same name are offered instead of guessed.
+- **Catalog search:** a prefix term such as `3.5x35*` narrowed the whole FTS query to products
+  containing "5x35". Prefix terms are now only added for plain words.
+
+**Checked on a Galaxy S25 against production, preview build**
+- A 7-word phrase took 46.5 s to segment before. A 10-word phrase then took 4.3 s with the faster
+  scoring, and the same 8-word phrase takes 1.4 s now, 2.3 s until the last product is added.
+- A phrase with a detergent, an inner tube with its size and a screw with its size: the detergent and
+  the right inner tube were added, and the screw asked "Ai vrut să zici?" with a 3.5*35 screw first.
+  No ANR.
+- Unit tests: 448 passing. The synthetic benchmark is unchanged: 94.4% top-1, no wrong auto-adds.
+
+**Found, not fixed**
+- "Șuruburi 4x40mm 100buc" with the alias "surub" looks like demo seed data in the real catalog. Its
+  alias makes it a strong match for almost any phrase with "șurub".
+- Brand names the recognizer spells by sound are not matched.
+- Inventory dictation still ranks on the main thread (`InventoryViewModel`).
+
+---
+
 ## 2026-11-07 - Admin area in sections, phase 1 (feat/admin-sections)
 
 **Changed**
