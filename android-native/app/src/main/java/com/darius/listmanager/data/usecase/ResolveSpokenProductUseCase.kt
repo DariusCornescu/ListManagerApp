@@ -116,12 +116,14 @@ class ResolveSpokenProductUseCase(
         val segments = if (localProducts.isEmpty()) {
             listOf(spokenText)
         } else {
+            // Prepared once: every word window below is scored against the whole catalog.
+            val catalog = ProductRanker.prepare(localProducts)
             PhraseSegmenter.segment(
                 text = spokenText,
                 threshold = SEGMENT_THRESHOLD,
                 maxWindow = SEGMENT_MAX_WINDOW
             ) { window ->
-                ProductRanker.rank(window, localProducts).firstOrNull()?.score ?: 0.0
+                ProductRanker.bestScore(window, catalog)
             }.ifEmpty { listOf(spokenText) }
         }
 
