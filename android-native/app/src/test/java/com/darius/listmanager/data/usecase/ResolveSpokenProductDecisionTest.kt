@@ -7,6 +7,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.PendingOperationRepository
 import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.network.ListManagerApi
+import com.darius.listmanager.util.QueryVariants
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -26,6 +27,7 @@ import java.lang.reflect.Proxy
 @SQLiteMode(SQLiteMode.Mode.NATIVE)
 class ResolveSpokenProductDecisionTest {
     private lateinit var database: AppDatabase
+    private lateinit var repository: ProductRepository
     private lateinit var useCase: ResolveSpokenProductUseCase
 
     @Before
@@ -43,22 +45,22 @@ class ResolveSpokenProductDecisionTest {
                 ProductEntity(4, "CAMERE NOVA 26*1.75 AV", 1, "camere nova av"),
                 ProductEntity(5, "Lapte Zuzu 1L", 1, "lapte, zuzu"),
                 ProductEntity(6, "SURUB XYZ LEMN 3.5*35", 1, "surub xyz lemn"),
+                ProductEntity(7, "SURUB GIPS CARTON FILET RAPID 3,5X35 SET", 1, "surub gips carton filet"),
             ).forEach { database.productDao().insert(it) }
         }
         val api = Proxy.newProxyInstance(
             ListManagerApi::class.java.classLoader,
             arrayOf(ListManagerApi::class.java),
         ) { _, method, _ -> error("Unexpected API call: ${method.name}") } as ListManagerApi
-        useCase = ResolveSpokenProductUseCase(
-            ProductRepository(
-                dao = database.productDao(),
-                pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao()),
-                context = RuntimeEnvironment.getApplication(),
-                api = api,
-                database = database,
-                isOnline = { false },
-            )
+        repository = ProductRepository(
+            dao = database.productDao(),
+            pendingOperationRepository = PendingOperationRepository(database.pendingOperationDao()),
+            context = RuntimeEnvironment.getApplication(),
+            api = api,
+            database = database,
+            isOnline = { false },
         )
+        useCase = ResolveSpokenProductUseCase(repository)
     }
 
     @After
@@ -70,6 +72,14 @@ class ResolveSpokenProductDecisionTest {
 
         assertTrue("$result", result is ResolveResult.Suggestions)
         assertEquals(setOf(1L, 2L), (result as ResolveResult.Suggestions).products.take(2).map { it.product.id }.toSet())
+    }
+
+    @Test
+    fun aSpokenDecimalSizeDoesNotNarrowTheCatalogSearch() = runBlocking {
+        val query = QueryVariants.toFtsQuery(QueryVariants.generate("șurub 3.5x35"))
+        val found = repository.searchFtsRaw(query).map { it.id }.toSet()
+
+        assertTrue("$query found $found", found.containsAll(setOf(1L, 2L, 6L, 7L)))
     }
 
     @Test
