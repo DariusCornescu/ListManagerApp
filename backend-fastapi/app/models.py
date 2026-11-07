@@ -37,6 +37,30 @@ class RefreshToken(Base):
     revoked_at = Column(DateTime, nullable=True)
 
 
+class AuthEvent(Base):
+    """One sign-in, sign-out or account action, kept for the admin activity view.
+
+    Holds no IP address, no typed username and no token. Rows older than
+    AUTH_EVENT_RETENTION_DAYS are deleted (see app/auth_events.py).
+    """
+
+    __tablename__ = "auth_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    # Empty for an unknown username, and once the account is deleted.
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    # The admin who acted, for admin_* events only.
+    actor_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    event_type = Column(String(30), nullable=False)
+    reason = Column(String(30), nullable=True)
+    client = Column(String(10), nullable=False, default="other", server_default="other")
+    created_at = Column(DateTime, nullable=False, default=func.now(), server_default=func.now(), index=True)
+
+    __table_args__ = (
+        Index("ix_auth_events_user_id_created_at", "user_id", "created_at"),
+    )
+
+
 class Distributor(Base):
     __tablename__ = "distributors"
     
