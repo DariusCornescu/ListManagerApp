@@ -10,6 +10,10 @@ Newest entries on top.
 **Changed**
 - `/admin` is split into seven Romanian sections: Panou, Produse și distribuitori, Utilizatori, Echipe,
   Activitate, Comenzi and Erori. It stays one self-contained HTML file with no build step.
+- **Console-style design**, at the user's request: light and dark themes (system default plus a
+  toggle), dense sortable tables with sticky headers, monospace figures, a KPI strip with sparklines,
+  in-page dialogs instead of the browser's `confirm()`/`prompt()`, a side panel with each user's details
+  and actions, short notifications after each action, and keys 1–7 and `/` for navigation and search.
 - **Deletes:** user, product and distributor deletes answer 409 instead of 500 when PostgreSQL would
   refuse them. A user with teams, lists, invites or live inventory rows is kept; the page offers
   Dezactivează instead. The comment promising a cascade on distributor delete was false and is gone.
