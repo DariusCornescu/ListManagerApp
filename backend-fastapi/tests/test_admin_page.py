@@ -32,6 +32,7 @@ def test_admin_page_uses_the_admin_routes(client):
         "/api/admin/catalog/import",
         "/api/admin/users/details",
         "/api/admin/orders",
+        "/api/admin/auth-events",
         "/api/admin/crashes/groups",
     ):
         assert route in body
