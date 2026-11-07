@@ -1,124 +1,378 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ro">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Catalog Admin</title>
+  <title>Administrare List Manager</title>
   <style>
-    :root { --gold:#DDA92B; --charcoal:#2A2A2A; --cream:#F6F2E9; --sage:#71805C; }
-    * { box-sizing: border-box; }
-    body { font-family: system-ui, sans-serif; margin:0; background:var(--cream); color:var(--charcoal); }
-    header { background:var(--charcoal); color:var(--cream); padding:14px 20px; font-weight:700; }
-    main { max-width:900px; margin:0 auto; padding:20px; }
-    .card { background:#fff; border:1px solid #DAD3C4; border-radius:12px; padding:16px; margin-bottom:16px; }
-    input, button { font-size:15px; padding:8px 10px; border-radius:8px; border:1px solid #DAD3C4; }
+    :root {
+      color-scheme: light;
+      --gold:#DDA92B; --charcoal:#2A2A2A; --cream:#F6F2E9; --sage:#71805C;
+      --surface:#FFFFFF; --line:#DAD3C4; --line-soft:#EDE8DC; --muted:#6E6A60; --err:#B3412C;
+      /* The chart hue: the brand gold darkened until it reaches 3:1 on white. */
+      --chart:#A87C12; --chart-hover:#8A650E;
+    }
+    * { box-sizing:border-box; }
+    body { font-family:system-ui, sans-serif; margin:0; background:var(--cream); color:var(--charcoal); }
+    header { background:var(--charcoal); color:var(--cream); padding:12px 16px; display:flex; align-items:center; gap:12px; }
+    header .brand { font-weight:700; flex:1; }
+    header .who { font-size:13px; opacity:.85; }
+    header button { background:transparent; color:var(--cream); border:1px solid #6E6A60; }
+    h2 { margin:0 0 4px; font-size:22px; }
+    h3 { margin:0 0 10px; font-size:17px; }
+    .layout { max-width:1320px; margin:0 auto; padding:16px; display:grid; grid-template-columns:200px minmax(0, 1fr); gap:20px; align-items:start; }
+    nav { position:sticky; top:16px; display:flex; flex-direction:column; gap:2px; }
+    nav a { color:var(--charcoal); text-decoration:none; padding:9px 12px; border-radius:8px; font-weight:500; }
+    nav a:hover { background:var(--line-soft); }
+    nav a[aria-current="page"] { background:var(--charcoal); color:var(--cream); }
+    main { min-width:0; }
+    .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+    .section-head { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin-bottom:12px; }
+    .section-head .grow { flex:1; min-width:200px; }
+    input, select, button { font:inherit; font-size:15px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface); color:inherit; }
     button { background:var(--gold); color:var(--charcoal); border:none; cursor:pointer; font-weight:600; }
     button.secondary { background:var(--sage); color:#fff; }
-    button:disabled { opacity:.5; cursor:not-allowed; }
-    table { width:100%; border-collapse:collapse; }
-    th, td { text-align:left; padding:6px 8px; border-bottom:1px solid #EDE8DC; }
-    .hidden { display:none; }
-    .err { color:#C4553F; }
-    .muted { color:#6E6A60; font-size:13px; }
-    #preview { white-space:pre-wrap; }
-    .stats { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0; }
-    .stat { background:var(--cream); border:1px solid #DAD3C4; border-radius:10px; padding:8px 14px; min-width:110px; }
-    .stat b { display:block; font-size:22px; }
-    .stat span { font-size:12px; color:#6E6A60; }
-    .chip { display:inline-block; background:var(--cream); border:1px solid #DAD3C4; border-radius:999px; padding:3px 10px; margin:2px 4px 2px 0; font-size:13px; }
-    .legend i { display:inline-block; width:10px; height:10px; border-radius:2px; margin:0 4px 0 12px; }
-    #chartBox { overflow-x:auto; }
+    button.quiet { background:var(--surface); border:1px solid var(--line); font-weight:500; }
+    button.danger { background:var(--surface); color:var(--err); border:1px solid var(--err); font-weight:500; }
+    button:disabled { opacity:.45; cursor:not-allowed; }
+    button.small { font-size:13px; padding:5px 8px; }
+    .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .stack > * + * { margin-top:8px; }
+    .table-wrap { overflow-x:auto; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line-soft); vertical-align:top; }
+    th { font-size:12px; color:var(--muted); font-weight:600; white-space:nowrap; }
+    td.num, th.num { text-align:right; font-variant-numeric:tabular-nums; }
+    td.actions { white-space:nowrap; }
+    .hidden { display:none !important; }
+    .err { color:var(--err); }
+    .muted { color:var(--muted); font-size:13px; }
+    .note { background:var(--cream); border:1px solid var(--line); border-radius:10px; padding:10px 12px; font-size:14px; margin-bottom:12px; }
+    .stats { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:10px; }
+    .stat { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+    .stat b { display:block; font-size:26px; font-variant-numeric:tabular-nums; }
+    .stat span { font-size:13px; color:var(--muted); }
+    .charts { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; margin-bottom:16px; }
+    .charts > .card { margin-bottom:0; }
+    td.actions .stackbtn { display:flex; flex-direction:column; align-items:stretch; gap:4px; }
+    td .chip { white-space:nowrap; }
+    .chart { position:relative; }
+    .chart .head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; margin-bottom:6px; }
+    .chart .head b { font-size:15px; }
+    .chart .head span { font-size:13px; color:var(--muted); }
+    .chart svg { display:block; width:100%; height:auto; }
+    .chart .hit { fill:transparent; cursor:default; }
+    .chart .hit:hover { fill:rgba(42,42,42,.06); }
+    .chart details { margin-top:6px; font-size:13px; }
+    .chart details summary { color:var(--muted); cursor:pointer; }
+    .tooltip { position:absolute; pointer-events:none; background:var(--charcoal); color:var(--cream); font-size:12px; padding:5px 8px; border-radius:6px; white-space:nowrap; transform:translate(-50%, -100%); }
+    .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .seg button { border:none; border-radius:0; background:var(--surface); font-weight:500; padding:6px 10px; }
+    .seg button[aria-pressed="true"] { background:var(--charcoal); color:var(--cream); }
+    .chip { display:inline-block; background:var(--cream); border:1px solid var(--line); border-radius:999px; padding:2px 9px; margin:1px 4px 1px 0; font-size:12px; }
+    .badge { display:inline-block; border-radius:999px; padding:2px 8px; font-size:12px; font-weight:600; }
+    .badge.on { background:#E4EBDD; color:#3F4A32; }
+    .badge.off { background:#F3DCD6; color:#7A2A1C; }
+    .pager { display:flex; align-items:center; gap:8px; margin-top:10px; }
+    #status { min-height:20px; margin-bottom:8px; }
+    #loginCard { max-width:380px; margin:48px auto; }
+    #loginCard input { width:100%; }
+    details.crash { margin-bottom:8px; }
+    details.crash summary { cursor:pointer; }
+    pre { white-space:pre-wrap; font-size:12px; background:var(--cream); padding:8px; border-radius:8px; overflow-x:auto; }
+    @media (max-width: 860px) {
+      .layout { grid-template-columns:minmax(0, 1fr); gap:12px; }
+      nav { position:static; flex-direction:row; overflow-x:auto; gap:4px; padding-bottom:4px; }
+      nav a { white-space:nowrap; }
+      .charts { grid-template-columns:minmax(0, 1fr); }
+    }
   </style>
 </head>
 <body>
-  <header>List Manager — Catalog Admin</header>
-  <main>
-    <div id="loginCard" class="card">
-      <h3>Sign in</h3>
-      <div><input id="username" placeholder="username" /></div>
-      <div style="margin-top:8px"><input id="password" type="password" placeholder="password" /></div>
-      <div style="margin-top:8px"><button onclick="login()">Login</button></div>
-      <div id="loginErr" class="err"></div>
-    </div>
+  <header>
+    <span class="brand">List Manager — Administrare</span>
+    <span id="whoami" class="who"></span>
+    <button id="logoutBtn" class="small hidden" type="button">Deconectare</button>
+  </header>
 
-    <div id="appCard" class="hidden">
-      <div id="status" class="muted"></div>
-      <div class="card">
-        <h3>Privire de ansamblu</h3>
-        <div id="statRow" class="stats"></div>
-        <div id="storeList"></div>
-        <p class="muted legend" style="margin-bottom:4px">
-          Activitate pe zi (ultimele 30 de zile) —
-          <i style="background:var(--gold)"></i>produse înregistrate
-          <i style="background:var(--sage)"></i>liste finalizate
-        </p>
-        <div id="chartBox" class="muted">Se încarcă…</div>
-        <button onclick="loadDashboard()">Refresh</button>
-      </div>
-      <div class="card">
-        <h3>Import CSV</h3>
-        <p class="muted">Columns: <code>distributor, product_name, aliases, price</code>. First two required. Re-upload is an upsert (updates + adds, never deletes).</p>
-        <input type="file" id="csvFile" accept=".csv" />
-        <button onclick="preview()">Preview</button>
-        <button class="secondary" id="confirmBtn" onclick="commit()" disabled>Confirm import</button>
-        <div id="preview" class="muted"></div>
-      </div>
-      <div class="card">
-        <h3>Distributors</h3>
-        <input id="distName" placeholder="new distributor" />
-        <button onclick="createDistributor()">Add</button>
-        <ul id="distList"></ul>
-      </div>
-      <div class="card">
-        <h3>Add / edit product</h3>
-        <div><input id="pName" placeholder="product name" /></div>
-        <div style="margin-top:8px"><select id="pDist"></select></div>
-        <div style="margin-top:8px"><input id="pAliases" placeholder="aliases (a|b|c)" /></div>
-        <div style="margin-top:8px"><input id="pPrice" type="number" step="0.01" placeholder="price" /></div>
-        <div style="margin-top:8px">
-          <button id="saveProductBtn" onclick="saveProduct()">Add</button>
-          <button class="secondary" onclick="clearProductForm()">Cancel</button>
-        </div>
-      </div>
-      <div class="card">
-        <h3>Catalog</h3>
-        <input id="search" placeholder="search name or alias…" oninput="onSearchInput()" />
-        <button onclick="loadProducts()">Refresh</button>
-        <div style="margin-top:8px">
-          <button class="secondary" id="prevPage" onclick="changePage(-1)">Previous</button>
-          <button class="secondary" id="nextPage" onclick="changePage(1)">Next</button>
-          <span id="pageInfo" class="muted" style="margin-left:8px"></span>
-        </div>
-        <table><thead><tr><th>Product</th><th>Distributor</th><th>Aliases</th><th>Price</th><th>Actions</th></tr></thead>
-          <tbody id="rows"></tbody></table>
-      </div>
-      <div class="card">
-        <h3>Semnături de crash</h3>
-        <p class="muted">Probleme grupate după excepție și cadrele stabile din stack trace.</p>
-        <button onclick="loadCrashes()">Refresh</button>
-        <div id="crashList" class="muted">Se încarcă…</div>
-      </div>
+  <div id="loginCard" class="card">
+    <h3>Autentificare</h3>
+    <div class="stack">
+      <input id="username" placeholder="utilizator" autocomplete="username" />
+      <input id="password" type="password" placeholder="parolă" autocomplete="current-password" />
+      <button id="loginBtn" type="button">Intră</button>
+      <div id="loginErr" class="err" role="alert"></div>
     </div>
-  </main>
+  </div>
+
+  <div id="appShell" class="layout hidden">
+    <nav aria-label="Secțiuni">
+      <a href="#panou" data-section="panou">Panou</a>
+      <a href="#produse" data-section="produse">Produse și distribuitori</a>
+      <a href="#utilizatori" data-section="utilizatori">Utilizatori</a>
+      <a href="#echipe" data-section="echipe">Echipe</a>
+      <a href="#activitate" data-section="activitate">Activitate</a>
+      <a href="#comenzi" data-section="comenzi">Comenzi</a>
+      <a href="#erori" data-section="erori">Erori</a>
+    </nav>
+    <main>
+      <div id="status" class="muted" role="status" aria-live="polite"></div>
+
+      <!-- ===== Panou ===== -->
+      <section id="sec-panou" data-section="panou" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Panou</h2><div class="muted">Imaginea de ansamblu, calculată la fiecare deschidere. Zilele sunt în UTC.</div></div>
+          <div class="seg" data-period></div>
+          <button class="quiet" type="button" data-refresh="panou">Reîncarcă</button>
+        </div>
+        <div id="panouStats" class="stats card"></div>
+        <div id="panouCharts" class="charts"></div>
+      </section>
+
+      <!-- ===== Produse și distribuitori ===== -->
+      <section id="sec-produse" data-section="produse" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Produse și distribuitori</h2></div>
+          <button class="quiet" type="button" data-refresh="produse">Reîncarcă</button>
+        </div>
+        <div class="card">
+          <h3>Catalog</h3>
+          <div class="row">
+            <input id="search" placeholder="caută după nume sau alias…" />
+            <select id="distFilter" aria-label="Filtru distribuitor"></select>
+          </div>
+          <div class="table-wrap" style="margin-top:10px">
+            <table>
+              <thead><tr><th>Produs</th><th>Distribuitor</th><th>Aliasuri</th><th class="num">Preț</th><th>Acțiuni</th></tr></thead>
+              <tbody id="rows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button class="quiet small" id="prevPage" type="button">Înapoi</button>
+            <button class="quiet small" id="nextPage" type="button">Înainte</button>
+            <span id="pageInfo" class="muted"></span>
+          </div>
+        </div>
+        <div class="card">
+          <h3 id="productFormTitle">Adaugă produs</h3>
+          <div class="stack">
+            <input id="pName" placeholder="nume produs" />
+            <select id="pDist" aria-label="Distribuitor"></select>
+            <input id="pAliases" placeholder="aliasuri (a|b|c)" />
+            <input id="pPrice" type="number" step="0.01" placeholder="preț" />
+            <div class="row">
+              <button id="saveProductBtn" type="button">Adaugă</button>
+              <button class="quiet" id="cancelProductBtn" type="button">Renunță</button>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Distribuitori</h3>
+          <div class="row">
+            <input id="distName" placeholder="distribuitor nou" />
+            <button id="addDistBtn" type="button">Adaugă</button>
+          </div>
+          <p class="muted">Un distribuitor se poate șterge doar după ce nu mai are produse. Un produs folosit pe o listă nu se poate șterge.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Nume</th><th>Acțiuni</th></tr></thead>
+              <tbody id="distRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Import CSV</h3>
+          <p class="muted">Coloane: <code>distributor, product_name, aliases, price</code>. Primele două sunt obligatorii. Reîncărcarea actualizează și adaugă, nu șterge nimic.</p>
+          <div class="row">
+            <input type="file" id="csvFile" accept=".csv" />
+            <button id="previewBtn" type="button">Previzualizează</button>
+            <button class="secondary" id="confirmBtn" type="button" disabled>Confirmă importul</button>
+          </div>
+          <div id="preview" class="muted" style="margin-top:8px"></div>
+        </div>
+      </section>
+
+      <!-- ===== Utilizatori ===== -->
+      <section id="sec-utilizatori" data-section="utilizatori" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Utilizatori</h2><div class="muted">„Ultima activitate” înseamnă ultima modificare a unei liste pe server, nu ultima deschidere a aplicației.</div></div>
+          <input id="userSearch" placeholder="caută…" aria-label="Caută utilizator" />
+          <button class="quiet" type="button" data-refresh="utilizatori">Reîncarcă</button>
+        </div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Utilizator</th><th>Email</th><th>Stare</th><th>Echipe</th><th>Creat</th><th>Ultima activitate</th><th class="num">Login-uri active</th><th>Acțiuni</th></tr></thead>
+              <tbody id="userRows"></tbody>
+            </table>
+          </div>
+          <p class="muted">Dezactivează: blochează autentificarea și închide sesiunile, fără să șteargă date. Ștergerea merge doar pentru conturi fără echipe, liste sau inventar.</p>
+        </div>
+      </section>
+
+      <!-- ===== Echipe ===== -->
+      <section id="sec-echipe" data-section="echipe" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Echipe</h2></div>
+          <div class="seg" data-period></div>
+          <button class="quiet" type="button" data-refresh="echipe">Reîncarcă</button>
+        </div>
+        <div id="teamStats" class="stats card"></div>
+        <div id="teamCharts" class="charts"></div>
+        <div class="card">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Echipă</th><th class="num">Membri</th><th>Creată</th><th class="num">Liste finalizate</th></tr></thead>
+              <tbody id="teamRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Activitate ===== -->
+      <section id="sec-activitate" data-section="activitate" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Activitate</h2></div>
+          <div class="seg" data-period></div>
+          <button class="quiet" type="button" data-refresh="activitate">Reîncarcă</button>
+        </div>
+        <div class="note">Autentificările și deconectările nu se înregistrează încă. Vor apărea aici după etapa următoare. Până atunci, activitatea înseamnă modificări ale listelor pe server.</div>
+        <div id="activityCharts" class="charts"></div>
+        <div class="card">
+          <h3>Cei mai recent activi</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Utilizator</th><th>Ultima activitate</th><th class="num">Login-uri active</th></tr></thead>
+              <tbody id="recentRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Comenzi ===== -->
+      <section id="sec-comenzi" data-section="comenzi" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Comenzi</h2></div>
+          <div class="seg" data-period></div>
+          <button class="quiet" type="button" data-refresh="comenzi">Reîncarcă</button>
+        </div>
+        <div class="note">O comandă este o listă finalizată pe server. Un document este câte un distribuitor din acea listă, adică un PDF. PDF-urile de inventar și retrimiterile nu se numără, iar mutarea unui produs la alt distribuitor schimbă numărul de documente.</div>
+        <div id="orderStats" class="stats card"></div>
+        <div id="orderCharts" class="charts"></div>
+        <div class="card">
+          <h3>Comenzi recente</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Finalizată</th><th>Listă</th><th>Echipă sau proprietar</th><th class="num">Poziții</th><th class="num">Cantitate</th><th class="num">Documente</th></tr></thead>
+              <tbody id="orderRows"></tbody>
+            </table>
+          </div>
+          <div class="pager">
+            <button class="quiet small" id="orderPrev" type="button">Înapoi</button>
+            <button class="quiet small" id="orderNext" type="button">Înainte</button>
+            <span id="orderPageInfo" class="muted"></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== Erori ===== -->
+      <section id="sec-erori" data-section="erori" hidden>
+        <div class="section-head">
+          <div class="grow"><h2>Erori</h2><div class="muted">Semnături de crash: probleme grupate după excepție și cadrele stabile din stack trace.</div></div>
+          <button class="quiet" type="button" data-refresh="erori">Reîncarcă</button>
+        </div>
+        <div class="note">Se raportează doar crash-urile din aplicația Android. Blocajele (ANR) nu ajung încă aici.</div>
+        <div id="crashList" class="card muted">Se încarcă…</div>
+      </section>
+    </main>
+  </div>
 
   <script>
-    let token = localStorage.getItem("lm_token") || null;
-    let products = [], distributors = {};
-    let previewedFile = null;
-    let editingProductId = null;
-    let distributorList = [];
+    // Every value from the server is shown with textContent: crash reports
+    // arrive without sign-in, and this page holds an admin token.
+    const SECTIONS = ["panou", "produse", "utilizatori", "echipe", "activitate", "comenzi", "erori"];
+    const PERIODS = [7, 30, 90];
     const CATALOG_PAGE_SIZE = 50;
-    let catalogOffset = 0;
-    let catalogTotal = 0;
-    let catalogRequest = 0;
-    let searchTimer = null;
+    const ORDER_PAGE_SIZE = 25;
 
+    let token = localStorage.getItem("lm_token") || null;
+    let me = null;
+    let period = 30;
+    let loaded = new Set();
+    let dashboardCache = {};
+    let usersCache = null;
+
+    // ----- small helpers -----
+    function el(tag, props, ...children) {
+      const node = document.createElement(tag);
+      Object.entries(props || {}).forEach(([key, value]) => {
+        if (key === "class") node.className = value;
+        else if (key === "text") node.textContent = value;
+        else if (key.startsWith("on")) node.addEventListener(key.slice(2), value);
+        else node.setAttribute(key, value);
+      });
+      children.flat().forEach(child => {
+        if (child === null || child === undefined) return;
+        node.appendChild(typeof child === "string" || typeof child === "number" ? document.createTextNode(String(child)) : child);
+      });
+      return node;
+    }
+    const $ = id => document.getElementById(id);
+    function clear(node) { node.textContent = ""; return node; }
+    function emptyRow(tbody, cols, text, isError) {
+      clear(tbody).appendChild(el("tr", {}, el("td", { colspan: cols, class: isError ? "err" : "muted", text })));
+    }
     function setStatus(msg, isError) {
-      const el = document.getElementById("status");
-      el.textContent = msg || "";
-      el.className = isError ? "err" : "muted";
+      $("status").textContent = msg || "";
+      $("status").className = isError ? "err" : "muted";
+    }
+    const NUM = new Intl.NumberFormat("ro-RO");
+    function num(n) { return NUM.format(n || 0); }
+    // The server sends naive UTC timestamps; show them in the viewer's time zone.
+    function toDate(s) {
+      if (!s) return null;
+      const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s + "Z";
+      const d = new Date(iso);
+      return isNaN(d) ? null : d;
+    }
+    function fmtDateTime(s) {
+      const d = toDate(s);
+      return d ? d.toLocaleString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+    }
+    function fmtDate(s) {
+      const d = toDate(s);
+      return d ? d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—";
+    }
+    function fmtDay(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
+
+    // ----- auth -----
+    function showApp(on) {
+      $("loginCard").classList.toggle("hidden", on);
+      $("appShell").classList.toggle("hidden", !on);
+      $("logoutBtn").classList.toggle("hidden", !on);
+      if (!on) $("whoami").textContent = "";
     }
 
+    function denied(status) {
+      token = null;
+      me = null;
+      localStorage.removeItem("lm_token");
+      showApp(false);
+      $("loginErr").textContent = status === 403
+        ? "Contul nu are drepturi de administrator."
+        : "Sesiunea a expirat. Autentifică-te din nou.";
+    }
+
+    function authHeaders() { return { "Authorization": "Bearer " + token }; }
+
+    async function apiGet(url) {
+      const r = await fetch(url, { headers: authHeaders() });
+      if (r.status === 401 || r.status === 403) { denied(r.status); throw new Error("denied"); }
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }
+
+    // Returns { ok, status, body }; 401/403 end the admin session.
     async function apiMutate(url, method, body) {
       const opts = { method, headers: { ...authHeaders() } };
       if (body !== undefined) {
@@ -127,102 +381,329 @@
       }
       let r;
       try { r = await fetch(url, opts); }
-      catch (e) { setStatus("Network error", true); return false; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return false; }
-      if (!r.ok) {
-        let detail = "Error " + r.status;
-        try { detail = (await r.json()).detail || detail; } catch (e) {}
-        setStatus(detail, true);
-        return false;
+      catch (e) { setStatus("Eroare de rețea.", true); return { ok: false }; }
+      let data = null;
+      try { data = await r.json(); } catch (e) {}
+      if (r.status === 401 || r.status === 403) { denied(r.status); return { ok: false, status: r.status }; }
+      return { ok: r.ok, status: r.status, body: data };
+    }
+
+    // Romanian counts: "1 listă", "3 liste", "20 de liste".
+    function countRo(n, one, many) {
+      if (n === 1) return `1 ${one}`;
+      const tail = n % 100;
+      return `${num(n)} ${tail === 0 || tail >= 20 ? "de " : ""}${many}`;
+    }
+
+    function errorText(result) {
+      const detail = result.body && result.body.detail;
+      if (result.status === 409 && detail && typeof detail === "object") {
+        if (detail.code === "user_has_linked_data") {
+          const labels = {
+            team_memberships: ["apartenență la o echipă", "apartenențe la echipe"],
+            teams_created: ["echipă creată", "echipe create"],
+            invites_created: ["invitație creată", "invitații create"],
+            lists: ["listă", "liste"],
+            inventory_items: ["poziție de inventar", "poziții de inventar"],
+          };
+          const parts = Object.entries(detail.blockers || {}).map(([k, v]) =>
+            labels[k] ? countRo(v, ...labels[k]) : `${v} ${k}`);
+          return "Contul nu se poate șterge" + (parts.length ? ": are " + parts.join(", ") : ", pentru că are date legate") + ". Folosește Dezactivează.";
+        }
+        if (detail.code === "distributor_has_products") {
+          return detail.product_count
+            ? `Distribuitorul are încă ${countRo(detail.product_count, "produs", "produse")}. Șterge-le sau mută-le întâi.`
+            : "Distribuitorul are încă produse. Șterge-le sau mută-le întâi.";
+        }
+        if (detail.code === "product_on_lists") {
+          return "Produsul apare pe liste, așa că nu se poate șterge. Comenzile vechi trebuie să rămână lizibile.";
+        }
       }
-      return true;
-    }
-
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-    }
-
-    function authHeaders() { return { "Authorization": "Bearer " + token }; }
-    function showApp(on) {
-      document.getElementById("loginCard").classList.toggle("hidden", on);
-      document.getElementById("appCard").classList.toggle("hidden", !on);
+      if (typeof detail === "string") return detail;
+      return "Eroare " + (result.status || "");
     }
 
     async function login() {
-      const username = document.getElementById("username").value;
-      const password = document.getElementById("password").value;
-      const r = await fetch("/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
-      });
-      if (!r.ok) { document.getElementById("loginErr").textContent = "Login failed"; return; }
-      token = (await r.json()).access_token;
-      localStorage.setItem("lm_token", token);
-      showApp(true); loadDashboard(); loadProducts(); loadCrashes();
-    }
-
-    async function importCsv(dryRun, file) {
-      if (!file) { alert("Choose a CSV file first"); return null; }
-      const fd = new FormData(); fd.append("file", file);
+      $("loginErr").textContent = "";
+      const username = $("username").value;
+      const password = $("password").value;
       let r;
       try {
-        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, {
-          method: "POST", headers: authHeaders(), body: fd
+        r = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
         });
-      } catch (e) {
-        document.getElementById("preview").innerHTML = '<span class="err">Network error</span>';
-        return null;
-      }
-      if (r.status === 401 || r.status === 403) { showApp(false); return null; }
+      } catch (e) { $("loginErr").textContent = "Eroare de rețea."; return; }
+      if (!r.ok) { $("loginErr").textContent = "Autentificare eșuată."; return; }
       const body = await r.json();
-      if (!r.ok) {
-        document.getElementById("preview").innerHTML = '<span class="err">' + escapeHtml(body.detail || "Error") + '</span>';
-        return null;
+      token = body.access_token;
+      localStorage.setItem("lm_token", token);
+      // Kept only for this tab, so Deconectare can end this login on the server.
+      if (body.refresh_token) sessionStorage.setItem("lm_refresh", body.refresh_token);
+      $("password").value = "";
+      start();
+    }
+
+    async function logout() {
+      const refresh = sessionStorage.getItem("lm_refresh");
+      sessionStorage.removeItem("lm_refresh");
+      if (refresh) {
+        try {
+          await fetch("/api/auth/logout", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ refresh_token: refresh })
+          });
+        } catch (e) {}
       }
-      return body;
+      token = null; me = null;
+      localStorage.removeItem("lm_token");
+      $("loginErr").textContent = "";
+      showApp(false);
     }
 
-    function renderSummary(b, prefix) {
-      let html = prefix + `New: ${b.new} · Updated: ${b.updated} · Unchanged: ${b.unchanged}`;
-      if (b.errors.length) {
-        html += `<br><span class="err">${b.errors.length} row(s) skipped: ` +
-          b.errors.map(e => `line ${e.line}: ${escapeHtml(e.reason)}`).join("; ") + "</span>";
+    async function start() {
+      loaded = new Set();
+      dashboardCache = {};
+      usersCache = null;
+      try {
+        me = await apiGet("/api/auth/me");
+      } catch (e) {
+        if (token) { showApp(false); $("loginErr").textContent = "Serverul nu răspunde."; }
+        return;
       }
-      document.getElementById("preview").innerHTML = html;
+      if (me.role !== "ADMIN") { denied(403); return; }
+      $("whoami").textContent = me.username;
+      showApp(true);
+      route();
     }
 
-    async function preview() {
-      previewedFile = document.getElementById("csvFile").files[0];
-      const b = await importCsv(true, previewedFile);
-      if (!b) { document.getElementById("confirmBtn").disabled = true; return; }
-      renderSummary(b, "");
-      document.getElementById("confirmBtn").disabled = false;
+    // ----- navigation -----
+    const loaders = {
+      panou: loadPanou,
+      produse: loadProducts,
+      utilizatori: loadUsers,
+      echipe: loadTeams,
+      activitate: loadActivity,
+      comenzi: loadOrders,
+      erori: loadCrashes,
+    };
+
+    function currentSection() {
+      const name = location.hash.replace("#", "");
+      return SECTIONS.includes(name) ? name : "panou";
     }
 
-    async function commit() {
-      const b = await importCsv(false, previewedFile);
-      if (!b) return;
-      renderSummary(b, "<b>Imported.</b> ");
-      document.getElementById("confirmBtn").disabled = true;
-      previewedFile = null;
-      loadProducts();
+    function route() {
+      if (!token || !me) return;
+      const name = currentSection();
+      document.querySelectorAll("main > section").forEach(s => { s.hidden = s.dataset.section !== name; });
+      document.querySelectorAll("nav a").forEach(a => {
+        if (a.dataset.section === name) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
+      setStatus("");
+      if (!loaded.has(name)) { loaded.add(name); loaders[name](); }
     }
+
+    function refresh(name) {
+      dashboardCache = {};
+      usersCache = null;
+      loaded = new Set([name]);
+      loaders[name]();
+    }
+
+    function renderPeriodControls() {
+      document.querySelectorAll("[data-period]").forEach(box => {
+        clear(box);
+        PERIODS.forEach(days => {
+          box.appendChild(el("button", {
+            type: "button",
+            "aria-pressed": String(days === period),
+            text: countRo(days, "zi", "zile"),
+            onclick: () => {
+              if (days === period) return;
+              period = days;
+              renderPeriodControls();
+              const name = currentSection();
+              loaded = new Set([name]);
+              loaders[name]();
+            },
+          }));
+        });
+      });
+    }
+
+    // ----- shared data -----
+    async function getDashboard() {
+      const days = period;
+      if (!dashboardCache[days]) {
+        dashboardCache[days] = apiGet("/api/admin/dashboard?days=" + days).catch(e => {
+          delete dashboardCache[days];
+          throw e;
+        });
+      }
+      return dashboardCache[days];
+    }
+
+    async function getUsers() {
+      if (!usersCache) {
+        usersCache = apiGet("/api/admin/users/details").catch(e => { usersCache = null; throw e; });
+      }
+      return usersCache;
+    }
+
+    function stat(value, label) {
+      return el("div", { class: "stat" }, el("b", { text: num(value) }), el("span", { text: label }));
+    }
+
+    function loadingInto(...nodes) { nodes.forEach(n => { clear(n).appendChild(el("div", { class: "muted", text: "Se încarcă…" })); }); }
+    function failInto(...nodes) { nodes.forEach(n => { clear(n).appendChild(el("div", { class: "err", text: "Nu s-au putut încărca datele." })); }); }
+
+    // ----- chart: one series per chart, bars from a zero baseline -----
+    // perDay: the series counts distinct people per day, so days must not be summed.
+    function barChart(title, activity, key, perDay) {
+      const total = activity.reduce((sum, a) => sum + (a[key] || 0), 0);
+      const peak = Math.max(0, ...activity.map(a => a[key] || 0));
+      const summary = perDay ? `cel mult ${num(peak)} într-o zi` : `${num(total)} în ${countRo(activity.length, "zi", "zile")}`;
+      const card = el("div", { class: "card chart" },
+        el("div", { class: "head" }, el("b", { text: title }), el("span", { text: summary })));
+      if (!total) {
+        card.appendChild(el("div", { class: "muted", style: "padding:24px 0", text: "Nimic în perioada aleasă." }));
+        return card;
+      }
+      const W = 520, H = 170, L = 34, R = 6, T = 10, B = 22;
+      const plotW = W - L - R, plotH = H - T - B;
+      const max = Math.max(...activity.map(a => a[key] || 0));
+      const top = niceMax(max);
+      const step = plotW / activity.length;
+      const gap = Math.min(2, step * 0.25);
+      const barW = Math.max(1, step - gap);
+      const NS = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      svg.setAttribute("role", "img");
+      svg.setAttribute("aria-label", `${title}: ${summary}`);
+      const svgEl = (tag, attrs) => {
+        const node = document.createElementNS(NS, tag);
+        Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+        return node;
+      };
+      const y = v => T + plotH - (v / top) * plotH;
+
+      // Recessive grid: baseline, middle and top, with integer labels.
+      [0, top / 2, top].forEach(v => {
+        if (v !== Math.round(v)) return;
+        svg.appendChild(svgEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: v ? "#EDE8DC" : "#C9C1AF", "stroke-width": 1 }));
+        const label = svgEl("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end", "font-size": 11, fill: "#6E6A60" });
+        label.textContent = num(v);
+        svg.appendChild(label);
+      });
+
+      const tooltip = el("div", { class: "tooltip hidden" });
+      activity.forEach((a, i) => {
+        const value = a[key] || 0;
+        const x = L + i * step + gap / 2;
+        if (value) {
+          const h = Math.max(1, plotH * value / top);
+          const r = Math.min(4, barW / 2, h);
+          const yTop = T + plotH - h, base = T + plotH;
+          svg.appendChild(svgEl("path", {
+            d: `M${x},${base} V${yTop + r} Q${x},${yTop} ${x + r},${yTop} H${x + barW - r} Q${x + barW},${yTop} ${x + barW},${yTop + r} V${base} Z`,
+            fill: "var(--chart)",
+          }));
+        }
+        // The hit area spans the whole column, so even a zero day can be read.
+        const hit = svgEl("rect", { class: "hit", x: L + i * step, y: T, width: step, height: plotH });
+        hit.addEventListener("mouseenter", () => {
+          tooltip.textContent = `${fmtDay(a.date)}.${a.date.slice(0, 4)}: ${num(value)}`;
+          const share = (L + i * step + step / 2) / W;
+          tooltip.style.left = (share * 100) + "%";
+          // Keep the label inside the card near either edge.
+          tooltip.style.transform = share > 0.8 ? "translate(-100%, -100%)" : share < 0.2 ? "translate(0, -100%)" : "";
+          tooltip.style.top = (y(value) / H * 100) + "%";
+          tooltip.classList.remove("hidden");
+        });
+        hit.addEventListener("mouseleave", () => tooltip.classList.add("hidden"));
+        svg.appendChild(hit);
+      });
+
+      // Date labels: first, middle and last day.
+      const marks = [...new Set([0, Math.floor((activity.length - 1) / 2), activity.length - 1])];
+      marks.forEach((i, n) => {
+        const t = svgEl("text", {
+          x: L + i * step + step / 2, y: H - 6, "font-size": 11, fill: "#6E6A60",
+          "text-anchor": n === 0 ? "start" : n === marks.length - 1 ? "end" : "middle",
+        });
+        if (n === 0) t.setAttribute("x", L);
+        if (n === marks.length - 1) t.setAttribute("x", W - R);
+        t.textContent = fmtDay(activity[i].date);
+        svg.appendChild(t);
+      });
+
+      const wrap = el("div", { style: "position:relative" });
+      wrap.appendChild(svg);
+      wrap.appendChild(tooltip);
+      card.appendChild(wrap);
+
+      const rows = activity.filter(a => a[key]).map(a =>
+        el("tr", {}, el("td", { text: a.date }), el("td", { class: "num", text: num(a[key]) })));
+      card.appendChild(el("details", {},
+        el("summary", { text: "Vezi ca tabel" }),
+        el("table", {}, el("thead", {}, el("tr", {}, el("th", { text: "Ziua (UTC)" }), el("th", { class: "num", text: "Valoare" }))),
+          el("tbody", {}, rows))));
+      return card;
+    }
+
+    // The smallest round top at or above the peak; the middle label shows only when whole.
+    function niceMax(max) {
+      if (max <= 2) return 2;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(max)));
+      for (const m of [1, 2, 2.5, 5, 10]) {
+        const candidate = m * magnitude;
+        if (candidate >= max && Number.isInteger(candidate)) return candidate;
+      }
+      return 10 * magnitude;
+    }
+
+    // ----- Panou -----
+    async function loadPanou() {
+      loadingInto($("panouStats"), $("panouCharts"));
+      let d;
+      try { d = await getDashboard(); } catch (e) { failInto($("panouStats"), $("panouCharts")); return; }
+      clear($("panouStats")).append(
+        stat(d.stores.length, "Echipe"),
+        stat(d.users_count, "Utilizatori"),
+        stat(d.lists_completed_count, "Comenzi"),
+        stat(d.documents_count, "Documente"),
+        stat(d.products_count, "Produse"),
+        stat(d.distributors_count, "Distribuitori"),
+        stat(d.crashes_count, "Rapoarte de erori"),
+      );
+      clear($("panouCharts")).append(
+        barChart("Comenzi pe zi", d.activity, "lists_completed"),
+        barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
+        barChart("Produse puse pe liste", d.activity, "items_added"),
+        barChart("Rapoarte de erori pe zi", d.activity, "crash_reports"),
+      );
+    }
+
+    // ----- Produse și distribuitori -----
+    let products = [], distributorList = [], distributors = {};
+    let catalogOffset = 0, catalogTotal = 0, catalogRequest = 0, searchTimer = null;
+    let previewedFile = null, editingProductId = null;
 
     async function loadProducts() {
       const request = ++catalogRequest;
       const params = new URLSearchParams({ limit: CATALOG_PAGE_SIZE, offset: catalogOffset });
-      const q = (document.getElementById("search").value || "").trim();
+      const q = ($("search").value || "").trim();
       if (q) params.set("q", q);
+      if ($("distFilter").value) params.set("distributor_id", $("distFilter").value);
       try {
-        const [pr, dr] = await Promise.all([
-          fetch("/api/admin/catalog/products?" + params, { headers: authHeaders() }),
-          fetch("/api/catalog/distributors").then(r => r.json())
+        const [page, dr] = await Promise.all([
+          apiGet("/api/admin/catalog/products?" + params),
+          fetch("/api/catalog/distributors").then(r => { if (!r.ok) throw new Error(); return r.json(); }),
         ]);
         if (request !== catalogRequest) return;   // a newer search or page already started
-        if (pr.status === 401 || pr.status === 403) { showApp(false); return; }
-        if (!pr.ok) throw new Error("catalog " + pr.status);
-        const page = await pr.json();
-        if (request !== catalogRequest) return;
         if (!page.items.length && page.total > 0 && catalogOffset > 0) {
           // The last row on this page was deleted, so step back to a page that has rows.
           catalogOffset = Math.max(0, catalogOffset - CATALOG_PAGE_SIZE);
@@ -230,22 +711,40 @@
         }
         products = page.items;
         catalogTotal = page.total;
+        distributorList = dr.slice().sort((a, b) => a.distributor_name.localeCompare(b.distributor_name, "ro"));
         distributors = {};
         dr.forEach(d => distributors[d.id] = d.distributor_name);
-        distributorList = dr;
-        renderTable();
+        renderProducts();
         renderPager();
         renderDistributors();
-        populateDistributorSelect();
+        populateDistributorSelects();
       } catch (e) {
-        if (request !== catalogRequest) return;
-        document.getElementById("rows").innerHTML = '<tr><td colspan="5" class="err">Failed to load catalog</td></tr>';
+        if (request !== catalogRequest || e.message === "denied") return;
+        emptyRow($("rows"), 5, "Catalogul nu s-a putut încărca.", true);
       }
     }
 
-    function onSearchInput() {
-      clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { catalogOffset = 0; loadProducts(); }, 250);
+    function renderProducts() {
+      const tbody = clear($("rows"));
+      if (!products.length) { emptyRow(tbody, 5, "Niciun produs."); return; }
+      products.forEach(p => {
+        tbody.appendChild(el("tr", {},
+          el("td", { text: p.name }),
+          el("td", { text: distributors[p.distributor_id] || "" }),
+          el("td", { text: p.aliases || "" }),
+          el("td", { class: "num", text: p.price == null ? "" : String(p.price) }),
+          el("td", { class: "actions" },
+            el("button", { class: "quiet small", type: "button", text: "Editează", onclick: () => editProduct(p) }), " ",
+            el("button", { class: "danger small", type: "button", text: "Șterge", onclick: () => deleteProduct(p) }))));
+      });
+    }
+
+    function renderPager() {
+      const first = catalogTotal === 0 ? 0 : catalogOffset + 1;
+      const last = catalogOffset + products.length;
+      $("pageInfo").textContent = `${num(first)}–${num(last)} din ${num(catalogTotal)}`;
+      $("prevPage").disabled = catalogOffset === 0;
+      $("nextPage").disabled = last >= catalogTotal;
     }
 
     function changePage(direction) {
@@ -255,328 +754,367 @@
       loadProducts();
     }
 
-    function renderPager() {
-      const first = catalogTotal === 0 ? 0 : catalogOffset + 1;
-      const last = catalogOffset + products.length;
-      document.getElementById("pageInfo").textContent = `${first}–${last} of ${catalogTotal}`;
-      document.getElementById("prevPage").disabled = catalogOffset === 0;
-      document.getElementById("nextPage").disabled = last >= catalogTotal;
-    }
-
-    function renderTable() {
-      const tbody = document.getElementById("rows");
-      tbody.innerHTML = "";
-      products
-        .forEach(p => {
-          const tr = document.createElement("tr");
-          const cells = [p.name, distributors[p.distributor_id] || "", p.aliases || "", p.price == null ? "" : p.price];
-          cells.forEach(v => {
-            const td = document.createElement("td");
-            td.textContent = v;
-            tr.appendChild(td);
-          });
-
-          const actionsTd = document.createElement("td");
-          const editBtn = document.createElement("button");
-          editBtn.textContent = "Edit";
-          editBtn.addEventListener("click", () => editProduct(p));
-          const delBtn = document.createElement("button");
-          delBtn.className = "secondary";
-          delBtn.textContent = "Delete";
-          delBtn.style.marginLeft = "6px";
-          delBtn.addEventListener("click", () => deleteProduct(p));
-          actionsTd.appendChild(editBtn);
-          actionsTd.appendChild(delBtn);
-          tr.appendChild(actionsTd);
-
-          tbody.appendChild(tr);
-        });
-    }
-
     function renderDistributors() {
-      const list = document.getElementById("distList");
-      list.innerHTML = "";
+      const tbody = clear($("distRows"));
+      if (!distributorList.length) { emptyRow(tbody, 2, "Niciun distribuitor."); return; }
       distributorList.forEach(d => {
-        const li = document.createElement("li");
-        const span = document.createElement("span");
-        span.textContent = d.distributor_name;
-        const renameBtn = document.createElement("button");
-        renameBtn.textContent = "Rename";
-        renameBtn.style.marginLeft = "8px";
-        renameBtn.addEventListener("click", () => renameDistributor(d.id, d.distributor_name));
-        const delBtn = document.createElement("button");
-        delBtn.className = "secondary";
-        delBtn.textContent = "Delete";
-        delBtn.style.marginLeft = "6px";
-        delBtn.addEventListener("click", () => deleteDistributor(d.id, d.distributor_name));
-        li.appendChild(span);
-        li.appendChild(renameBtn);
-        li.appendChild(delBtn);
-        list.appendChild(li);
+        tbody.appendChild(el("tr", {},
+          el("td", { text: d.distributor_name }),
+          el("td", { class: "actions" },
+            el("button", { class: "quiet small", type: "button", text: "Redenumește", onclick: () => renameDistributor(d) }), " ",
+            el("button", { class: "danger small", type: "button", text: "Șterge", onclick: () => deleteDistributor(d) }))));
       });
     }
 
-    function populateDistributorSelect() {
-      const select = document.getElementById("pDist");
-      const current = select.value;
-      select.innerHTML = "";
-      distributorList.forEach(d => {
-        const option = document.createElement("option");
-        option.value = d.id;
-        option.textContent = d.distributor_name;
-        select.appendChild(option);
+    function populateDistributorSelects() {
+      [["pDist", null], ["distFilter", "Toți distribuitorii"]].forEach(([id, allLabel]) => {
+        const select = $(id);
+        const current = select.value;
+        clear(select);
+        if (allLabel) select.appendChild(el("option", { value: "", text: allLabel }));
+        distributorList.forEach(d => select.appendChild(el("option", { value: d.id, text: d.distributor_name })));
+        if (current && distributorList.some(d => String(d.id) === current)) select.value = current;
       });
-      if (current && distributorList.some(d => String(d.id) === current)) {
-        select.value = current;
-      }
     }
 
     async function createDistributor() {
-      const input = document.getElementById("distName");
-      const name = input.value.trim();
+      const name = $("distName").value.trim();
       if (!name) return;
-      const ok = await apiMutate("/api/catalog/distributors", "POST", { distributor_name: name });
-      if (!ok) return;
-      input.value = "";
-      setStatus("Distributor added");
+      const result = await apiMutate("/api/catalog/distributors", "POST", { distributor_name: name });
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      $("distName").value = "";
+      setStatus("Distribuitor adăugat.");
       loadProducts();
     }
 
-    async function renameDistributor(id, current) {
-      const name = prompt("New name", current);
-      if (name === null) return;                 // user cancelled
-      if (!name.trim()) { setStatus("Name required", true); return; }
-      const ok = await apiMutate("/api/catalog/distributors/" + id, "PUT", { distributor_name: name.trim() });
-      if (!ok) return;
-      setStatus("Distributor renamed");
+    async function renameDistributor(d) {
+      const name = prompt("Nume nou", d.distributor_name);
+      if (name === null) return;
+      if (!name.trim()) { setStatus("Numele este obligatoriu.", true); return; }
+      const result = await apiMutate("/api/catalog/distributors/" + d.id, "PUT", { distributor_name: name.trim() });
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      setStatus("Distribuitor redenumit.");
       loadProducts();
     }
 
-    async function deleteDistributor(id, name) {
-      if (!confirm('Delete distributor "' + name + '"? This will ALSO permanently delete every product under it.')) return;
-      const ok = await apiMutate("/api/catalog/distributors/" + id, "DELETE");
-      if (!ok) return;
-      setStatus("Distributor deleted");
+    async function deleteDistributor(d) {
+      if (!confirm(`Ștergi distribuitorul „${d.distributor_name}”? Merge doar dacă nu mai are produse.`)) return;
+      const result = await apiMutate("/api/catalog/distributors/" + d.id, "DELETE");
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      setStatus("Distribuitor șters.");
       loadProducts();
     }
 
     async function saveProduct() {
-      const name = document.getElementById("pName").value.trim();
-      const distSelect = document.getElementById("pDist");
-      const aliasesVal = document.getElementById("pAliases").value.trim();
-      const priceVal = document.getElementById("pPrice").value;
-
-      if (!name || !distSelect.value) {
-        setStatus("Name and distributor required", true);
-        return;
-      }
-
+      const name = $("pName").value.trim();
+      const distributorId = $("pDist").value;
+      const aliases = $("pAliases").value.trim();
+      const price = $("pPrice").value;
+      if (!name || !distributorId) { setStatus("Numele și distribuitorul sunt obligatorii.", true); return; }
       const body = {
         name,
-        distributor_id: Number(distSelect.value),
-        aliases: aliasesVal || null,
-        price: priceVal === "" ? null : Number(priceVal)
+        distributor_id: Number(distributorId),
+        aliases: aliases || null,
+        price: price === "" ? null : Number(price),
       };
-
-      let ok;
-      if (editingProductId) {
-        ok = await apiMutate("/api/catalog/products/" + editingProductId, "PUT", body);
-      } else {
-        ok = await apiMutate("/api/catalog/products", "POST", body);
-      }
-      if (!ok) return;
+      const result = editingProductId
+        ? await apiMutate("/api/catalog/products/" + editingProductId, "PUT", body)
+        : await apiMutate("/api/catalog/products", "POST", body);
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
       clearProductForm();
-      setStatus("Saved");
+      setStatus("Produs salvat.");
       loadProducts();
     }
 
     function editProduct(p) {
-      document.getElementById("pName").value = p.name || "";
-      document.getElementById("pDist").value = p.distributor_id;
-      document.getElementById("pAliases").value = p.aliases || "";
-      document.getElementById("pPrice").value = p.price == null ? "" : p.price;
+      $("pName").value = p.name || "";
+      $("pDist").value = p.distributor_id;
+      $("pAliases").value = p.aliases || "";
+      $("pPrice").value = p.price == null ? "" : p.price;
       editingProductId = p.id;
-      document.getElementById("saveProductBtn").textContent = "Update";
+      $("productFormTitle").textContent = "Editează produs";
+      $("saveProductBtn").textContent = "Salvează";
+      $("pName").focus();
     }
 
     function clearProductForm() {
-      document.getElementById("pName").value = "";
-      document.getElementById("pAliases").value = "";
-      document.getElementById("pPrice").value = "";
+      $("pName").value = "";
+      $("pAliases").value = "";
+      $("pPrice").value = "";
       editingProductId = null;
-      document.getElementById("saveProductBtn").textContent = "Add";
+      $("productFormTitle").textContent = "Adaugă produs";
+      $("saveProductBtn").textContent = "Adaugă";
     }
 
     async function deleteProduct(p) {
-      if (!confirm('Delete product "' + p.name + '"?')) return;
-      const ok = await apiMutate("/api/catalog/products/" + p.id, "DELETE");
-      if (!ok) return;
-      setStatus("Product deleted");
+      if (!confirm(`Ștergi produsul „${p.name}”?`)) return;
+      const result = await apiMutate("/api/catalog/products/" + p.id, "DELETE");
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      setStatus("Produs șters.");
       loadProducts();
     }
 
-    document.getElementById("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
-
-    // ===== Overview dashboard (stat cards + activity chart) =====
-    function statEl(value, label) {
-      const div = document.createElement("div");
-      div.className = "stat";
-      const b = document.createElement("b");
-      b.textContent = value;
-      const span = document.createElement("span");
-      span.textContent = label;
-      div.appendChild(b); div.appendChild(span);
-      return div;
-    }
-
-    function renderChart(activity) {
-      const box = document.getElementById("chartBox");
-      box.textContent = "";
-      const n = activity.length;
-      if (!n) { box.textContent = "Fără date încă."; return; }
-      const W = 860, H = 180, PAD_L = 30, PAD_B = 22, PAD_T = 10;
-      const plotW = W - PAD_L - 8, plotH = H - PAD_B - PAD_T;
-      const step = plotW / n;
-      const maxItems = Math.max(1, ...activity.map(a => a.items_added));
-      const maxLists = Math.max(1, ...activity.map(a => a.lists_completed));
-      const NS = "http://www.w3.org/2000/svg";
-      const svg = document.createElementNS(NS, "svg");
-      svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-      svg.setAttribute("width", "100%");
-      svg.style.minWidth = "600px";
-
-      // Bars: products registered per day (own scale).
-      activity.forEach((a, i) => {
-        const h = (a.items_added / maxItems) * plotH;
-        const rect = document.createElementNS(NS, "rect");
-        rect.setAttribute("x", PAD_L + i * step + 1);
-        rect.setAttribute("y", PAD_T + plotH - h);
-        rect.setAttribute("width", Math.max(2, step - 2));
-        rect.setAttribute("height", h);
-        rect.setAttribute("fill", "#DDA92B");
-        const title = document.createElementNS(NS, "title");
-        title.textContent = `${a.date}: ${a.items_added} produse, ${a.lists_completed} liste`;
-        rect.appendChild(title);
-        svg.appendChild(rect);
-      });
-
-      // Line: lists completed per day (own scale, so 1 list is still visible).
-      const points = activity.map((a, i) => {
-        const x = PAD_L + i * step + step / 2;
-        const y = PAD_T + plotH - (a.lists_completed / maxLists) * plotH;
-        return `${x},${y}`;
-      }).join(" ");
-      const line = document.createElementNS(NS, "polyline");
-      line.setAttribute("points", points);
-      line.setAttribute("fill", "none");
-      line.setAttribute("stroke", "#71805C");
-      line.setAttribute("stroke-width", "2");
-      svg.appendChild(line);
-      activity.forEach((a, i) => {
-        if (!a.lists_completed) return;
-        const dot = document.createElementNS(NS, "circle");
-        dot.setAttribute("cx", PAD_L + i * step + step / 2);
-        dot.setAttribute("cy", PAD_T + plotH - (a.lists_completed / maxLists) * plotH);
-        dot.setAttribute("r", "3");
-        dot.setAttribute("fill", "#71805C");
-        svg.appendChild(dot);
-      });
-
-      // Axis: max value on the left, a date label every ~week.
-      const axisMax = document.createElementNS(NS, "text");
-      axisMax.setAttribute("x", 2); axisMax.setAttribute("y", PAD_T + 10);
-      axisMax.setAttribute("font-size", "11"); axisMax.setAttribute("fill", "#6E6A60");
-      axisMax.textContent = maxItems;
-      svg.appendChild(axisMax);
-      activity.forEach((a, i) => {
-        if (i % 7 !== 0 && i !== n - 1) return;
-        const t = document.createElementNS(NS, "text");
-        t.setAttribute("x", PAD_L + i * step);
-        t.setAttribute("y", H - 6);
-        t.setAttribute("font-size", "10");
-        t.setAttribute("fill", "#6E6A60");
-        t.textContent = a.date.slice(5); // MM-DD
-        svg.appendChild(t);
-      });
-      box.appendChild(svg);
-    }
-
-    async function loadDashboard() {
+    async function importCsv(dryRun, file) {
+      const out = $("preview");
+      if (!file) { out.textContent = "Alege întâi un fișier CSV."; return null; }
+      const fd = new FormData();
+      fd.append("file", file);
       let r;
       try {
-        r = await fetch("/api/admin/dashboard", { headers: authHeaders() });
-      } catch (e) { document.getElementById("chartBox").textContent = "Network error"; return; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return; }
-      const d = await r.json();
-
-      const row = document.getElementById("statRow");
-      row.textContent = "";
-      row.appendChild(statEl(d.stores.length, "Magazine"));
-      row.appendChild(statEl(d.users_count, "Angajați"));
-      row.appendChild(statEl(d.products_count, "Produse"));
-      row.appendChild(statEl(d.distributors_count, "Distribuitori"));
-      row.appendChild(statEl(d.lists_completed_count, "Liste finalizate"));
-      row.appendChild(statEl(d.crashes_count, "Bug reports"));
-
-      const storeBox = document.getElementById("storeList");
-      storeBox.textContent = "";
-      if (d.stores.length) {
-        d.stores.forEach(s => {
-          const chip = document.createElement("span");
-          chip.className = "chip";
-          chip.textContent = `${s.name} · ${s.member_count} angajați`;
-          storeBox.appendChild(chip);
-        });
-      } else {
-        storeBox.textContent = "Niciun magazin (echipă) creat încă.";
-        storeBox.className = "muted";
+        r = await fetch("/api/admin/catalog/import?dry_run=" + dryRun, { method: "POST", headers: authHeaders(), body: fd });
+      } catch (e) { clear(out).appendChild(el("span", { class: "err", text: "Eroare de rețea." })); return null; }
+      if (r.status === 401 || r.status === 403) { denied(r.status); return null; }
+      let body = {};
+      try { body = await r.json(); } catch (e) {}
+      if (!r.ok) {
+        clear(out).appendChild(el("span", { class: "err", text: typeof body.detail === "string" ? body.detail : "Eroare " + r.status }));
+        return null;
       }
-
-      renderChart(d.activity);
+      return body;
     }
 
-    async function loadCrashes() {
-      const box = document.getElementById("crashList");
-      let r;
+    function renderImportSummary(b, done) {
+      const out = clear($("preview"));
+      if (done) out.appendChild(el("b", { text: "Importat. " }));
+      out.appendChild(document.createTextNode(`Noi: ${b.new} · Actualizate: ${b.updated} · Neschimbate: ${b.unchanged}`));
+      if (b.errors.length) {
+        out.appendChild(el("br"));
+        out.appendChild(el("span", { class: "err", text: `${b.errors.length} rânduri sărite: ` +
+          b.errors.map(e => `rândul ${e.line}: ${e.reason}`).join("; ") }));
+      }
+    }
+
+    async function previewImport() {
+      previewedFile = $("csvFile").files[0];
+      const b = await importCsv(true, previewedFile);
+      $("confirmBtn").disabled = !b;
+      if (b) renderImportSummary(b, false);
+    }
+
+    async function commitImport() {
+      const b = await importCsv(false, previewedFile);
+      if (!b) return;
+      renderImportSummary(b, true);
+      $("confirmBtn").disabled = true;
+      previewedFile = null;
+      loadProducts();
+    }
+
+    // ----- Utilizatori -----
+    let users = [];
+
+    async function loadUsers() {
+      emptyRow($("userRows"), 8, "Se încarcă…");
+      try { users = await getUsers(); }
+      catch (e) { if (e.message !== "denied") emptyRow($("userRows"), 8, "Utilizatorii nu s-au putut încărca.", true); return; }
+      renderUsers();
+    }
+
+    function renderUsers() {
+      const q = ($("userSearch").value || "").trim().toLowerCase();
+      const tbody = clear($("userRows"));
+      const rows = users.filter(u => !q || [u.username, u.email, u.full_name, u.company]
+        .some(v => (v || "").toLowerCase().includes(q)));
+      if (!rows.length) { emptyRow(tbody, 8, "Niciun utilizator găsit."); return; }
+      rows.forEach(u => {
+        const self = me && u.id === me.id;
+        const lock = self ? { disabled: "", title: "Nu se aplică propriului cont." } : {};
+        const subtitle = [u.full_name, u.company].filter(Boolean).join(" · ");
+        tbody.appendChild(el("tr", {},
+          el("td", {}, el("div", { text: u.username }), subtitle ? el("div", { class: "muted", text: subtitle }) : null),
+          el("td", { text: u.email }),
+          el("td", {},
+            el("span", { class: "badge " + (u.is_active ? "on" : "off"), text: u.is_active ? "Activ" : "Dezactivat" }),
+            u.role === "ADMIN" ? el("div", { class: "muted", text: "Admin" }) : null),
+          el("td", {}, u.teams.length ? u.teams.map(t => el("div", {}, el("span", { class: "chip", text: t.role === "admin" ? `${t.name} (admin)` : t.name }))) : el("span", { class: "muted", text: "—" })),
+          el("td", { text: fmtDate(u.created_at) }),
+          el("td", { text: u.last_activity_at ? fmtDateTime(u.last_activity_at) : "—" }),
+          el("td", { class: "num", text: num(u.active_logins) }),
+          el("td", { class: "actions" }, el("div", { class: "stackbtn" },
+            el("button", { class: "quiet small", type: "button", text: "Deconectează peste tot", onclick: () => revokeUser(u), ...lock }),
+            u.is_active
+              ? el("button", { class: "quiet small", type: "button", text: "Dezactivează", onclick: () => setUserActive(u, false), ...lock })
+              : el("button", { class: "quiet small", type: "button", text: "Reactivează", onclick: () => setUserActive(u, true) }),
+            el("button", { class: "danger small", type: "button", text: "Șterge", onclick: () => deleteUser(u), ...lock })))));
+      });
+    }
+
+    function reloadUsers(message) {
+      usersCache = null;
+      loaded.delete("activitate");
+      setStatus(message);
+      loadUsers();
+    }
+
+    async function revokeUser(u) {
+      if (!confirm(`Închizi toate sesiunile lui ${u.username}? Va trebui să se autentifice din nou pe fiecare dispozitiv.`)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}/revoke-tokens`, "POST");
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      reloadUsers(`Sesiunile lui ${u.username} au fost închise.`);
+    }
+
+    async function setUserActive(u, active) {
+      if (!active && !confirm(`Dezactivezi contul ${u.username}? Nu se va mai putea autentifica, iar sesiunile lui se închid acum. Datele rămân.`)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}/${active ? "reactivate" : "deactivate"}`, "POST");
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      reloadUsers(active ? `Contul ${u.username} a fost reactivat.` : `Contul ${u.username} a fost dezactivat.`);
+    }
+
+    async function deleteUser(u) {
+      if (!confirm(`Ștergi definitiv contul ${u.username}? Nu se poate anula.`)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}`, "DELETE");
+      if (!result.ok) { if (result.status) setStatus(errorText(result), true); return; }
+      reloadUsers(`Contul ${u.username} a fost șters.`);
+    }
+
+    // ----- Echipe -----
+    async function loadTeams() {
+      loadingInto($("teamStats"), $("teamCharts"));
+      emptyRow($("teamRows"), 4, "Se încarcă…");
+      let d;
+      try { d = await getDashboard(); }
+      catch (e) { failInto($("teamStats"), $("teamCharts")); emptyRow($("teamRows"), 4, ""); return; }
+      const members = d.stores.reduce((sum, s) => sum + s.member_count, 0);
+      clear($("teamStats")).append(
+        stat(d.stores.length, "Echipe înregistrate"),
+        stat(members, "Locuri în echipe"),
+        stat(d.stores.filter(s => s.lists_completed > 0).length, "Echipe cu comenzi"),
+      );
+      clear($("teamCharts")).append(barChart("Echipe noi pe zi", d.activity, "teams_created"));
+      const tbody = clear($("teamRows"));
+      if (!d.stores.length) { emptyRow(tbody, 4, "Nicio echipă creată încă."); return; }
+      d.stores.forEach(s => tbody.appendChild(el("tr", {},
+        el("td", { text: s.name }),
+        el("td", { class: "num", text: num(s.member_count) }),
+        el("td", { text: fmtDate(s.created_at) }),
+        el("td", { class: "num", text: num(s.lists_completed) }))));
+    }
+
+    // ----- Activitate -----
+    async function loadActivity() {
+      loadingInto($("activityCharts"));
+      emptyRow($("recentRows"), 3, "Se încarcă…");
       try {
-        r = await fetch("/api/admin/crashes/groups", { headers: authHeaders() });
-      } catch (e) { box.textContent = "Network error"; return; }
-      if (r.status === 401 || r.status === 403) { showApp(false); return; }
-      const groups = await r.json();
-      box.textContent = "";
-      if (!groups.length) { box.textContent = "Niciun crash raportat. 🎉"; return; }
+        const d = await getDashboard();
+        clear($("activityCharts")).append(
+          barChart("Utilizatori activi pe zi", d.activity, "active_users", true),
+          barChart("Conturi noi pe zi", d.activity, "users_registered"),
+        );
+      } catch (e) { failInto($("activityCharts")); }
+      try {
+        const list = (await getUsers())
+          .filter(u => u.last_activity_at)
+          .sort((a, b) => (toDate(b.last_activity_at) || 0) - (toDate(a.last_activity_at) || 0))
+          .slice(0, 20);
+        const tbody = clear($("recentRows"));
+        if (!list.length) { emptyRow(tbody, 3, "Nicio activitate înregistrată încă."); return; }
+        list.forEach(u => tbody.appendChild(el("tr", {},
+          el("td", { text: u.username }),
+          el("td", { text: fmtDateTime(u.last_activity_at) }),
+          el("td", { class: "num", text: num(u.active_logins) }))));
+      } catch (e) { if (e.message !== "denied") emptyRow($("recentRows"), 3, "Datele nu s-au putut încărca.", true); }
+    }
+
+    // ----- Comenzi -----
+    let orderOffset = 0, orderTotal = 0, orderRequest = 0;
+
+    async function loadOrders() {
+      loadingInto($("orderStats"), $("orderCharts"));
+      try {
+        const d = await getDashboard();
+        const inPeriod = d.activity.reduce((sum, a) => sum + a.lists_completed, 0);
+        const docsInPeriod = d.activity.reduce((sum, a) => sum + a.documents, 0);
+        clear($("orderStats")).append(
+          stat(d.lists_completed_count, "Comenzi în total"),
+          stat(d.documents_count, "Documente în total"),
+          stat(inPeriod, `Comenzi în ${countRo(d.activity.length, "zi", "zile")}`),
+          stat(docsInPeriod, `Documente în ${countRo(d.activity.length, "zi", "zile")}`),
+        );
+        clear($("orderCharts")).append(
+          barChart("Comenzi pe zi", d.activity, "lists_completed"),
+          barChart("Documente pe zi", d.activity, "documents"),
+        );
+      } catch (e) { failInto($("orderStats"), $("orderCharts")); }
+      loadOrderPage();
+    }
+
+    async function loadOrderPage() {
+      const request = ++orderRequest;
+      emptyRow($("orderRows"), 6, "Se încarcă…");
+      let page;
+      try { page = await apiGet(`/api/admin/orders?limit=${ORDER_PAGE_SIZE}&offset=${orderOffset}`); }
+      catch (e) { if (request === orderRequest && e.message !== "denied") emptyRow($("orderRows"), 6, "Comenzile nu s-au putut încărca.", true); return; }
+      if (request !== orderRequest) return;
+      orderTotal = page.total;
+      const tbody = clear($("orderRows"));
+      if (!page.items.length) emptyRow(tbody, 6, "Nicio comandă încă.");
+      page.items.forEach(o => tbody.appendChild(el("tr", {},
+        el("td", { text: fmtDateTime(o.completed_at) }),
+        el("td", { text: o.name }),
+        el("td", { text: o.team_name ? o.team_name : (o.owner_username ? `${o.owner_username} (personal)` : "—") }),
+        el("td", { class: "num", text: num(o.item_lines) }),
+        el("td", { class: "num", text: num(o.total_quantity) }),
+        el("td", { class: "num", text: num(o.documents) }))));
+      const first = orderTotal ? orderOffset + 1 : 0;
+      const last = orderOffset + page.items.length;
+      $("orderPageInfo").textContent = `${num(first)}–${num(last)} din ${num(orderTotal)}`;
+      $("orderPrev").disabled = orderOffset === 0;
+      $("orderNext").disabled = last >= orderTotal;
+    }
+
+    function changeOrderPage(direction) {
+      const next = orderOffset + direction * ORDER_PAGE_SIZE;
+      if (next < 0 || next >= orderTotal) return;
+      orderOffset = next;
+      loadOrderPage();
+    }
+
+    // ----- Erori -----
+    async function loadCrashes() {
+      const box = $("crashList");
+      clear(box).appendChild(el("span", { text: "Se încarcă…" }));
+      let groups;
+      try { groups = await apiGet("/api/admin/crashes/groups"); }
+      catch (e) { if (e.message !== "denied") clear(box).appendChild(el("span", { class: "err", text: "Erorile nu s-au putut încărca." })); return; }
+      clear(box);
+      if (!groups.length) { box.appendChild(el("span", { text: "Niciun crash raportat." })); return; }
       groups.forEach(group => {
-        const det = document.createElement("details");
-        det.style.marginBottom = "8px";
-        const sum = document.createElement("summary");
         const firstLine = (group.reports[0]?.stacktrace || "").split("\n")[0];
-        sum.textContent = `impact ${group.triage_score} · ${group.count}× · ` +
-          `${group.affected_users} utilizatori · ${firstLine.slice(0, 80)} · ${group.signature.slice(0, 10)}`;
-        det.appendChild(sum);
-        const meta = document.createElement("p");
-        meta.className = "muted";
-        meta.textContent = `Prima: ${(group.first_seen || "").replace("T", " ").slice(0, 16)} · ` +
-          `Ultima: ${(group.last_seen || "").replace("T", " ").slice(0, 16)} · ` +
-          `Versiuni: ${group.app_versions.join(", ") || "?"} · Dispozitive: ${group.devices.join(", ") || "?"}`;
-        det.appendChild(meta);
-        group.reports.forEach(c => {
-          const instance = document.createElement("details");
-          const instanceSummary = document.createElement("summary");
-          instanceSummary.textContent = `${(c.created_at || "").replace("T", " ").slice(0, 16)} · ` +
-            `${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"}`;
-          const pre = document.createElement("pre");
-          pre.style.whiteSpace = "pre-wrap";
-          pre.style.fontSize = "12px";
-          pre.textContent = c.stacktrace;
-          instance.appendChild(instanceSummary);
-          instance.appendChild(pre);
-          det.appendChild(instance);
-        });
+        const det = el("details", { class: "crash" },
+          el("summary", { text: `impact ${group.triage_score} · ${group.count}× · ${group.affected_users} utilizatori · ${firstLine.slice(0, 90)} · ${group.signature.slice(0, 10)}` }),
+          el("p", { class: "muted", text: `Prima: ${fmtDateTime(group.first_seen)} · Ultima: ${fmtDateTime(group.last_seen)} · ` +
+            `Versiuni: ${group.app_versions.join(", ") || "?"} · Dispozitive: ${group.devices.join(", ") || "?"}` }));
+        group.reports.forEach(c => det.appendChild(el("details", {},
+          el("summary", { text: `${fmtDateTime(c.created_at)} · ${c.device || "?"} · v${c.app_version || "?"} · ${c.username || "anonim"}` }),
+          el("pre", { text: c.stacktrace }))));
         box.appendChild(det);
       });
     }
 
-    if (token) { showApp(true); loadDashboard(); loadProducts(); loadCrashes(); } else { showApp(false); }
+    // ----- wiring -----
+    $("loginBtn").addEventListener("click", login);
+    $("password").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+    $("logoutBtn").addEventListener("click", logout);
+    document.querySelectorAll("[data-refresh]").forEach(b => b.addEventListener("click", () => refresh(b.dataset.refresh)));
+    $("search").addEventListener("input", () => {
+      clearTimeout(searchTimer);
+      searchTimer = setTimeout(() => { catalogOffset = 0; loadProducts(); }, 250);
+    });
+    $("distFilter").addEventListener("change", () => { catalogOffset = 0; loadProducts(); });
+    $("prevPage").addEventListener("click", () => changePage(-1));
+    $("nextPage").addEventListener("click", () => changePage(1));
+    $("addDistBtn").addEventListener("click", createDistributor);
+    $("saveProductBtn").addEventListener("click", saveProduct);
+    $("cancelProductBtn").addEventListener("click", clearProductForm);
+    $("previewBtn").addEventListener("click", previewImport);
+    $("confirmBtn").addEventListener("click", commitImport);
+    $("userSearch").addEventListener("input", renderUsers);
+    $("orderPrev").addEventListener("click", () => changeOrderPage(-1));
+    $("orderNext").addEventListener("click", () => changeOrderPage(1));
+    window.addEventListener("hashchange", route);
+
+    renderPeriodControls();
+    if (token) start(); else showApp(false);
   </script>
 </body>
 </html>
