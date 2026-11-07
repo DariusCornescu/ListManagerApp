@@ -37,7 +37,7 @@ sealed class ResolveResult {
  * Use case for resolving spoken product text to actual products
  *
  * Decision thresholds:
- * - >= 0.82: Auto-add (high confidence)
+ * - >= 0.82: Auto-add (high confidence), when no other product is within 0.05
  * - >= 0.60: Show suggestions (medium confidence)
  * - < 0.60: Store as unknown (low confidence)
  */
@@ -51,6 +51,9 @@ class ResolveSpokenProductUseCase(
 ) {
     companion object {
         private const val AUTO_ADD_THRESHOLD = 0.82
+        // Variants that differ only in a supplier code ("... - SET A", "... - SET B") can tie.
+        // Adding one of them without asking would be a guess.
+        private const val AUTO_ADD_MARGIN = 0.05
         private const val SUGGESTIONS_THRESHOLD = 0.60
         private const val MAX_SUGGESTIONS = 5
         private const val EMB_TOP_K = 10
@@ -239,8 +242,11 @@ class ResolveSpokenProductUseCase(
             "Top match: ${topMatch.product.name} = ${topMatch.score}"
         }
 
+        val runnerUp = rankedProducts.getOrNull(1)?.score
+        val clearlyAhead = runnerUp == null || topMatch.score - runnerUp >= AUTO_ADD_MARGIN
+
         return when {
-            topMatch.score >= AUTO_ADD_THRESHOLD -> {
+            topMatch.score >= AUTO_ADD_THRESHOLD && clearlyAhead -> {
                 android.util.Log.d("ResolveUseCase", "Decision: AutoAdd (${topMatch.score} >= $AUTO_ADD_THRESHOLD)")
                 ResolveResult.AutoAdd(topMatch.product, topMatch.score)
             }
