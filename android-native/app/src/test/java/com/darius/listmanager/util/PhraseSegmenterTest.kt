@@ -134,13 +134,21 @@ class PhraseSegmenterTest {
         assertEquals(emptyList<String>(), PhraseSegmenter.segment("   ", threshold = 0.6, scoreOf = scorer()))
     }
 
+    /** Like [scorer], and a product followed by a size still scores [withSize]. */
+    private fun sizedScorer(withSize: Double, vararg products: String): (String) -> Double = { window ->
+        val exact = scorer(*products)(window)
+        val words = window.trim().split(" ")
+        if (exact > 0.0 || words.size < 2 || !PhraseSegmenter.isDimension(words.last())) exact
+        else if (scorer(*products)(words.dropLast(1).joinToString(" ")) > 0.0) withSize else 0.0
+    }
+
     @Test
     fun aSizeStaysWithItsProductAndIsNotACount() {
         val segments = PhraseSegmenter.segment(
             "cameră nova 20 * 175 șurub 3,5 * 35",
             threshold = 0.6,
             maxWindow = 7,
-            scoreOf = scorer("cameră nova", "șurub"),
+            scoreOf = sizedScorer(0.7, "cameră nova", "șurub"),
         )
 
         assertEquals(listOf("cameră nova 20x175", "șurub 3.5x35"), segments)
@@ -148,16 +156,28 @@ class PhraseSegmenterTest {
     }
 
     @Test
-    fun aSizeSaidWithPeOrXIsOneToken() {
+    fun aSizeSaidWithPeXOrSlashIsOneToken() {
         val segments = PhraseSegmenter.segment(
-            "două șurub 6 pe 100 cutii 40 x 30 x 20",
+            "două șurub 6 pe 100 cutii 40 x 30 x 20 cuie 3,5/35",
             threshold = 0.6,
             maxWindow = 7,
-            scoreOf = scorer("șurub", "cutii"),
+            scoreOf = sizedScorer(0.7, "șurub", "cutii", "cuie"),
         )
 
-        assertEquals(listOf("două șurub 6x100", "cutii 40x30x20"), segments)
-        assertEquals(listOf(2, 1), segments.map(SpokenQuantity::from))
+        assertEquals(listOf("două șurub 6x100", "cutii 40x30x20", "cuie 3.5x35"), segments)
+        assertEquals(listOf(2, 1, 1), segments.map(SpokenQuantity::from))
+    }
+
+    @Test
+    fun aMisheardSizeDoesNotPullItsProductUnderTheThreshold() {
+        val segments = PhraseSegmenter.segment(
+            "cameră nova 26/1751",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = sizedScorer(0.4, "cameră nova"),
+        )
+
+        assertEquals(listOf("cameră nova", "26x1751"), segments)
     }
 
     @Test

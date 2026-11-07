@@ -42,6 +42,7 @@ class ResolveSpokenProductDecisionTest {
                 ProductEntity(3, "Șuruburi 4x40mm 100buc", 1, "suruburi, surub"),
                 ProductEntity(4, "CAMERE NOVA 26*1.75 AV", 1, "camere nova av"),
                 ProductEntity(5, "Lapte Zuzu 1L", 1, "lapte, zuzu"),
+                ProductEntity(6, "SURUB XYZ LEMN 3.5*35", 1, "surub xyz lemn"),
             ).forEach { database.productDao().insert(it) }
         }
         val api = Proxy.newProxyInstance(
@@ -90,5 +91,7 @@ class ResolveSpokenProductDecisionTest {
             is ResolveResult.Unknown -> null
         }
         assertEquals(4L, tubeId)
+        val screw = results.last().second
+        assertTrue("$screw", screw !is ResolveResult.AutoAdd || screw.product.id == 6L)
     }
 }
