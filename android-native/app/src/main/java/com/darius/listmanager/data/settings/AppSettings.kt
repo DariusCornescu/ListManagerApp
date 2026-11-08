@@ -25,6 +25,15 @@ class AppSettings private constructor(context: Context) {
     private val _hapticsEnabled = MutableStateFlow(prefs.getBoolean(KEY_HAPTICS, true))
     val hapticsEnabled: StateFlow<Boolean> = _hapticsEnabled.asStateFlow()
 
+    // Off: Home stops listening after one phrase. On: it listens until Stop.
+    private val _continuousDictation = MutableStateFlow(prefs.getBoolean(KEY_CONTINUOUS_DICTATION, false))
+    val continuousDictation: StateFlow<Boolean> = _continuousDictation.asStateFlow()
+
+    fun setContinuousDictation(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CONTINUOUS_DICTATION, enabled).apply()
+        _continuousDictation.value = enabled
+    }
+
     fun setThemeMode(mode: ThemeMode) {
         prefs.edit().putString(KEY_THEME, mode.name).apply()
         _themeMode.value = mode
@@ -38,6 +47,7 @@ class AppSettings private constructor(context: Context) {
     companion object {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_HAPTICS = "haptics_enabled"
+        private const val KEY_CONTINUOUS_DICTATION = "home_continuous_dictation"
 
         @Volatile private var instance: AppSettings? = null
 

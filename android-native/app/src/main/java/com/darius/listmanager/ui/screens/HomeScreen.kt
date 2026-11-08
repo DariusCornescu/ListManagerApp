@@ -98,6 +98,7 @@ fun HomeScreen(
             onOpenSession = onNavigateToSession,
             onOpenResolve = onNavigateToResolve,
             modifier = Modifier.padding(padding),
+            onContinuousChange = viewModel::setContinuousDictation,
         )
     }
 
@@ -125,6 +126,7 @@ internal fun HomeContent(
     onOpenSession: () -> Unit,
     onOpenResolve: () -> Unit,
     modifier: Modifier = Modifier,
+    onContinuousChange: (Boolean) -> Unit = {},
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         // Scrolls only if a long phrase outgrows the space. The dock stays put.
@@ -139,6 +141,8 @@ internal fun HomeContent(
         }
 
         LastAddedArea(uiState.lastAdded, uiState.canUndoLastAdded, onUndoLastAdded)
+
+        DictationModeRow(uiState.continuousDictation, onContinuousChange)
 
         HomeDock(
             action = recordActionFor(uiState.speechState, uiState.isProcessing),
