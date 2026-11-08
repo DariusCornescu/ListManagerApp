@@ -25,6 +25,9 @@ services:
     buildCommand: "pip install -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
+    # Deploy a development commit only after every GitHub check on it has passed (skipped
+    # counts as passed). A commit with a failed check, or with no checks, is not deployed.
+    autoDeployTrigger: checksPass
     envVars:
       # JWT signing secret — required by the app (fails fast if missing).
       # Render generates a strong random value on first deploy.
