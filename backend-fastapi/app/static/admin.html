@@ -190,6 +190,8 @@
     .kv dt { color:var(--muted); font:11px/1.8 var(--mono); text-transform:uppercase; letter-spacing:.05em; }
     .kv dd { font-family:var(--mono); font-size:13px; word-break:break-word; }
     .drawer-actions { padding:16px; display:flex; flex-direction:column; gap:10px; }
+    /* The panel is narrow: let history cells wrap instead of running off the edge. */
+    .drawer-actions td { white-space:normal; height:auto; padding-top:6px; padding-bottom:6px; }
     .drawer-actions .act { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; }
     .drawer-actions .act p { margin:0; color:var(--muted); font-size:12px; max-width:250px; }
     .toasts { position:fixed; right:16px; bottom:16px; display:flex; flex-direction:column; gap:8px; z-index:50; max-width:min(420px, calc(100vw - 32px)); }
@@ -1339,6 +1341,11 @@
               el("button", { class: "btn sm", type: "button", text: "Dezactivează", onclick: () => setUserActive(u, false), ...lock }))
           : act("Reactivează", "Permite din nou autentificarea.",
               el("button", { class: "btn sm primary", type: "button", text: "Reactivează", onclick: () => setUserActive(u, true) })),
+        u.role === "ADMIN"
+          ? act("Fă utilizator", "Pierde accesul la /admin și la modificarea catalogului. Efectul e imediat.",
+              el("button", { class: "btn sm", type: "button", text: "Fă utilizator", onclick: () => setUserRole(u, "USER"), ...lock }))
+          : act("Fă admin", "Poate modifica produsele și distribuitorii, din aplicație și din /admin.",
+              el("button", { class: "btn sm", type: "button", text: "Fă admin", onclick: () => setUserRole(u, "ADMIN"), ...lock })),
         act("Șterge contul", "Definitiv. Merge doar pentru conturi fără echipe, liste sau inventar.",
           el("button", { class: "btn sm danger", type: "button", text: "Șterge", onclick: () => deleteUser(u), ...lock })),
         self ? el("p", { class: "muted", style: "margin:0;font-size:12px", text: "Acesta este contul tău, așa că acțiunile sunt oprite." }) : null,
@@ -1383,6 +1390,19 @@
       if (!active && !await confirmDialog(`Dezactivezi ${u.username}?`, "Nu se va mai putea autentifica, iar sesiunile lui se închid acum. Datele rămân.", "Dezactivează", true)) return;
       const result = await apiMutate(`/api/admin/users/${u.id}/${active ? "reactivate" : "deactivate"}`, "POST");
       if (result.ok) afterUserChange(u, active ? `Contul ${u.username} a fost reactivat.` : `Contul ${u.username} a fost dezactivat.`, true);
+    }
+
+    async function setUserRole(u, role) {
+      const promote = role === "ADMIN";
+      const title = promote ? `Faci ${u.username} admin?` : `Retragi drepturile de admin pentru ${u.username}?`;
+      const body = promote
+        ? "Va putea adăuga, redenumi și șterge produse și distribuitori pentru toată lumea, din aplicație și din /admin."
+        : "Nu va mai putea modifica catalogul și nu va mai avea acces la /admin.";
+      if (!await confirmDialog(title, body, promote ? "Fă admin" : "Fă utilizator", !promote)) return;
+      const result = await apiMutate(`/api/admin/users/${u.id}/role`, "POST", { role });
+      if (result.ok) {
+        afterUserChange(u, `${u.username} este acum ${promote ? "admin" : "utilizator"}. Repornește aplicația pe telefon ca să vadă rolul nou.`, true);
+      }
     }
 
     async function deleteUser(u) {
@@ -1437,6 +1457,7 @@
       admin_revoke: "deconectat de admin",
       admin_deactivate: "dezactivat de admin",
       admin_reactivate: "reactivat de admin",
+      admin_role_change: "rol schimbat de admin",
     };
     const REASON_LABELS = {
       wrong_password: "parolă greșită",
@@ -1444,6 +1465,8 @@
       inactive: "cont dezactivat",
       replayed: "token folosit din nou",
       revoked: "token revocat",
+      to_admin: "devine admin",
+      to_user: "devine utilizator",
     };
     const CLIENT_LABELS = { android: "Android", flutter: "Flutter", web: "web", other: "altul" };
     const ALARMING = new Set(["login_failed", "token_reuse"]);
