@@ -5,6 +5,87 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - CI: five mobile test gates behind ci-ok (claude/comprehensive-mobile-testing-cff864)
+
+Based on `origin/development` at `e33bed8`.
+
+**Changed**
+- `EndToEndMobileJourneyUiTest` (testDebug, Robolectric + Compose) has 3 journeys:
+  - sign-in → Home record/stop → suggestion sheet → Resolve → list grouped by distributor;
+  - offline outbox → held 409 → "Varianta mea" → "Salvat" → PDFs ready → share → done;
+  - +/− across two distributors, minus at 1 becoming delete, clear-list sheet cancel/confirm.
+  - A test-local host plays the NavGraph and ViewModels and renders the real stateless
+    `*Content` composables. The chip's state comes from the real `saveStateOf`, and conflict
+    detection from the real `isVersionConflict`. The ViewModels and the real NavGraph are not
+    exercised.
+- `BackendContractE2ETest` (src/test, Robolectric) runs against `LIVE_BACKEND_URL`. It uses the
+  app's real `ListManagerApi`, DTOs, `TokenRefreshAuthenticator`, Room, `WorkspaceSessionResolver`,
+  `ResolveSpokenProductUseCase` and `SessionRepository`. Only the OkHttp/Retrofit wiring is
+  rebuilt, because `RetrofitClient` is fixed to `ApiConfig.BASE_URL`. It covers:
+  - register, login, `/me`; a garbage access token refreshed and rotated by the authenticator;
+  - a replayed refresh token inside the server's 300 s grace window revokes the app's token, so
+    the app's next refresh is refused and the 401 reaches the caller;
+  - `/api/catalog/*` hydrates Room, and "două lapte" resolves to Lapte Zuzu 1L with quantity 2;
+  - write-through add of 2, then set to 3: version increases and Room stores it, the outbox ends
+    empty, and a stale-version PUT returns 409 with `current_version`;
+  - complete: one distributor (METRO), `total_items` 3, no active session afterwards.
+  - Without the URL it skips. With `REQUIRE_LIVE_BACKEND=true` it fails instead.
+  - Both variables are Gradle test inputs, so a changed URL re-runs the task.
+- Lint: a `lint {}` block (`abortOnError`, `checkDependencies=false`, `checkReleaseBuilds=false`)
+  plus `app/lint-baseline.xml`.
+  - The baseline holds 1 error, the `LocalContext` cast to Activity in `AboutScreen.kt:25`, and
+    75 warnings: 22 UseTomlInstead, 18 UseKtx, 10 GradleDependency, 8 NewerVersionAvailable,
+    8 UnusedResources, and others.
+  - 7 version-update warnings for `libs.versions.toml` are left out, because lint stored them with
+    an absolute path. They show but don't fail.
+- `ExampleInstrumentedTest` expects `com.darius.listmanager.preview`, since `testBuildType` is
+  preview. The old assertion would have failed on the first emulator run.
+- `ci.yml`:
+  - `android` adds tools `unittest`, `lintPreview`, `check_native_page_alignment.py` and
+    `zipalign -c -P 16` on `app-preview.apk`, and uploads the lint report on failure.
+  - New `android-instrumented`: `connectedPreviewAndroidTest` on an API 34 x86_64 KVM emulator
+    (android-emulator-runner v2.38.0, AVD cached).
+  - New `e2e-contract`: runs on backend or android changes. Uvicorn on a PostgreSQL 17 service with
+    a per-run `openssl` `SECRET_KEY` and `RATE_LIMIT_ENABLED=false`, then the contract test with
+    `REQUIRE_LIVE_BACKEND=true`.
+  - `ci-ok` needs both new jobs.
+  - The tools tests run with stdlib `unittest`, not pytest, since they need nothing installed.
+
+**Checked** (Windows, this worktree)
+- Backend `pytest -q`: 447 passed, 13 skipped (PostgreSQL gates, no local Postgres).
+  - The first run gave 6 errors from `PermissionError` on `%TEMP%\pytest-of-c0rnesky` in this
+    sandbox. Those 6 pass with `--basetemp` in a writable folder. No backend code changed.
+- `python -m unittest discover -s android-native/tools`: 14 passed.
+- `gradlew testDebugUnitTest testReleaseUnitTest lintPreview compilePreviewAndroidTestKotlin assemblePreview`:
+  - successful;
+  - debug unit tests: 478, 0 failures, 4 skipped (the 3 contract tests and the catalog benchmark);
+  - release unit tests: 356, 0 failures, 4 skipped.
+- The journey test: 3/3 passed. Its snapshots are in `app/build/ui-snapshots/journey-*.png`.
+- The contract test against a local uvicorn on a fresh SQLite file: 3/3 passed, 0 skipped. With
+  `REQUIRE_LIVE_BACKEND=true` and no URL, all 3 fail as intended.
+- 16 KB: `check_native_page_alignment.py` reports all 10 native libraries compatible, and
+  `zipalign -c -P 16 4` passes, both on the preview APK.
+
+**Not checked until CI runs**
+- `connectedPreviewAndroidTest`: no emulator on this machine.
+- The contract test against PostgreSQL.
+- actionlint/shellcheck on the new jobs (not installed here; the `actionlint` job checks them).
+- The emulator job's run time and AVD cache behaviour.
+
+**Next**
+- Push and open the PR (needs-review: it changes CI), then watch the first run of both new jobs.
+- A real 16 KB runtime check: an API 35 `google_apis_ps16k` emulator or a 16 KB device.
+- Fix the baselined `ContextCastToActivity` in `AboutScreen` (use `LocalActivity`), then drop it
+  from the baseline.
+
+**Open questions**
+- Lint flags an unescaped `C:` in a hand-written `local.properties` (`PropertyEscape`, an error),
+  so a local `lintPreview` fails on such a file. Setting `ANDROID_HOME` with no `local.properties`
+  works; an escaped `C\:` form wasn't confirmed because of a stale lint cache. Should this check
+  be disabled for local runs?
+
+---
+
 ## 2026-11-08 - Android distribute: AppUpdatesTest skips its no-Firebase case in release
 
 **Changed**
