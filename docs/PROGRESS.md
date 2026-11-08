@@ -23,6 +23,20 @@ Newest entries on top.
 **Checked**: `AppUpdatesTest`, with a new test for the start rule. Debug: 6 tests. Release with
 Firebase settings: 6 tests, 1 skipped.
 
+**Second bug: the install screen crashed** (phone retest, 2.0.106 to 2.0.107)
+- After the tester signed in, the prompt appeared. The APK downloaded, then the SDK's
+  `InstallActivity` crashed twice with "You need to use a Theme.AppCompat theme". The SDK
+  declares it without a theme, so it inherited `Theme.ListManager`.
+- New `src/release/AndroidManifest.xml` gives it `Theme.AppCompat.DayNight.NoActionBar`. Release
+  builds are the only ones with the SDK and AppCompat.
+- New `src/testRelease/.../AppUpdatesInstallThemeTest` checks that theme. It runs in Android
+  distribute's `testReleaseUnitTest`, so a regression stops a publish.
+- Checked:
+  - the release APK's manifest has the theme, and debug has no `InstallActivity`;
+  - the test passes with the fix and fails without it.
+- Not checked: an install on the phone. That needs this merged and published, then one more
+  version to update to.
+
 ---
 
 ## 2026-11-08 - Android distribute: AppUpdatesTest skips its no-Firebase case in release
