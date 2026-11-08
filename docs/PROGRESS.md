@@ -66,14 +66,44 @@ Based on `origin/development` at `e33bed8`.
 - 16 KB: `check_native_page_alignment.py` reports all 10 native libraries compatible, and
   `zipalign -c -P 16 4` passes, both on the preview APK.
 
+**First CI run (PR #56, `34161b8`)**
+- These passed:
+  - `e2e-contract` (the contract test against PostgreSQL 17);
+  - `android` (lint, tools tests, 16 KB);
+  - `actionlint`, `backend`, `flutter`.
+- `android-instrumented` ran 25 tests, of which 3 failed. None had run in CI before.
+  - `ExampleInstrumentedTest`: the app is `com.darius.listmanager.v2.preview`, since
+    `applicationId` ends in `.v2`. Fixed.
+  - `Milestone3IntegrationTest` "cartafi" and "meri" came back as unknown. The right product ranked
+    first (0.537 and 0.505) and led the next by 0.37 and 0.35, but stayed under the 0.60
+    suggestion level. A rule change follows.
+
+**Changed after the first run: clear-leader suggestions** (`ResolveSpokenProductUseCase`)
+- A top score of at least 0.50 that leads the runner-up by at least 0.20 is now a suggestion.
+- A lone candidate has no runner-up, so it still needs 0.60.
+- **Measured** on the S25's 3,196-product catalog (local scratch copy, never committed), with
+  1,000 seeded noisy phrases of 1 to 3 words. One letter in a word is deleted, swapped or changes
+  vowel. The harness repeats the use case's search and ranking; with the old rule it reproduces
+  the use case's decisions exactly.
+  - Product present: 27 of 650 unknowns become suggestions, and 26 of them have the right
+    product first.
+  - Product removed: false prompts go from 176 to 188.
+  - The grid also covered floors 0.40 to 0.55 and leads 0.10 to 0.30. 0.50 and 0.20 was the
+    best trade among the settings that cover both Milestone3 cases.
+- `ResolveSpokenProductClearLeaderTest` covers:
+  - the two cases;
+  - a tie in the 0.5 band, which stays unknown (it fails with the lead set to 0);
+  - a lone weak candidate;
+  - nonsense input.
+- Milestone3's score band for "cartafi" now starts at 0.50.
+- Unit tests: debug 486, release 362, 0 failures. Lint unchanged.
+
 **Not checked until CI runs**
-- `connectedPreviewAndroidTest`: no emulator on this machine.
-- The contract test against PostgreSQL.
-- actionlint/shellcheck on the new jobs (not installed here; the `actionlint` job checks them).
-- The emulator job's run time and AVD cache behaviour.
+- The emulator rerun with both fixes.
+- The emulator job's AVD cache on a second run.
 
 **Next**
-- Push and open the PR (needs-review: it changes CI), then watch the first run of both new jobs.
+- See the emulator job go green on PR #56.
 - A real 16 KB runtime check: an API 35 `google_apis_ps16k` emulator or a 16 KB device.
 - Fix the baselined `ContextCastToActivity` in `AboutScreen` (use `LocalActivity`), then drop it
   from the baseline.
