@@ -111,6 +111,21 @@ android {
     // Compose UI tests render real screens under Robolectric, without a device.
     testOptions {
         unitTests.isIncludeAndroidResources = true
+        unitTests.all { test ->
+            // BackendContractE2ETest reads these. As inputs, a changed URL re-runs the tests
+            // instead of Gradle calling them up to date.
+            test.inputs.property("liveBackendUrl", providers.environmentVariable("LIVE_BACKEND_URL").orElse(""))
+            test.inputs.property("requireLiveBackend", providers.environmentVariable("REQUIRE_LIVE_BACKEND").orElse(""))
+        }
+    }
+    // CI runs lintPreview. Issues already in lint-baseline.xml are known debt; a new error fails
+    // the build. Dependencies' own code is not linted, and release builds skip lintVital.
+    lint {
+        abortOnError = true
+        warningsAsErrors = false
+        checkReleaseBuilds = false
+        checkDependencies = false
+        baseline = file("lint-baseline.xml")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
