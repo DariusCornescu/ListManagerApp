@@ -118,6 +118,15 @@ android {
             test.inputs.property("requireLiveBackend", providers.environmentVariable("REQUIRE_LIVE_BACKEND").orElse(""))
         }
     }
+    // CI runs lintPreview. Issues already in lint-baseline.xml are known debt; a new error fails
+    // the build. Dependencies' own code is not linted, and release builds skip lintVital.
+    lint {
+        abortOnError = true
+        warningsAsErrors = false
+        checkReleaseBuilds = false
+        checkDependencies = false
+        baseline = file("lint-baseline.xml")
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
