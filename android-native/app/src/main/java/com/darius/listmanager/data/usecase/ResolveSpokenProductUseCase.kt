@@ -3,10 +3,12 @@ package com.darius.listmanager.data.usecase
 import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.util.CatalogMatch
+import com.darius.listmanager.util.MatchStats
 import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
 import com.darius.listmanager.util.RankedProduct
+import com.darius.listmanager.util.ScoringWeights
 import com.darius.listmanager.util.SensitiveLog
 import com.darius.listmanager.util.SpokenQuantity
 import com.darius.listmanager.data.embedding.EmbeddingModel
@@ -93,14 +95,25 @@ class ResolveSpokenProductUseCase(
             return merged
         }
 
-        /** Split an utterance into the products said in it, scoring word windows against [catalog]. */
-        internal fun segment(spokenText: String, catalog: PreparedCatalog): List<String> {
+        /**
+         * Split an utterance into the products said in it, scoring word windows against
+         * [catalog]. Each window is scored only against the products sharing a word with it
+         * ([candidatesOnly]), which cuts utterances like scoring the whole catalog does, at a
+         * fraction of the cost.
+         */
+        internal fun segment(
+            spokenText: String,
+            catalog: PreparedCatalog,
+            candidatesOnly: Boolean = true,
+            stats: MatchStats? = null,
+        ): List<String> {
             if (catalog.products.isEmpty()) return listOf(spokenText)
             // The segmenter asks about some windows more than once.
             val matches = HashMap<String, CatalogMatch?>()
             fun matchOf(window: String): CatalogMatch? =
                 if (window in matches) matches[window]
-                else ProductRanker.bestMatch(window, catalog).also { matches[window] = it }
+                else ProductRanker.bestMatch(window, catalog, ScoringWeights(), candidatesOnly, stats)
+                    .also { matches[window] = it }
             return PhraseSegmenter.segment(
                 text = spokenText,
                 threshold = SEGMENT_THRESHOLD,
@@ -163,11 +176,16 @@ class ResolveSpokenProductUseCase(
         }
 
         val started = System.nanoTime()
-        // Prepared once per catalog: every word window below is scored against all of it.
+        // Prepared and indexed once per catalog; each word window below is scored against it.
         val catalog = preparedLocalCatalog()
-        val segments = segment(spokenText, catalog)
+        val stats = MatchStats()
+        val segments = segment(spokenText, catalog, stats = stats)
 
-        android.util.Log.d(TIMING_TAG, "Segmented into ${segments.size} part(s) in ${elapsedMs(started)} ms")
+        android.util.Log.d(
+            TIMING_TAG,
+            "Segmented into ${segments.size} part(s) in ${elapsedMs(started)} ms " +
+                "(${stats.windows} windows, ${stats.wholeCatalog} against the whole catalog)",
+        )
         SensitiveLog.d("ResolveUseCase", "Segmented utterance into ${segments.size} part(s)") {
             "Segmented '$spokenText' -> $segments"
         }
