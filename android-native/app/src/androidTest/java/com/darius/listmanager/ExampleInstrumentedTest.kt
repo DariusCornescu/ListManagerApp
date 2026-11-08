@@ -19,6 +19,8 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.darius.listmanager", appContext.packageName)
+        // applicationId is com.darius.listmanager.v2, and testBuildType "preview" adds its own
+        // suffix so it installs beside the daily app.
+        assertEquals("com.darius.listmanager.v2.preview", appContext.packageName)
     }
 }
