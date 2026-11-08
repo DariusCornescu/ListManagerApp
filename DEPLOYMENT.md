@@ -43,6 +43,61 @@ LISTMANAGER_BASE_URL=https://<your-service-name>.onrender.com/
 ```
 The WebSocket URL (`wss://…/ws`) is derived automatically from this.
 
+## Android updates (Firebase App Distribution)
+
+Phones get new versions without a cable. The **Android distribute** workflow
+(`.github/workflows/android-distribute.yml`) runs only when started by hand. It points the app at
+production, runs the release unit tests, builds a release APK signed with the release key, and
+sends it to the `magazin` tester group. Each run gets `versionCode = 100 + run number`, so every
+build counts as an update. The APK is not kept on GitHub, because this repository is public.
+
+### One-time setup
+1. **Release key.** Create it once, outside the repository, and keep the file and both
+   passwords in a password manager. **If the key is lost, no update can be installed over the
+   app already on the phones.**
+   ```powershell
+   & "C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe" -genkeypair -v `
+     -keystore "$HOME\listmanager-release.jks" -storetype PKCS12 `
+     -alias listmanager -keyalg RSA -keysize 4096 -validity 10000 `
+     -dname "CN=ListManager"
+   ```
+   It asks for the passwords. Copy the file as base64 for GitHub:
+   ```powershell
+   [Convert]::ToBase64String([IO.File]::ReadAllBytes("$HOME\listmanager-release.jks")) | Set-Clipboard
+   ```
+2. **Firebase.** At <https://console.firebase.google.com>, create a project and add an Android
+   app with package `com.darius.listmanager.v2`. Distribution needs no `google-services.json`
+   and no SDK in the app. Open App Distribution, create the group `magazin`, and add the email
+   of everyone who uses a shop phone. Copy the app ID (`1:...:android:...`) from Project
+   settings.
+3. **Service account.** In Google Cloud console, IAM, create a service account with the
+   **Firebase App Distribution Admin** role, then create a JSON key for it.
+4. **GitHub secrets.** In the repository, open Settings, then Secrets and variables, then
+   Actions, and add:
+   `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`listmanager`),
+   `ANDROID_KEY_PASSWORD`, `FIREBASE_APP_ID`, and `FIREBASE_SERVICE_ACCOUNT_JSON` (the whole
+   JSON file). The workflow stops and lists any that are missing.
+
+For a local signed build, put the same four `LISTMANAGER_KEYSTORE_PATH`,
+`LISTMANAGER_KEYSTORE_PASSWORD`, `LISTMANAGER_KEY_ALIAS` and `LISTMANAGER_KEY_PASSWORD` values in
+`android-native/app/secrets.properties` (git-ignored). Without them the release build stays
+unsigned.
+
+### Publishing a version
+In GitHub, open Actions, then **Android distribute**, then **Run workflow**, and type what changed.
+Each tester gets an email or a notification in the Firebase App Tester app, and taps to update.
+Updates are not installed by themselves.
+
+### Moving a phone from the cable install, once
+The app installed by cable is signed with this PC's debug key, so Android will not update it
+with the release-signed one. On each phone:
+1. Open the menu and make sure nothing is waiting to sync. Uninstalling deletes whatever was not
+   sent: offline lists, unsent inventory, items in De rezolvat.
+2. Uninstall **List Manager**.
+3. Install from the Firebase email, then sign in again.
+
+From then on, every new version arrives as an update.
+
 ## Verify end-to-end
 1. Log in on **two phones** with `admin` / your `ADMIN_PASSWORD`.
 2. Add a product to the session on phone A → it appears on phone B in real time (WebSocket).
@@ -125,6 +180,70 @@ command above, and check the row counts. A backup that has never been restored i
 ### Cost
 A Render cron job is billed per minute it runs, with a small monthly minimum (about $1). R2 is
 free up to 10 GB stored, and the dump is a few MB. Check both pricing pages.
+
+## CI/CD
+
+```
+pull request ──> CI (only the changed parts) ──> ci-ok ──> merge (your call)
+development  ──> CI (everything) ──> all checks pass ──> Render deploys ──> Deploy smoke test
+```
+
+**CI** (`.github/workflows/ci.yml`) runs on every pull request and on every push to
+`development`:
+- `changes` decides which jobs a pull request needs:
+  - `backend-fastapi/**` runs `backend`: pip-audit, then pytest on SQLite and a real PostgreSQL 17;
+  - `android-native/**` runs `android`: unit tests and the preview build;
+  - `flutter_ui/**` runs `flutter`: analyze and test;
+  - `.github/**` runs `actionlint`, which also runs shellcheck.
+
+  A change to `ci.yml` runs all of them, and a push to `development` always runs all of them.
+- `ci-ok` passes when every other job passed or was skipped. It is the only check branch
+  protection needs, so a docs-only pull request can still merge.
+- pip, Gradle and the Flutter SDK are cached. Actions are pinned to commit SHAs. Dependabot
+  (`.github/dependabot.yml`) opens one grouped pull request a week when they have updates.
+
+**Deploy.** `render.yaml` sets `autoDeployTrigger: checksPass`, so Render deploys a
+`development` commit only after every GitHub check on it has passed (skipped counts as passed).
+A commit with a failed check is not deployed. Fix forward with a new commit, or start
+**Manual Deploy** in the Render dashboard.
+
+**Deploy smoke test** (`.github/workflows/deploy-smoke.yml`). Render posts each deploy to
+GitHub as a deployment in the environment `development - listmanager-api`. When it reaches its
+final state, the workflow checks the commit that just went live:
+- it fails if Render reports the deploy as failed. Production then still runs the previous
+  version.
+- it fails if `/health` is not `healthy` within 3 minutes.
+- it fails if `/api/stats` cannot read the database.
+
+The result shows as a check on that commit and in the Actions tab. GitHub emails you about
+failed runs if notifications for Actions are on.
+
+**Android** builds reach the phones only through **Android distribute**, which you start by hand.
+
+### Branch protection (one-time, by you)
+Protect `development` once this is merged, and after `ci-ok` has run at least once.
+The settings below do three things:
+- every change needs a pull request, with no approval required, since you work alone;
+- `ci-ok` must be green before a merge;
+- force pushes and branch deletion are blocked.
+
+`enforce_admins: true` applies all of this to you as well. Set it to `false` if you want an
+emergency bypass.
+
+```bash
+gh api -X PUT repos/DariusCornescu/ListManagerApp/branches/development/protection --input - <<'EOF'
+{
+  "required_status_checks": { "strict": false, "checks": [{ "context": "ci-ok" }] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+```
+
+Check it: `gh api repos/DariusCornescu/ListManagerApp/branches/development/protection`.
 
 ## Local development
 Runs on SQLite by default (`sqlite:///./listmanager.db`) — copy

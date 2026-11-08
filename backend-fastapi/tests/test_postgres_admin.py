@@ -271,3 +271,25 @@ def test_auth_events_survive_account_delete_on_postgres(pg_client, pg_session, a
 
     today = pg_client.get("/api/admin/dashboard", headers=admin_headers).json()["activity"][-1]
     assert today["sign_ins"] == 1
+
+
+def test_crash_purge_and_index_on_postgres(pg_session):
+    from datetime import datetime, timedelta
+
+    from sqlalchemy import inspect
+
+    from app import crash_retention
+
+    indexes = {i["name"] for i in inspect(pg_session.get_bind()).get_indexes("crash_reports")}
+    assert "ix_crash_reports_created_at" in indexes
+
+    now = datetime.utcnow()
+    pg_session.add_all([
+        models.CrashReport(stacktrace="old", signature="a", created_at=now - timedelta(days=200)),
+        models.CrashReport(stacktrace="new", signature="b", created_at=now - timedelta(days=10)),
+    ])
+    pg_session.commit()
+
+    assert crash_retention.purge_old(pg_session) == 1
+    pg_session.commit()
+    assert [r.stacktrace for r in pg_session.query(models.CrashReport).all()] == ["new"]

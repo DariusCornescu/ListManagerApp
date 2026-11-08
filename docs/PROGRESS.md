@@ -7,7 +7,7 @@ Newest entries on top.
 
 ## 2026-11-08 - Android dictation: faster segmentation and three cutting fixes (perf/segment-prefilter)
 
-Based on `perf/faster-dictation` (PR #45), which was not merged yet.
+Builds on `perf/faster-dictation` (PR #45).
 
 **Changed**
 - Segmentation scores each word window only against the products that share a word, a stem or
@@ -52,6 +52,51 @@ committed, on a desktop JVM:
 
 ---
 
+## 2026-11-08 - CI/CD: faster CI, deploy only after checks pass, smoke test (ci/pipelines)
+
+**Changed**
+- `ci.yml`:
+  - pull requests run only the jobs for the folders they change; pushes to `development` run
+    everything;
+  - a single `ci-ok` check is meant for branch protection;
+  - pip, Gradle and the Flutter SDK are cached;
+  - actions are pinned to commit SHAs, Flutter to 3.47.9 and pip-audit to 2.10.1;
+  - jobs have timeouts, and a new push cancels the older run on the same pull request;
+  - a new `actionlint` job lints the workflows and runs shellcheck on their scripts.
+- `.github/dependabot.yml`: one grouped pull request a week for GitHub Actions only.
+- `render.yaml`: `autoDeployTrigger: checksPass`. Render deploys only commits whose GitHub
+  checks all passed. Before this, a red `development` commit still deployed.
+- New `deploy-smoke.yml`. It runs on the deployment status Render posts to GitHub and fails if
+  any of these happens:
+  - the deploy failed;
+  - `/health` is not healthy;
+  - `/api/stats` cannot read the database.
+- `DEPLOYMENT.md`: new "CI/CD" section, with the branch protection command.
+
+**Checked**
+- `actionlint` 1.7.12 with shellcheck 0.10.0 passes on every workflow.
+- `render.yaml` validates against Render's JSON schema, and the schema rejects an invalid
+  `autoDeployTrigger` value.
+- The smoke test's steps ran locally against production:
+  - passing cases: a successful deploy, `/health`, `/api/stats`;
+  - failing cases: a failed deploy, a wrong URL, a body without the counts.
+- The pull request's own CI run exercises the path filters and caching.
+
+**Not checked until merge**
+- Render's `checksPass` behaviour.
+- The smoke test on a real deploy: `deployment_status` workflows run only from the deployed
+  commit.
+- Branch protection.
+
+**Next (user)**
+- After merge, check that Render's service settings show Auto-Deploy "After CI Checks Pass".
+- Run the branch protection command in `DEPLOYMENT.md`.
+- `android-distribute.yml` (from PR #44, now on `development`) still uses tag-pinned actions.
+  It passes `actionlint`. Pin its actions to SHAs in a follow-up, and Dependabot keeps them
+  current.
+
+---
+
 ## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
 
 **Changed**
@@ -77,6 +122,40 @@ committed, on a desktop JVM:
 - In that utterance "burete tablă" was split, "pe 26 pe 175" kept a stray "pe", and "3,5 pe 35" was
   cut from "șurub". These are matching quality issues, not timing ones.
 - The three phrases were said with pauses but arrived as one utterance.
+
+---
+
+## 2026-11-08 - Admins can change a user's role (feat/admin-role-change)
+
+**Changed**
+- New admin-only route `POST /api/admin/users/{id}/role` with `{"role": "ADMIN" | "USER"}`.
+  The role is read from the database on every request, so it applies at once. An admin cannot
+  change their own role, which also keeps one admin. Recorded as `admin_role_change` in
+  `auth_events`, with the acting admin. No migration.
+- `/admin`: the user side panel has "Fă admin" / "Fă utilizator" with a confirmation.
+- Why: the user wants to try adding and renaming products from the phone, which the Android app
+  only shows to ADMIN, and production had no way to change a role.
+
+**After deploy**
+- Promote the phone's account from `/admin`, then restart the app on the phone: it loads the
+  role from the server at start. Catalog edits made from the phone change the production catalog.
+
+---
+
+## 2026-11-08 - Admin phase 2B: crash reports deleted after 180 days (feat/crash-retention)
+
+**Changed**
+- Crash reports older than `CRASH_REPORT_RETENTION_DAYS` (180) are deleted at startup and at most
+  once a day when a new report arrives. `0` turns it off from the Render environment, no deploy.
+- New index on `crash_reports.created_at` (migration `f787337c7d90`, additive).
+- The Erori page says reports are kept 180 days. `/api/crashes` answers as before.
+
+**Warning**
+- The first deploy permanently deletes production crash reports older than 180 days. The user
+  decided this retention on 2026-11-06.
+
+**Next**
+- 2C ANRs and native crashes from `ApplicationExitInfo`; 2D voice quality, with its own plan.
 
 ---
 

@@ -1,0 +1,106 @@
+# Build a signed release APK against production and send it to the shop phones through Firebase
+# App Distribution. Runs only when started by hand. Setup: DEPLOYMENT.md, "Android updates".
+name: Android distribute
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_notes:
+        description: "What changed, shown to testers"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-distribute
+  cancel-in-progress: false
+
+jobs:
+  distribute:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android-native
+    env:
+      FIREBASE_TOOLS_VERSION: "13.29.1"
+      TESTER_GROUP: magazin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Check that every secret is set
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+        run: |
+          missing=""
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD FIREBASE_APP_ID FIREBASE_SERVICE_ACCOUNT_JSON; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing"
+            exit 1
+          fi
+
+      # ApiConfig.kt is git-ignored. Distributed builds always talk to production.
+      - name: Point the app at production
+        run: |
+          sed -e 's/USE_PRODUCTION: Boolean = false/USE_PRODUCTION: Boolean = true/' \
+              -e 's#https://your-production-host.example.com/#https://listmanager-api.onrender.com/#' \
+              app/src/main/java/com/darius/listmanager/network/ApiConfig.kt.example \
+              > app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
+          grep -q 'USE_PRODUCTION: Boolean = true' app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
+          grep -q 'https://listmanager-api.onrender.com/' app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
+
+      - name: Restore the signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+
+      - name: Test and build the signed release
+        env:
+          LISTMANAGER_KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          LISTMANAGER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          LISTMANAGER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          LISTMANAGER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # Higher than the versionCode 2 installed by cable, and higher on every run.
+          export LISTMANAGER_VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))
+          ./gradlew testReleaseUnitTest assembleRelease
+          apk=app/build/outputs/apk/release/app-release.apk
+          [ -f "$apk" ] || { echo "::error::No signed APK at $apk"; exit 1; }
+          apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)"
+          "$apksigner" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          echo "Built versionCode $LISTMANAGER_VERSION_CODE"
+
+      - name: Send to Firebase App Distribution
+        env:
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT_JSON" > "$RUNNER_TEMP/firebase-sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/firebase-sa.json"
+          notes="${RELEASE_NOTES:-Build from ${GITHUB_SHA::7}}"
+          npx --yes "firebase-tools@${FIREBASE_TOOLS_VERSION}" appdistribution:distribute \
+            app/build/outputs/apk/release/app-release.apk \
+            --app "$FIREBASE_APP_ID" \
+            --groups "$TESTER_GROUP" \
+            --release-notes "$notes"
+
+      # The APK is not kept as a run artifact: this repository is public.
+      - name: Remove the key and credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.jks" "$RUNNER_TEMP/firebase-sa.json"
