@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android: update prompt inside the app (feat/android-in-app-updates)
+
+**Changed**
+- Release builds carry the Firebase App Distribution SDK, `16.0.0-beta21`, pinned. Other builds
+  get only its API, which does nothing. New `util/AppUpdates.kt` starts Firebase from build
+  settings, so there is no `google-services.json` or plugin. When `MainActivity` resumes, at most
+  once an hour, it calls `updateIfNewReleaseAvailable()`. The SDK shows the dialog, downloads,
+  and opens the installer. About gets **Caută actualizări** in those builds only.
+- `build.gradle.kts`: `LISTMANAGER_FIREBASE_APP_ID`, `_API_KEY` and `_PROJECT_ID` go into
+  `BuildConfig`, all three or none. Without them Firebase never starts.
+- `android-distribute.yml` passes them; new secret `FIREBASE_API_KEY`.
+- `DEPLOYMENT.md`: the API key, the Firebase App Testers API, and what the phone shows.
+
+**Checked**
+- Debug unit tests pass, with new `AppUpdatesTest` and two About tests.
+- Release with a throwaway key and fake Firebase values: signed, versionCode 104, holds the
+  SDK's implementation and `REQUEST_INSTALL_PACKAGES`. Debug holds neither.
+- Setting only one Firebase value stops the build with a message. `actionlint` is clean.
+
+**Not checked**: the real prompt. It needs `FIREBASE_API_KEY`, the API turned on, a version with
+the SDK installed from App Tester, and then a newer one published.
+
+**Next (user)**
+- Add `FIREBASE_API_KEY` and enable the Firebase App Testers API (`DEPLOYMENT.md`).
+- After merge: publish twice, and check the prompt on a phone.
+
+---
+
 ## 2026-11-08 - Pull requests merge by label (ci/auto-merge-labels)
 
 **Changed**

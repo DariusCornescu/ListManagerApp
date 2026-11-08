@@ -37,6 +37,8 @@ class ListManagerApp : Application() {
         // Crash-loop self-heal check + telemetry FIRST so anything below is covered.
         val selfHealed = com.darius.listmanager.util.CrashLoopGuard.onAppStart(this)
         com.darius.listmanager.util.CrashReporter.install(this)
+        // Release builds from Firebase only; the check itself runs when MainActivity resumes.
+        com.darius.listmanager.util.AppUpdates.init(this)
         if (selfHealed) {
             android.widget.Toast.makeText(
                 this,

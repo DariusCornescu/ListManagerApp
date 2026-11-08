@@ -75,8 +75,17 @@ build counts as an update. The APK is not kept on GitHub, because this repositor
 4. **GitHub secrets.** In the repository, open Settings, then Secrets and variables, then
    Actions, and add:
    `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`listmanager`),
-   `ANDROID_KEY_PASSWORD`, `FIREBASE_APP_ID`, and `FIREBASE_SERVICE_ACCOUNT_JSON` (the whole
-   JSON file). The workflow stops and lists any that are missing.
+   `ANDROID_KEY_PASSWORD`, `FIREBASE_APP_ID`, `FIREBASE_API_KEY` (step 5), and
+   `FIREBASE_SERVICE_ACCOUNT_JSON` (the whole JSON file). The workflow stops and lists any that
+   are missing.
+5. **In-app update prompt.** In Firebase, Project settings, download `google-services.json`. The
+   app does not use the file: copy only its API key into GitHub, then delete the file.
+   ```powershell
+   (Get-Content -Raw "$HOME\Downloads\google-services.json" | ConvertFrom-Json).client[0].api_key[0].current_key | gh secret set FIREBASE_API_KEY --repo DariusCornescu/ListManagerApp
+   ```
+   In Google Cloud console, APIs & Services, enable the **Firebase App Testers API** for the
+   project. If the key is restricted to a list of APIs, add that API to the list. Without it the
+   check fails quietly, in the log only, and updates still come through App Tester.
 
 For a local signed build, put the same four `LISTMANAGER_KEYSTORE_PATH`,
 `LISTMANAGER_KEYSTORE_PASSWORD`, `LISTMANAGER_KEY_ALIAS` and `LISTMANAGER_KEY_PASSWORD` values in
@@ -85,8 +94,16 @@ unsigned.
 
 ### Publishing a version
 In GitHub, open Actions, then **Android distribute**, then **Run workflow**, and type what changed.
-Each tester gets an email or a notification in the Firebase App Tester app, and taps to update.
-Updates are not installed by themselves.
+Each tester gets an email or a notification in the Firebase App Tester app.
+
+The app also checks by itself (`util/AppUpdates.kt`), in release builds sent through Firebase only.
+When List Manager opens or comes back to the front, at most once an hour, it asks Firebase for a
+newer release and shows **Update**; Android then asks to **Install**. About has a **Caută
+actualizări** button for anyone who dismissed it. Android always asks before installing an app
+from outside Play, so updates are never fully silent. The first check on each phone asks, once,
+to sign in with the Google account invited to `magazin`, and to let List Manager install apps.
+The first version with this check still installs from App Tester; the prompt appears from the
+next version on.
 
 ### Moving a phone from the cable install, once
 The app installed by cable is signed with this PC's debug key, so Android will not update it
