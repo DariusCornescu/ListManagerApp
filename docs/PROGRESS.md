@@ -5,6 +5,26 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android: the update check runs at every app start, and logs its result
+
+**Found on the phone (S25, logcat)**
+- 2.0.105 was opened at about 22:54 and checked, but no newer release existed. 2.0.106 was
+  published at 22:57.
+- At 22:58 the app was opened again, and the one-hour limit skipped the check.
+- A check that finds nothing logged nothing, so this was invisible. The user installed 2.0.106
+  from the App Tester notification instead.
+
+**Changed** (`util/AppUpdates.kt`)
+- Every app start checks. The hour now applies only to coming back to the front, so a dismissed
+  prompt still doesn't nag.
+- Each check logs its start, every SDK status (for example `NEW_RELEASE_NOT_AVAILABLE`), and
+  its end.
+
+**Checked**: `AppUpdatesTest`, with a new test for the start rule. Debug: 6 tests. Release with
+Firebase settings: 6 tests, 1 skipped.
+
+---
+
 ## 2026-11-08 - Android distribute: AppUpdatesTest skips its no-Firebase case in release
 
 **Changed**
