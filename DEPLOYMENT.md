@@ -201,7 +201,7 @@ free up to 10 GB stored, and the dump is a few MB. Check both pricing pages.
 ## CI/CD
 
 ```
-pull request ──> CI (only the changed parts) ──> ci-ok ──> merge (your call)
+pull request ──> CI (only the changed parts) ──> ci-ok ──> merge (you, or the auto-merge label)
 development  ──> CI (everything) ──> all checks pass ──> Render deploys ──> Deploy smoke test
 ```
 
@@ -236,6 +236,30 @@ The result shows as a check on that commit and in the Actions tab. GitHub emails
 failed runs if notifications for Actions are on.
 
 **Android** builds reach the phones only through **Android distribute**, which you start by hand.
+
+### Pull requests: labels and auto-merge
+Two labels decide whether a pull request merges by itself (`.github/workflows/auto-merge.yml`):
+- **`auto-merge`**: merges into `development` as soon as `ci-ok` passes on its latest commit.
+  The merge is a normal merge commit, made by `github-actions[bot]`.
+- **`needs-review`**: waits for you. It always wins, even next to `auto-merge`.
+
+The workflow also skips a pull request that is a draft, comes from a fork, targets another
+branch, or has conflicts. Each run says in its log why it did or did not merge. To stop a
+merge, remove `auto-merge` or add `needs-review`; it never merges a commit CI did not check.
+
+A merge made with `GITHUB_TOKEN` starts no workflows, so CI would not run on the new
+`development` commit and Render would not deploy it. The workflow therefore starts CI on
+`development` itself (`ci.yml` accepts `workflow_dispatch`). When two merges land close together,
+that run may check the later commit; Render then deploys that one, which holds both.
+
+Claude sessions label the pull requests they open:
+- **`auto-merge`**: documentation, a merge that only resolves conflicts, CI or workflow fixes
+  that don't touch production, and Dependabot updates with green tests.
+- **`needs-review`**: anything else, including UI, behavior changes, schema or migrations,
+  auth and security, production data, `render.yaml` and deploys, Android signing or
+  distribution, and new dependencies. When unsure, `needs-review`.
+
+You can change any label at any time.
 
 ### Branch protection (one-time, by you)
 Protect `development` once this is merged, and after `ci-ok` has run at least once.
