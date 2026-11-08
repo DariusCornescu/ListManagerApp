@@ -1,0 +1,57 @@
+# Checks the production backend right after Render reports a deploy. Render publishes each
+# deploy as a GitHub deployment in the "development - listmanager-api" environment and marks it
+# in_progress, then success or failure. This workflow runs on the final state, so it checks the
+# commit that just went live, not the one before it.
+name: Deploy smoke test
+
+on:
+  deployment_status:
+
+permissions: {}
+
+concurrency:
+  group: deploy-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: >-
+      github.event.deployment.environment == 'development - listmanager-api' &&
+      contains(fromJSON('["success", "failure", "error"]'), github.event.deployment_status.state)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://listmanager-api.onrender.com
+      DEPLOY_STATE: ${{ github.event.deployment_status.state }}
+      DEPLOY_SHA: ${{ github.event.deployment.sha }}
+    steps:
+      - name: Render finished the deploy
+        run: |
+          echo "Render deploy of ${DEPLOY_SHA::7}: $DEPLOY_STATE"
+          if [ "$DEPLOY_STATE" != success ]; then
+            echo "::error::Render reports the deploy of ${DEPLOY_SHA::7} as $DEPLOY_STATE. Production still runs the previous version; see the Render dashboard logs."
+            exit 1
+          fi
+
+      - name: /health answers healthy
+        run: |
+          for attempt in $(seq 1 12); do
+            body="$(curl -fsS --max-time 30 "$BASE_URL/health" || true)"
+            if jq -e '.status == "healthy"' <<<"$body" >/dev/null 2>&1; then
+              echo "Attempt $attempt: healthy"
+              exit 0
+            fi
+            echo "Attempt $attempt: no healthy answer yet"
+            sleep 15
+          done
+          echo "::error::$BASE_URL/health did not answer healthy within 3 minutes"
+          exit 1
+
+      # /health does not touch the database. /api/stats is public and reads every main table,
+      # so it also proves the database is reachable and migrated. Only the keys are logged.
+      - name: /api/stats reads the database
+        run: |
+          body="$(curl -fsS --max-time 30 "$BASE_URL/api/stats")"
+          jq -e '(.products_count | type) == "number" and (.sessions_count | type) == "number"' <<<"$body" >/dev/null \
+            || { echo "::error::/api/stats did not return the expected counts"; exit 1; }
+          echo "Keys returned: $(jq -c 'keys' <<<"$body")"
