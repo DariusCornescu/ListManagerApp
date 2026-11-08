@@ -222,7 +222,21 @@ class FinishingScreensUiTest {
         rule.setContent { Page { Column { AppTopBar("Despre", onBack = {}); AboutContent("2.0") } } }
 
         rule.onNodeWithText("Versiunea 2.0").assertExists()
+        // Debug builds can't check for updates, so the button stays hidden.
+        rule.onNodeWithText("Caută actualizări").assertDoesNotExist()
         shoot("about-light")
+    }
+
+    @Test fun about_checksForUpdatesOnRequest() {
+        var checks = 0
+        rule.setContent {
+            Page { Column { AppTopBar("Despre", onBack = {}); AboutContent("2.0.105", onCheckForUpdates = { checks++ }) } }
+        }
+
+        rule.onNodeWithText("Caută actualizări").performClick()
+
+        assertEquals(1, checks)
+        shoot("about-updates-light")
     }
 
     // ---------- PDFs ----------
