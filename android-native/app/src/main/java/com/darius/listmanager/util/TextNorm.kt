@@ -10,6 +10,7 @@ object TextNorm {
     private val SPACED_DIMENSION = Regex("(\\d{1,3})\\s+(\\d{2,4})(?=\\s|$)")
     private val NUMBER = Regex("\\d+\\.?\\d*")
     private val DIMENSION = Regex("\\d+\\.?\\d*x\\d+\\.?\\d*(?:x\\d+\\.?\\d*)?")
+    private val DECIMAL_COMMA = Regex("(?<=\\d),(?=\\d)")
 
     fun normalize(text: String): String {
         return text
@@ -47,6 +48,31 @@ object TextNorm {
         result = result.replace(SPACED_DIMENSION, "$1x$2")
         return result
     }
+
+    /**
+     * A normalized word without its Romanian ending, so "cameră", "camere" and "camerei" share
+     * one, as do "șurub" and "șuruburi". Words under five letters and anything with a digit
+     * are returned as they are.
+     */
+    fun wordStem(token: String): String {
+        if (token.length < 5 || !token.all { it in 'a'..'z' }) return token
+        if (token.endsWith("uri") && token.length - 3 >= 4) return token.dropLast(3)
+        val stem = token.trimEnd('a', 'e', 'i', 'o', 'u')
+        return if (stem.length >= 4) stem else token
+    }
+
+    /**
+     * The sizes written in a normalized text, without decimal dots: "26*1.75" and a spoken
+     * "26 * 175" both give "26x175", because the recognizer often loses the dot. A size with
+     * three parts also gives its first two, so "10.5x5.2" finds "10.5x5.2x2.1".
+     */
+    fun sizes(normalized: String): Set<String> =
+        DIMENSION.findAll(normalized.replace(DECIMAL_COMMA, "."))
+            .flatMap { match ->
+                val parts = match.value.split('x').map { it.replace(".", "") }
+                listOfNotNull(parts.joinToString("x"), parts.take(2).joinToString("x").takeIf { parts.size > 2 })
+            }
+            .toSet()
 
     fun tokenize(text: String): List<String> {
         return normalize(text)

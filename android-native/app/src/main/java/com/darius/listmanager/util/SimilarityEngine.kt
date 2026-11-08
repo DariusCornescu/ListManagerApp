@@ -14,22 +14,36 @@ object SimilarityEngine {
         val len1 = s1.length
         val len2 = s2.length
 
-        val dp = Array(len1 + 1) { IntArray(len2 + 1) }
-        for (i in 0..len1) dp[i][0] = i
-        for (j in 0..len2) dp[0][j] = j
+        // Two rows of the edit-distance table are enough, and far cheaper to allocate.
+        var previous = IntArray(len2 + 1) { it }
+        var current = IntArray(len2 + 1)
 
         for (i in 1..len1) {
+            current[0] = i
             for (j in 1..len2) {
                 val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-                dp[i][j] = minOf(
-                    dp[i - 1][j] + 1,
-                    dp[i][j - 1] + 1,
-                    dp[i - 1][j - 1] + cost
+                current[j] = minOf(
+                    previous[j] + 1,
+                    current[j - 1] + 1,
+                    previous[j - 1] + cost
                 )
             }
+            val done = previous
+            previous = current
+            current = done
         }
 
-        return dp[len1][len2]
+        return previous[len2]
+    }
+
+    /**
+     * The highest [levenshteinSimilarity] two strings of these lengths can reach: the edit
+     * distance is at least the difference in length.
+     */
+    internal fun levenshteinSimilarityCeiling(len1: Int, len2: Int): Double {
+        if (len1 == 0 || len2 == 0) return if (len1 == len2) 1.0 else 0.0
+        val maxLen = maxOf(len1, len2)
+        return 1.0 - (kotlin.math.abs(len1 - len2).toDouble() / maxLen)
     }
 
     fun levenshteinSimilarity(s1: String, s2: String): Double {
@@ -46,14 +60,31 @@ object SimilarityEngine {
         if (s1 == s2) return 1.0
         if (s1.isEmpty() || s2.isEmpty()) return 0.0
 
-        val ngrams1 = generateNGrams(s1, nGramSize)
-        val ngrams2 = generateNGrams(s2, nGramSize)
+        return nGramJaccard(generateNGrams(s1, nGramSize), generateNGrams(s2, nGramSize))
+    }
 
+    /** [jaccardSimilarity] for bigram sets computed ahead with [bigrams]. */
+    internal fun jaccardOfBigrams(s1: String, s2: String, bigrams1: Set<String>, bigrams2: Set<String>): Double {
+        if (s1 == s2) return 1.0
+        if (s1.isEmpty() || s2.isEmpty()) return 0.0
+
+        return nGramJaccard(bigrams1, bigrams2)
+    }
+
+    internal fun bigrams(text: String): Set<String> = generateNGrams(text, 2)
+
+    private fun nGramJaccard(ngrams1: Set<String>, ngrams2: Set<String>): Double {
         if (ngrams1.isEmpty() && ngrams2.isEmpty()) return 1.0
         if (ngrams1.isEmpty() || ngrams2.isEmpty()) return 0.0
 
-        val intersection = ngrams1.intersect(ngrams2).size
-        val union = ngrams1.union(ngrams2).size
+        return setOverlap(ngrams1, ngrams2)
+    }
+
+    /** |a ∩ b| / |a ∪ b| for non-empty sets, counted without building either set. */
+    private fun setOverlap(a: Set<String>, b: Set<String>): Double {
+        val (small, large) = if (a.size <= b.size) a to b else b to a
+        val intersection = small.count { it in large }
+        val union = a.size + b.size - intersection
 
         return intersection.toDouble() / union
     }
@@ -66,23 +97,22 @@ object SimilarityEngine {
             .toSet()
     }
 
-    fun tokenSimilarity(s1: String, s2: String): Double {
-        val tokens1 = TextNorm.tokenize(s1).toSet()
-        val tokens2 = TextNorm.tokenize(s2).toSet()
+    fun tokenSimilarity(s1: String, s2: String): Double =
+        tokenSetSimilarity(TextNorm.tokenize(s1).toSet(), TextNorm.tokenize(s2).toSet())
 
+    /** [tokenSimilarity] for token sets computed ahead with `TextNorm.tokenize(text).toSet()`. */
+    internal fun tokenSetSimilarity(tokens1: Set<String>, tokens2: Set<String>): Double {
         if (tokens1.isEmpty() && tokens2.isEmpty()) return 1.0
         if (tokens1.isEmpty() || tokens2.isEmpty()) return 0.0
 
-        val intersection = tokens1.intersect(tokens2).size
-        val union = tokens1.union(tokens2).size
-
-        return intersection.toDouble() / union
+        return setOverlap(tokens1, tokens2)
     }
 
-    fun numberSeqSimilarity(s1: String, s2: String): Double {
-        val nums1 = TextNorm.extractNumbers(s1)
-        val nums2 = TextNorm.extractNumbers(s2)
+    fun numberSeqSimilarity(s1: String, s2: String): Double =
+        numberListSimilarity(TextNorm.extractNumbers(s1), TextNorm.extractNumbers(s2))
 
+    /** [numberSeqSimilarity] for number lists computed ahead with `TextNorm.extractNumbers`. */
+    internal fun numberListSimilarity(nums1: List<String>, nums2: List<String>): Double {
         if (nums1.isEmpty() && nums2.isEmpty()) return 1.0
         if (nums1.isEmpty() || nums2.isEmpty()) return 0.0
 

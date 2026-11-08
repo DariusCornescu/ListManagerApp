@@ -63,10 +63,17 @@ object QueryVariants {
             }
         }
 
-        // Create wildcard variants for FTS
+        // Create wildcard variants for FTS. Only for plain words: FTS splits "3.5x35*" into
+        // "3" and "5x35*", and the implicit AND between them narrowed the whole query to the
+        // products containing "5x35".
         tokens.forEach { token ->
-            if (token.length >= 3) {
+            if (token.length >= 3 && token.all { it.isLetterOrDigit() }) {
                 variants.add("$token*") // Prefix match
+            }
+            // Other endings of the same word: "camera" also finds "camere"
+            val stem = TextNorm.wordStem(token)
+            if (stem != token) {
+                variants.add("$stem*")
             }
         }
 
