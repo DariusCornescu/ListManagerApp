@@ -5,56 +5,20 @@ Newest entries on top.
 
 ---
 
-## 2026-11-08 - Android updates through Firebase App Distribution
+## 2026-11-08 - Admin phase 2B: crash reports deleted after 180 days (feat/crash-retention)
 
 **Changed**
-- `android-native/app/build.gradle.kts`: release signing from `LISTMANAGER_KEYSTORE_PATH`,
-  `LISTMANAGER_KEYSTORE_PASSWORD`, `LISTMANAGER_KEY_ALIAS` and `LISTMANAGER_KEY_PASSWORD` (the
-  environment first, then `secrets.properties`). `LISTMANAGER_VERSION_CODE` sets `versionCode`
-  and `versionName` `2.0.<code>`. Without them nothing changes: an unsigned release with
-  versionCode 2. A keystore without a password, or a non-numeric version code, fails the build
-  with a clear message.
-- New workflow `android-distribute.yml`, started by hand only. It points the app at production,
-  runs the release unit tests, builds and verifies the signed APK with versionCode `100 + run
-  number`, and sends it to the Firebase group `magazin` with `firebase-tools` 13.29.1 through
-  `npx`. No third-party action sees the secrets, and the APK is not kept on GitHub because the
-  repository is public.
-- `android-native/.gitignore` ignores `*.jks` and `*.keystore`.
-- `DEPLOYMENT.md`, "Android updates": key, Firebase, secrets, publishing, and the one-time move
-  from the cable install.
+- Crash reports older than `CRASH_REPORT_RETENTION_DAYS` (180) are deleted at startup and at most
+  once a day when a new report arrives. `0` turns it off from the Render environment, no deploy.
+- New index on `crash_reports.created_at` (migration `f787337c7d90`, additive).
+- The Erori page says reports are kept 180 days. `/api/crashes` answers as before.
 
-**Checked**
-- A release built without settings is unchanged: `app-release-unsigned.apk`, versionCode 2.
-- With a throwaway test key and version code 101: `apksigner` verifies the v2 signature,
-  `aapt` shows `com.darius.listmanager.v2`, versionCode 101 and versionName `2.0.101`, and the
-  dex holds the production URL.
-- The workflow's `ApiConfig.kt` step, run on the template, gives `USE_PRODUCTION = true` and the
-  production URL. Missing password and bad version code both fail with their messages.
-- `actionlint` 1.7.7 is clean for both workflows.
+**Warning**
+- The first deploy permanently deletes production crash reports older than 180 days. The user
+  decided this retention on 2026-11-06.
 
-**Not checked**: a real Firebase upload or a phone install from Firebase. Both need the user's
-Firebase project and secrets.
-
-**Next (user)**
-- Create the release key, the Firebase project and group, the service account, and the six
-  GitHub secrets. Then run the workflow once and move each phone off the cable install.
-
----
-
-## 2026-11-08 - Admins can change a user's role (feat/admin-role-change)
-
-**Changed**
-- New admin-only route `POST /api/admin/users/{id}/role` with `{"role": "ADMIN" | "USER"}`.
-  The role is read from the database on every request, so it applies at once. An admin cannot
-  change their own role, which also keeps one admin. Recorded as `admin_role_change` in
-  `auth_events`, with the acting admin. No migration.
-- `/admin`: the user side panel has "Fă admin" / "Fă utilizator" with a confirmation.
-- Why: the user wants to try adding and renaming products from the phone, which the Android app
-  only shows to ADMIN, and production had no way to change a role.
-
-**After deploy**
-- Promote the phone's account from `/admin`, then restart the app on the phone: it loads the
-  role from the server at start. Catalog edits made from the phone change the production catalog.
+**Next**
+- 2C ANRs and native crashes from `ApplicationExitInfo`; 2D voice quality, with its own plan.
 
 ---
 
