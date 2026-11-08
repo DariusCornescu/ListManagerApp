@@ -2,10 +2,12 @@ package com.darius.listmanager.util
 
 import android.app.Activity
 import android.content.Context
+import com.darius.listmanager.BuildConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
@@ -39,7 +41,9 @@ class AppUpdatesTest {
     }
 
     @Test fun withoutFirebaseSettingsNothingStartsOrIsRecorded() {
-        // Test builds have no Firebase settings, like every build except the ones sent to phones.
+        // Only meaningful without Firebase settings: debug and preview, and CI's plain test runs.
+        // Android distribute runs the release tests with the settings, and then Firebase starts.
+        assumeTrue(BuildConfig.FIREBASE_APP_ID.isBlank())
         val app = RuntimeEnvironment.getApplication()
         AppUpdates.init(app)
         assertFalse(AppUpdates.isAvailable)
