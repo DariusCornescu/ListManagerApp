@@ -257,3 +257,79 @@ def test_delete_integrity_error_answers_409(
     response = client.delete(f"/api/admin/users/{sample_user.id}", headers=admin_headers)
     assert response.status_code == status.HTTP_409_CONFLICT
     assert response.json()["detail"]["code"] == "user_has_linked_data"
+
+
+# ===== Role change =====
+
+def _set_role(client, headers, user_id, role):
+    return client.post(f"/api/admin/users/{user_id}/role", json={"role": role}, headers=headers)
+
+
+def test_role_change_is_admin_only(client, auth_headers, sample_user):
+    url = f"/api/admin/users/{sample_user.id}/role"
+    assert client.post(url, json={"role": "ADMIN"}).status_code in _deny_statuses()
+    response = client.post(url, json={"role": "ADMIN"}, headers=auth_headers)
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+def test_promoted_user_can_edit_the_catalog_at_once(
+    client, admin_headers, db_session, sample_admin, sample_user, sample_distributor
+):
+    login = client.post(
+        "/api/auth/login", json={"username": "testuser", "password": "password123"}
+    ).json()
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    product = {"name": "Produs nou", "distributor_id": sample_distributor.id}
+    assert client.post("/api/catalog/products", json=product, headers=headers).status_code == 403
+
+    response = _set_role(client, admin_headers, sample_user.id, "ADMIN")
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.json()["role"] == "ADMIN"
+    # The same token works: the role is read from the database, not the token.
+    assert client.get("/api/auth/me", headers=headers).json()["role"] == "ADMIN"
+    assert client.post("/api/catalog/products", json=product, headers=headers).status_code == 200
+
+    events = db_session.query(models.AuthEvent).filter(
+        models.AuthEvent.event_type == "admin_role_change"
+    ).all()
+    assert [(e.user_id, e.actor_user_id, e.reason) for e in events] == [
+        (sample_user.id, sample_admin.id, "to_admin")
+    ]
+
+
+def test_demoted_user_loses_admin_access(client, admin_headers, db_session, sample_user):
+    sample_user.role = "ADMIN"
+    db_session.commit()
+    login = client.post(
+        "/api/auth/login", json={"username": "testuser", "password": "password123"}
+    ).json()
+    headers = {"Authorization": f"Bearer {login['access_token']}"}
+    assert client.get("/api/admin/users", headers=headers).status_code == 200
+
+    response = _set_role(client, admin_headers, sample_user.id, "USER")
+
+    assert response.json()["role"] == "USER"
+    assert client.get("/api/admin/users", headers=headers).status_code == 403
+    [event] = db_session.query(models.AuthEvent).filter(
+        models.AuthEvent.event_type == "admin_role_change"
+    ).all()
+    assert event.reason == "to_user"
+
+
+def test_role_change_refuses_own_account(client, admin_headers, sample_admin):
+    response = _set_role(client, admin_headers, sample_admin.id, "USER")
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+def test_role_change_validates_role_and_user(client, admin_headers, sample_user):
+    assert _set_role(client, admin_headers, sample_user.id, "OWNER").status_code == 422
+    assert _set_role(client, admin_headers, 99999, "ADMIN").status_code == 404
+
+
+def test_unchanged_role_records_nothing(client, admin_headers, db_session, sample_user):
+    response = _set_role(client, admin_headers, sample_user.id, "USER")
+    assert response.status_code == status.HTTP_200_OK
+    assert db_session.query(models.AuthEvent).filter(
+        models.AuthEvent.event_type == "admin_role_change"
+    ).count() == 0
