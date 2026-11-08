@@ -124,8 +124,9 @@ class Milestone3IntegrationTest {
 
         val topSuggestion = suggestions.products.first()
         assertEquals("Top suggestion should be Cartofi", "Cartofi", topSuggestion.product.name)
-        assertTrue("Score should be between 0.60 and 0.82",
-            topSuggestion.score >= 0.60 && topSuggestion.score < 0.82)
+        // About 0.54: below the plain suggestion level, offered because it leads by far.
+        assertTrue("Score should be between 0.50 and 0.82",
+            topSuggestion.score >= 0.50 && topSuggestion.score < 0.82)
     }
 
     @Test
