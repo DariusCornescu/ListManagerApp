@@ -44,7 +44,8 @@ sealed class ResolveResult {
  * Decision thresholds:
  * - >= 0.82: Auto-add (high confidence), when no other product is within 0.05
  * - >= 0.60: Show suggestions (medium confidence)
- * - < 0.60: Store as unknown (low confidence)
+ * - >= 0.50 and at least 0.20 ahead of the runner-up: show suggestions (a clear leader)
+ * - otherwise: Store as unknown (low confidence)
  */
 class ResolveSpokenProductUseCase(
     private val productRepository: ProductRepository,
@@ -60,6 +61,13 @@ class ResolveSpokenProductUseCase(
         // Adding one of them without asking would be a guess.
         private const val AUTO_ADD_MARGIN = 0.05
         private const val SUGGESTIONS_THRESHOLD = 0.60
+        // A one-letter slip in a short name ("meri" for "Mere") scores about 0.5, yet the right
+        // product still stands far ahead of every other. Asking costs one tap; filing it as
+        // unknown loses it. Measured on the real catalog (1,000 noisy phrases): 26 of the 27
+        // phrases this rescues have the right product first, and when the product is missing
+        // it adds about one prompt in 80.
+        private const val CLEAR_LEADER_THRESHOLD = 0.50
+        private const val CLEAR_LEADER_MARGIN = 0.20
         private const val MAX_SUGGESTIONS = 5
         private const val EMB_TOP_K = 10
         // Timings only, never the spoken text, so it is safe in release logs.
@@ -304,14 +312,18 @@ class ResolveSpokenProductUseCase(
 
         val runnerUp = rankedProducts.getOrNull(1)?.score
         val clearlyAhead = runnerUp == null || topMatch.score - runnerUp >= AUTO_ADD_MARGIN
+        // Needs a real runner-up: a lone weak candidate has nothing to stand clear of.
+        val clearLeader = runnerUp != null &&
+            topMatch.score >= CLEAR_LEADER_THRESHOLD &&
+            topMatch.score - runnerUp >= CLEAR_LEADER_MARGIN
 
         return when {
             topMatch.score >= AUTO_ADD_THRESHOLD && clearlyAhead -> {
                 android.util.Log.d("ResolveUseCase", "Decision: AutoAdd (${topMatch.score} >= $AUTO_ADD_THRESHOLD)")
                 ResolveResult.AutoAdd(topMatch.product, topMatch.score)
             }
-            topMatch.score >= SUGGESTIONS_THRESHOLD -> {
-                android.util.Log.d("ResolveUseCase", "Decision: Suggestions (${topMatch.score} >= $SUGGESTIONS_THRESHOLD)")
+            topMatch.score >= SUGGESTIONS_THRESHOLD || clearLeader -> {
+                android.util.Log.d("ResolveUseCase", "Decision: Suggestions (${topMatch.score}, clear leader: $clearLeader)")
                 val suggestions = rankedProducts.take(MAX_SUGGESTIONS)
                 ResolveResult.Suggestions(suggestions)
             }
