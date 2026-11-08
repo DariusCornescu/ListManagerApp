@@ -449,6 +449,39 @@ async def revoke_user_tokens(
     return {"message": "Tokens revoked", "user_id": user_id}
 
 
+@router.post("/api/admin/users/{user_id}/role")
+def change_user_role(
+    user_id: int,
+    change: schemas.RoleChangeRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    """Make a user an admin or a regular user (admin only).
+
+    The server reads the role from the database on every request, so the change applies at
+    once and no login has to end. An admin cannot change their own role, which also keeps at
+    least one admin: the one making the change.
+    """
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot change your own role")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.role != change.role:
+        user.role = change.role
+        auth_events.record(
+            db,
+            auth_events.ADMIN_ROLE_CHANGE,
+            user_id=user_id,
+            actor_user_id=current_user.id,
+            reason="to_admin" if change.role == "ADMIN" else "to_user",
+            request=request,
+        )
+        db.commit()
+    return {"message": "Role updated", "user_id": user_id, "role": user.role}
+
+
 @router.post("/api/admin/users/{user_id}/deactivate")
 async def deactivate_user(
     user_id: int,
