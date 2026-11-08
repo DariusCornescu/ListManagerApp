@@ -169,6 +169,29 @@ class PhraseSegmenterTest {
     }
 
     @Test
+    fun thePeThatIntroducesASizeIsDropped() {
+        val segments = PhraseSegmenter.segment(
+            "roată zenit pe 26 pe 175 ceai",
+            threshold = 0.6,
+            maxWindow = 7,
+            scoreOf = sizedScorer(0.7, "roată zenit", "ceai"),
+        )
+
+        assertEquals(listOf("roată zenit 26x175", "ceai"), segments)
+    }
+
+    @Test
+    fun aPeThatIsNotBeforeASizeIsKept() {
+        val segments = PhraseSegmenter.segment(
+            "husă pe 2 locuri",
+            threshold = 0.6,
+            scoreOf = scorer("husă pe 2 locuri"),
+        )
+
+        assertEquals(listOf("husă pe 2 locuri"), segments)
+    }
+
+    @Test
     fun aMisheardSizeDoesNotPullItsProductUnderTheThreshold() {
         val segments = PhraseSegmenter.segment(
             "cameră nova 26/1751",

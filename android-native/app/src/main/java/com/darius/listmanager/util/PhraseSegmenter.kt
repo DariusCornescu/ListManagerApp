@@ -28,6 +28,8 @@ object PhraseSegmenter {
     )
     private val DIMENSION_SEPARATOR = Regex("\\s*(?:[x×*/]|\\bpe\\b)\\s*", RegexOption.IGNORE_CASE)
     private val DIMENSION_TOKEN = Regex("^\\d+(?:\\.\\d+)?(?:x\\d+(?:\\.\\d+)?)+$")
+    // "cameră pe 26 pe 175": the first "pe" introduces the size and is not part of any name.
+    private val PE_BEFORE_SIZE = Regex("\\bpe\\s+(?=\\d+(?:\\.\\d+)?x\\d)", RegexOption.IGNORE_CASE)
     private val LIST_SEPARATORS = Regex("[,;:\\n]+")
     private val WHITESPACE = Regex("\\s+")
 
@@ -35,6 +37,7 @@ object PhraseSegmenter {
         DIMENSION.replace(text) { it.value.split(DIMENSION_SEPARATOR).joinToString("x") }
 
     private fun tokenize(text: String): List<String> = joinDimensions(text.replace(DECIMAL_COMMA, "."))
+        .replace(PE_BEFORE_SIZE, "")
         .replace(LIST_SEPARATORS, " | ")
         .trim()
         .split(WHITESPACE)
