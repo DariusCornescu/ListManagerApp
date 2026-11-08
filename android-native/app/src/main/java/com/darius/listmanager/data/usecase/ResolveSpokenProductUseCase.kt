@@ -2,6 +2,7 @@ package com.darius.listmanager.data.usecase
 
 import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.ProductRepository
+import com.darius.listmanager.util.CatalogMatch
 import com.darius.listmanager.util.PhraseSegmenter
 import com.darius.listmanager.util.ProductRanker
 import com.darius.listmanager.util.QueryVariants
@@ -91,6 +92,28 @@ class ResolveSpokenProductUseCase(
             }
             return merged
         }
+
+        /** Split an utterance into the products said in it, scoring word windows against [catalog]. */
+        internal fun segment(spokenText: String, catalog: PreparedCatalog): List<String> {
+            if (catalog.products.isEmpty()) return listOf(spokenText)
+            // The segmenter asks about some windows more than once.
+            val matches = HashMap<String, CatalogMatch?>()
+            fun matchOf(window: String): CatalogMatch? =
+                if (window in matches) matches[window]
+                else ProductRanker.bestMatch(window, catalog).also { matches[window] = it }
+            return PhraseSegmenter.segment(
+                text = spokenText,
+                threshold = SEGMENT_THRESHOLD,
+                maxWindow = SEGMENT_MAX_WINDOW,
+                strays = { window, word, rest ->
+                    val product = matchOf(window)?.product
+                    product != null && !product.mentions(word) &&
+                        matchOf(rest)?.product?.product?.id == product.product.id
+                },
+            ) { window ->
+                matchOf(window)?.score ?: 0.0
+            }.ifEmpty { listOf(spokenText) }
+        }
     }
 
     /**
@@ -142,17 +165,7 @@ class ResolveSpokenProductUseCase(
         val started = System.nanoTime()
         // Prepared once per catalog: every word window below is scored against all of it.
         val catalog = preparedLocalCatalog()
-        val segments = if (catalog.products.isEmpty()) {
-            listOf(spokenText)
-        } else {
-            PhraseSegmenter.segment(
-                text = spokenText,
-                threshold = SEGMENT_THRESHOLD,
-                maxWindow = SEGMENT_MAX_WINDOW
-            ) { window ->
-                ProductRanker.bestScore(window, catalog)
-            }.ifEmpty { listOf(spokenText) }
-        }
+        val segments = segment(spokenText, catalog)
 
         android.util.Log.d(TIMING_TAG, "Segmented into ${segments.size} part(s) in ${elapsedMs(started)} ms")
         SensitiveLog.d("ResolveUseCase", "Segmented utterance into ${segments.size} part(s)") {

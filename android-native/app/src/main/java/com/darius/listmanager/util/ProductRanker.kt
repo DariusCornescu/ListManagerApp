@@ -30,7 +30,40 @@ class PreparedProduct internal constructor(val product: ProductEntity) {
     internal val aliases: List<PreparedText> = product.aliases?.split(",")
         ?.map { PreparedText(TextNorm.normalize(it)) }
         ?: emptyList()
+
+    private val words: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        (name.tokens + aliases.flatMap { it.tokens })
+            .map { sizeSeparators(it).trim(',', ';', ':', '(', ')', '/', '-', '\'', '"') }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    /**
+     * Whether a spoken word is one of this product's words: the same word, another ending of
+     * it ("cameră"/"camere"), an abbreviation ("deterg."/"detergent"), or a near miss of the
+     * recognizer. Numbers and sizes must be the same, compared without their decimal dots
+     * as ranking does: "28x175" is another size than "26x1.75".
+     */
+    fun mentions(word: String): Boolean {
+        val spoken = sizeSeparators(TextNorm.normalize(word).replace(".", ""))
+        if (spoken.isEmpty()) return true
+        if (!spoken.all { it.isLetter() }) return spoken in words
+        val stem = TextNorm.wordStem(spoken)
+        return words.any { own ->
+            own == spoken || TextNorm.wordStem(own) == stem ||
+                (minOf(own.length, spoken.length) >= 4 && (own.startsWith(spoken) || spoken.startsWith(own))) ||
+                (spoken.length >= 4 && SimilarityEngine.swapTolerantSimilarity(spoken, own) >= 0.6)
+        }
+    }
 }
+
+// Dictation writes every size as "AxB"; a name may write it "A/B".
+private val SIZE_SLASH = Regex("(?<=\\d)/(?=\\d)")
+
+private fun sizeSeparators(word: String): String = word.replace(SIZE_SLASH, "x")
+
+/** The best-scoring product for a phrase. */
+class CatalogMatch(val product: PreparedProduct, val score: Double)
 
 /**
  * The catalog prepared for ranking. Build it once and rank many phrases against it, as
@@ -84,15 +117,26 @@ object ProductRanker {
         spokenText: String,
         catalog: PreparedCatalog,
         weights: ScoringWeights = ScoringWeights()
-    ): Double {
+    ): Double = bestMatch(spokenText, catalog, weights)?.score ?: 0.0
+
+    /** The product behind [bestScore], or null when nothing scores above 0. */
+    fun bestMatch(
+        spokenText: String,
+        catalog: PreparedCatalog,
+        weights: ScoringWeights = ScoringWeights()
+    ): CatalogMatch? {
         val spoken = PreparedText(SpokenQuantity.productText(spokenText))
         var best = 0.0
+        var bestProduct: PreparedProduct? = null
         for (prepared in catalog.products) {
             // Products that cannot beat the best so far skip the edit distances.
             val score = components(spoken, prepared, 0.0, weights, floor = best)?.total ?: continue
-            if (score > best) best = score
+            if (score > best) {
+                best = score
+                bestProduct = prepared
+            }
         }
-        return best
+        return bestProduct?.let { CatalogMatch(it, best) }
     }
 
     /**

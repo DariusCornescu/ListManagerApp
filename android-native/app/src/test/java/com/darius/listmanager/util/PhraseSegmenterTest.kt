@@ -203,6 +203,139 @@ class PhraseSegmenterTest {
         assertEquals(listOf("cameră nova", "26x1751"), segments)
     }
 
+    /**
+     * A catalog where each listed window scores what it says and is best matched by a
+     * product made of the given words (the word set is the product). Unlisted windows score 0.
+     */
+    private class FakeMatches(vararg entries: Triple<String, Double, Set<String>>) {
+        private val byWindow = entries.associate { (window, score, words) -> window to (score to words) }
+        fun score(window: String) = byWindow[window]?.first ?: 0.0
+        fun strays(window: String, word: String, rest: String): Boolean {
+            val product = byWindow[window]?.second ?: return false
+            return word !in product && byWindow[rest]?.second == product
+        }
+        fun segment(text: String) =
+            PhraseSegmenter.segment(text, threshold = 0.62, maxWindow = 7, strays = ::strays, scoreOf = ::score)
+    }
+
+    @Test
+    fun aWordInFrontOfABetterMatchStaysWithTheWordBeforeIt() {
+        // "perie sârmă" is one product said just under the threshold; "sârmă săpun vase"
+        // only clears it because of "săpun vase", which scores far better on its own.
+        val soap = setOf("săpun", "vase", "lichid")
+        val catalog = FakeMatches(
+            Triple("perie sârmă", 0.61, setOf("perie", "sârmă")),
+            Triple("sârmă săpun vase", 0.64, soap),
+            Triple("săpun vase", 0.87, soap),
+        )
+
+        assertEquals(listOf("perie sârmă", "săpun vase"), catalog.segment("perie sârmă săpun vase"))
+    }
+
+    @Test
+    fun aLastWordThatStartsAnotherProductKeepsItsSize() {
+        val wheel = setOf("roată", "zenit", "26x175")
+        val catalog = FakeMatches(
+            Triple("roată zenit 26x175", 0.63, wheel),
+            Triple("roată zenit 26x175 cui", 0.64, wheel),
+            Triple("cui", 1.0, setOf("cui")),
+            Triple("cui 3.5x35", 0.68, setOf("cui", "3.5x35")),
+        )
+
+        assertEquals(
+            listOf("roată zenit 26x175", "cui 3.5x35"),
+            catalog.segment("roată zenit pe 26 pe 175 cui 3,5 pe 35"),
+        )
+    }
+
+    @Test
+    fun aProductWhoseAliasScoresHigherThanItsNameStaysWhole() {
+        // The alias "olimpia" scores above the full name, but "brânză" is the same product.
+        val cheese = setOf("brânză", "olimpia")
+        val catalog = FakeMatches(
+            Triple("brânză", 0.7, cheese),
+            Triple("olimpia", 1.36, cheese),
+            Triple("brânză olimpia", 1.07, cheese),
+        )
+
+        assertEquals(listOf("brânză olimpia"), catalog.segment("brânză olimpia"))
+    }
+
+    @Test
+    fun aLastWordOfTheSameProductIsKeptEvenWhenItMatchesAnother() {
+        val bread = setOf("franzelă", "neagră")
+        val catalog = FakeMatches(
+            Triple("franzelă", 0.9, bread),
+            Triple("franzelă neagră", 1.07, bread),
+            Triple("neagră", 0.7, setOf("vopsea", "neagră")),
+        )
+
+        assertEquals(listOf("franzelă neagră"), catalog.segment("franzelă neagră"))
+    }
+
+    @Test
+    fun aFirstWordWithNothingUnmatchedBeforeItStays() {
+        // Alone it would only become an unknown item, so it stays with the match.
+        val soap = setOf("săpun", "vase", "lichid")
+        val catalog = FakeMatches(
+            Triple("sârmă săpun vase", 0.64, soap),
+            Triple("săpun vase", 0.87, soap),
+        )
+
+        assertEquals(listOf("sârmă săpun vase"), catalog.segment("sârmă săpun vase"))
+    }
+
+    @Test
+    fun aFirstWordStaysWhenTheRestIsAnotherProduct() {
+        // "cutie surub" is a product of its own; "surub" alone is better matched by another.
+        val catalog = FakeMatches(
+            Triple("cutie surub", 0.7, setOf("set", "organizator")),
+            Triple("surub", 1.36, setOf("surub")),
+        )
+
+        assertEquals(listOf("mov", "cutie surub"), catalog.segment("mov cutie surub"))
+    }
+
+    @Test
+    fun aCodeInFrontOfAMatchIsNotMovedToTheUnmatchedWords() {
+        // "kx-12" names one variant; a sibling variant winning does not make it stray.
+        val sibling = setOf("kx-14", "pară", "duș")
+        val catalog = FakeMatches(
+            Triple("kx-12 pară duș", 0.7, sibling),
+            Triple("pară duș", 1.36, sibling),
+        )
+
+        assertEquals(listOf("mov", "kx-12 pară duș"), catalog.segment("mov kx-12 pară duș"))
+    }
+
+    @Test
+    fun aLastWordThatOnlyRidesInFrontOfTheNextProductStays() {
+        val tablecloth = setOf("față", "masă", "tradițională")
+        val rug = setOf("covor", "antiderapant")
+        val catalog = FakeMatches(
+            Triple("față masă", 0.9, tablecloth),
+            Triple("față masă clasică", 0.92, tablecloth),
+            Triple("clasică covor antiderapant", 0.7, rug),
+            Triple("covor antiderapant", 1.0, rug),
+        )
+
+        assertEquals(
+            listOf("față masă clasică", "covor antiderapant"),
+            catalog.segment("față masă clasică covor antiderapant"),
+        )
+    }
+
+    @Test
+    fun aLastWordThatStartsNothingStaysWithTheMatch() {
+        val juice = setOf("suc", "mere")
+        val catalog = FakeMatches(
+            Triple("suc mere", 0.9, juice),
+            Triple("suc mere natural", 0.95, juice),
+        )
+
+        assertEquals(listOf("suc mere natural"), catalog.segment("suc mere natural"))
+    }
+
     @Test
     fun aCompoundCount_staysWithItsProduct() {
         val catalog = setOf("oua", "cutii", "lapte")

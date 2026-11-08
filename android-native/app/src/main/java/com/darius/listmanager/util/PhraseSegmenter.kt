@@ -46,17 +46,27 @@ object PhraseSegmenter {
 
     internal fun isDimension(token: String): Boolean = DIMENSION_TOKEN.matches(token)
 
+    private fun isPlainWord(token: String): Boolean = token.length >= 3 && token.all { it.isLetter() }
+
     /**
      * Greedily segment [text]. At each position, evaluate windows of 1..[maxWindow]
      * words and pick the one with the highest [scoreOf] that clears [threshold];
      * on ties the longer window wins, so full product names ("pâine albă") beat
      * their prefixes ("pâine"). Consecutive words that match nothing are grouped
      * into a single leftover segment (resolved later, usually as Unknown).
+     *
+     * [strays] tells whether a word at the edge of a window rides along without being part of
+     * its match: the window's product does not contain the word, and the [rest] of the window
+     * is matched by that same product. Such a word is left out when that helps: at the start
+     * when unmatched words come right before it and the rest scores higher on its own
+     * ("perie sârmă săpun vase" must not take "sârmă" into "săpun vase"), at the end when the
+     * word starts a product of its own ("cui" in "roată 26x175 cui 3x35").
      */
     fun segment(
         text: String,
         threshold: Double,
         maxWindow: Int = 4,
+        strays: (window: String, word: String, rest: String) -> Boolean = { _, _, _ -> false },
         scoreOf: (String) -> Double
     ): List<String> {
         val tokens = tokenize(text)
@@ -90,7 +100,27 @@ object PhraseSegmenter {
                     bestLen = len
                 }
             }
-            if (bestLen > 0 && bestScore >= threshold) {
+            fun window(from: Int, len: Int) = tokens.subList(from, from + len).joinToString(" ")
+            // A word that only rides along in front of a better match belongs with the
+            // unmatched words before it ("perie | sârmă săpun vase" -> "perie sârmă"). Codes and
+            // two-letter bits are left alone: they name one variant even when a sibling wins.
+            val strayFirstWord = leftover.isNotEmpty() && bestLen > 1 && isPlainWord(tokens[i]) &&
+                scoreOf(window(i + 1, bestLen - 1)) > bestScore &&
+                strays(window(i, bestLen), tokens[i], window(i + 1, bestLen - 1))
+            if (bestLen > 0 && bestScore >= threshold && !strayFirstWord) {
+                // A last word that is not part of the product and starts one of its own goes to it.
+                while (bestLen > 1) {
+                    val last = i + bestLen - 1
+                    if (isDimension(tokens[last]) || scoreOf(window(i, bestLen - 1)) < threshold) break
+                    if (!strays(window(i, bestLen), tokens[last], window(i, bestLen - 1))) break
+                    // ...really starts it, not only rides along in front of it.
+                    val startsAProduct = (1..minOf(maxWindow, tokens.size - last)).any { len ->
+                        scoreOf(window(last, len)) >= threshold &&
+                            (len == 1 || !strays(window(last, len), tokens[last], window(last + 1, len - 1)))
+                    }
+                    if (!startsAProduct) break
+                    bestLen--
+                }
                 if (leftover.isNotEmpty()) {
                     segments.add(leftover.joinToString(" "))
                     leftover.clear()
