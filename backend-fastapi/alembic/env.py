@@ -19,8 +19,10 @@ import app.models  # noqa: F401  (registers all models on Base.metadata)
 
 config = context.config
 
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+# The app runs migrations in-process at startup and owns logging there, so it turns this off.
+# From the command line, keep loggers that already exist instead of disabling them.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Prefer an explicitly-provided url (tests / startup); else the app's url.
 _url = config.get_main_option("sqlalchemy.url") or DATABASE_URL

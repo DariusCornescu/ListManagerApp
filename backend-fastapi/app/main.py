@@ -11,6 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from .auth import resolve_token_user
 from .config import parse_cors_origins, settings
 from .limiting import limiter
+from .logging_setup import configure_logging
 from .routers import admin, auth, catalog, crashes, inventory, presence, sessions, speech, stats, teams
 from .websocket_manager import manager
 
@@ -26,9 +27,12 @@ def _run_migrations_to_head() -> None:
     backend_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     alembic_cfg = Config(os.path.join(backend_root, "alembic.ini"))
     alembic_cfg.set_main_option("sqlalchemy.url", DATABASE_URL)
+    # alembic.ini's logging setup would disable every logger that already exists, uvicorn's included.
+    alembic_cfg.attributes["configure_logger"] = False
     command.upgrade(alembic_cfg, "head")
 
 
+configure_logging()
 _run_migrations_to_head()
 app = FastAPI(
     title="List Manager API",
