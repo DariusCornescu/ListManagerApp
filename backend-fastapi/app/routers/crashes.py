@@ -5,7 +5,7 @@ from sqlalchemy import String, cast, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import models, schemas
+from .. import crash_retention, models, schemas
 from ..auth import get_current_admin_user
 from ..crash_signatures import crash_signature
 from ..database import get_db
@@ -38,6 +38,8 @@ def report_crash(
         signature=crash_signature(crash.stacktrace),
     )
     db.add(db_crash)
+    # The service has no scheduled jobs, so a new report also clears out old ones.
+    crash_retention.purge_if_due(db)
     try:
         db.commit()
     except IntegrityError:
