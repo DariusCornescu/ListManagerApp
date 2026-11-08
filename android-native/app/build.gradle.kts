@@ -32,15 +32,37 @@ android {
         prop("LISTMANAGER_BASE_URL") ?: "https://listmanager-api.onrender.com/"
     )
 
+    // Release signing and version, for builds sent to phones (DEPLOYMENT.md, "Android updates").
+    // Read from the environment in CI, or from secrets.properties locally. Without a keystore the
+    // release build stays unsigned, as before.
+    fun setting(key: String): String? = System.getenv(key)?.takeIf { it.isNotBlank() } ?: prop(key)
+    val releaseKeystore = setting("LISTMANAGER_KEYSTORE_PATH")
+    // Each distributed build needs a higher versionCode, or phones won't treat it as an update.
+    val versionCodeOverride = setting("LISTMANAGER_VERSION_CODE")?.let {
+        it.toIntOrNull() ?: error("LISTMANAGER_VERSION_CODE must be a whole number")
+    }
+
     namespace = "com.darius.listmanager"
     compileSdk = 36
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                fun required(key: String) = setting(key) ?: error("$key is required when LISTMANAGER_KEYSTORE_PATH is set")
+                storeFile = file(releaseKeystore)
+                storePassword = required("LISTMANAGER_KEYSTORE_PASSWORD")
+                keyAlias = required("LISTMANAGER_KEY_ALIAS")
+                keyPassword = required("LISTMANAGER_KEY_PASSWORD")
+            }
+        }
+    }
 
     defaultConfig {
         applicationId = "com.darius.listmanager.v2"
         minSdk = 34
         targetSdk = 35
-        versionCode = 2
-        versionName = "2.0"
+        versionCode = versionCodeOverride ?: 2
+        versionName = versionCodeOverride?.let { "2.0.$it" } ?: "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -54,6 +76,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

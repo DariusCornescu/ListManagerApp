@@ -44,25 +44,26 @@ Newest entries on top.
 **Next (user)**
 - After merge, check that Render's service settings show Auto-Deploy "After CI Checks Pass".
 - Run the branch protection command in `DEPLOYMENT.md`.
-- PR #44's `android-distribute.yml` still uses tag-pinned actions. Pin them to SHAs when it
-  lands, and Dependabot keeps them current.
+- `android-distribute.yml` (from PR #44, now on `development`) still uses tag-pinned actions.
+  It passes `actionlint`. Pin its actions to SHAs in a follow-up, and Dependabot keeps them
+  current.
 
 ---
 
-## 2026-11-08 - Admins can change a user's role (feat/admin-role-change)
+## 2026-11-08 - Admin phase 2B: crash reports deleted after 180 days (feat/crash-retention)
 
 **Changed**
-- New admin-only route `POST /api/admin/users/{id}/role` with `{"role": "ADMIN" | "USER"}`.
-  The role is read from the database on every request, so it applies at once. An admin cannot
-  change their own role, which also keeps one admin. Recorded as `admin_role_change` in
-  `auth_events`, with the acting admin. No migration.
-- `/admin`: the user side panel has "Fă admin" / "Fă utilizator" with a confirmation.
-- Why: the user wants to try adding and renaming products from the phone, which the Android app
-  only shows to ADMIN, and production had no way to change a role.
+- Crash reports older than `CRASH_REPORT_RETENTION_DAYS` (180) are deleted at startup and at most
+  once a day when a new report arrives. `0` turns it off from the Render environment, no deploy.
+- New index on `crash_reports.created_at` (migration `f787337c7d90`, additive).
+- The Erori page says reports are kept 180 days. `/api/crashes` answers as before.
 
-**After deploy**
-- Promote the phone's account from `/admin`, then restart the app on the phone: it loads the
-  role from the server at start. Catalog edits made from the phone change the production catalog.
+**Warning**
+- The first deploy permanently deletes production crash reports older than 180 days. The user
+  decided this retention on 2026-11-06.
+
+**Next**
+- 2C ANRs and native crashes from `ApplicationExitInfo`; 2D voice quality, with its own plan.
 
 ---
 
