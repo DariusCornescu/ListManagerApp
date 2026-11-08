@@ -22,6 +22,40 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Daily production backups to Cloudflare R2
+
+**Changed**
+- New Render cron job `listmanager-db-backup` in `backend-fastapi/render.yaml`, built from
+  `ops/db-backup/`. It runs every day at 02:00 UTC and stores a custom-format dump in R2, outside
+  Render. A Hobby workspace keeps only 3 days of point-in-time recovery, and nothing survives
+  the database being deleted.
+- The job reads the server's major version and dumps with the matching client (16, 17 or 18 in
+  the image). The file name ends in `-pgNN.dump`. A pg_dump 18 dump would not restore on
+  PostgreSQL 16, because it writes `SET transaction_timeout`.
+- It dumps to a file first and checks it with `pg_restore --list`, including data for `users`,
+  `products` and `global_sessions`, before uploading. It then confirms the stored size. A failed
+  step uploads nothing, and no setting's value is printed.
+- `DEPLOYMENT.md`, "Backups": R2 setup, Render settings, restore into an empty database, a
+  monthly restore test, and cost.
+
+**Checked locally**, with Docker, test data only, and `adobe/s3mock` in place of R2 (MinIO's
+public images are gone):
+- On PostgreSQL 16, 17 and 18, with the real schema from `alembic upgrade head`: backup,
+  download, restore into an empty database, then equal row counts and the same Alembic revision.
+- Missing settings, an unreachable database, a wrong bucket and a database without the app's
+  tables all fail the run and upload nothing. No password or key appeared in any log.
+- Backend: 434 passed, 12 skipped.
+
+**Not checked**: real R2, real Render, and a wrong key (the mock accepts any key). These happen
+after merge.
+
+**Next (user)**
+- Create the R2 bucket, a token limited to it, and a 90-day lifecycle rule.
+- After the Blueprint syncs, set the four `R2_*` values on `listmanager-db-backup`, click
+  **Trigger Run**, and check the log and the bucket. Then do the first restore test.
+
+---
+
 ## 2026-11-08 - Production server logs are back, without tokens
 
 **Changed**

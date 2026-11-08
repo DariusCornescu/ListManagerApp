@@ -48,3 +48,34 @@ services:
       # you use the /api/speech/transcribe endpoint.
       # - key: GROQ_API_KEY
       #   sync: false
+
+  # Daily backup to Cloudflare R2, outside Render. A Hobby workspace keeps only 3 days of
+  # point-in-time recovery, and nothing survives the database being deleted.
+  # Setup and restore steps: DEPLOYMENT.md, "Backups".
+  - type: cron
+    name: listmanager-db-backup
+    runtime: docker
+    plan: starter
+    # 02:00 UTC, before the shop opens.
+    schedule: "0 2 * * *"
+    dockerContext: ./ops/db-backup
+    dockerfilePath: ./ops/db-backup/Dockerfile
+    # Rebuild only when the backup job itself changes.
+    buildFilter:
+      paths:
+        - ops/db-backup/**
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: listmanager-db
+          property: connectionString
+      # Entered in the Render dashboard, never committed. The R2 API token should have
+      # "Object Read & Write" on this one bucket only.
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
