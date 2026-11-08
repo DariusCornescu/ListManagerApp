@@ -5,6 +5,32 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android in-app update verified on the phone; docs and log tidy-up
+
+**Verified on the S25**: 2.0.108, which includes #55, updated itself to 2.0.109.
+- A fresh start checked at once.
+- **New version available** appeared, and the APK downloaded in about 4 seconds.
+- The install screen asked to allow installs from this source and installed 2.0.109 at 23:40,
+  with no crash.
+
+**Changed**
+- `AppUpdates.kt` logs each SDK status once. Before, `DOWNLOADING` was logged about four times a
+  second.
+- `DEPLOYMENT.md` now says the app checks at every start (the hour applies only to returning to
+  the front). It lists the one-time steps per phone:
+  - **Enable testing features** sign-in, where pressing Back cancels it;
+  - **Allow from this source**;
+  - one App Tester install for phones on a version before 2.0.108.
+
+  It also shows how to read the `AppUpdates` log.
+- The preview app ("ListManager NOU") was uninstalled from the phone at the user's request, so
+  only the Firebase build is left.
+
+**Checked**: `AppUpdatesTest` on debug (6 tests) and release with Firebase settings (6 tests, 1
+skipped). `AppUpdatesInstallThemeTest` passes.
+
+---
+
 ## 2026-11-08 - CI: five mobile test gates behind ci-ok (claude/comprehensive-mobile-testing-cff864)
 
 Based on `origin/development` at `e33bed8`.

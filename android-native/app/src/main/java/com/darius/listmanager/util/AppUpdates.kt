@@ -9,6 +9,7 @@ import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
 import com.google.firebase.appdistribution.FirebaseAppDistribution
 import com.google.firebase.appdistribution.FirebaseAppDistributionException
+import com.google.firebase.appdistribution.UpdateStatus
 
 /**
  * In-app update prompt for builds sent through Firebase App Distribution (DEPLOYMENT.md,
@@ -25,6 +26,7 @@ object AppUpdates {
     @Volatile private var ready = false
     @Volatile private var checking = false
     @Volatile private var checkedThisProcess = false
+    @Volatile private var lastStatus: UpdateStatus? = null
 
     /** True when this build can check for updates: Firebase settings were given at build time. */
     val isAvailable: Boolean get() = ready
@@ -79,11 +81,18 @@ object AppUpdates {
         // The SDK's sign-in page and dialog resume the activity; don't start a second check then.
         if (checking) return
         checking = true
+        lastStatus = null
         Log.i(TAG, "Checking for a newer release")
         try {
             FirebaseAppDistribution.getInstance().updateIfNewReleaseAvailable()
                 // Logged so a phone's log shows what happened, including "no newer release".
-                .addOnProgressListener { Log.i(TAG, "Update status: ${it.updateStatus}") }
+                // The SDK reports DOWNLOADING about four times a second; log each status once.
+                .addOnProgressListener { progress ->
+                    if (progress.updateStatus != lastStatus) {
+                        lastStatus = progress.updateStatus
+                        Log.i(TAG, "Update status: ${progress.updateStatus}")
+                    }
+                }
                 .addOnSuccessListener { Log.i(TAG, "Update check finished") }
                 .addOnFailureListener { e ->
                     val status = (e as? FirebaseAppDistributionException)?.errorCode
