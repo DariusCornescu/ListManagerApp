@@ -12,6 +12,8 @@ import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.repository.ProductEmbeddingRepository
 import com.darius.listmanager.util.EmbeddingSearch
 import com.darius.listmanager.util.VectorMath
+import com.darius.listmanager.util.PreparedCatalog
+import com.darius.listmanager.util.PreparedCatalogCache
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -57,6 +59,10 @@ class ResolveSpokenProductUseCase(
         private const val SUGGESTIONS_THRESHOLD = 0.60
         private const val MAX_SUGGESTIONS = 5
         private const val EMB_TOP_K = 10
+        // Timings only, never the spoken text, so it is safe in release logs.
+        private const val TIMING_TAG = "DictationTiming"
+
+        private fun elapsedMs(startedNanos: Long): Long = (System.nanoTime() - startedNanos) / 1_000_000
         // Minimum fuzzy score for a word-window to be cut out as its own product
         // during multi-product segmentation. Tunable.
         private const val SEGMENT_THRESHOLD = 0.62
@@ -98,7 +104,31 @@ class ResolveSpokenProductUseCase(
         spokenText: String,
         alternatives: List<String> = emptyList()
     ): List<Pair<String, ResolveResult>> = withContext(computeDispatcher) {
-        segmentAndResolve(spokenText, alternatives)
+        val started = System.nanoTime()
+        segmentAndResolve(spokenText, alternatives).also {
+            android.util.Log.d(TIMING_TAG, "Resolved ${it.size} part(s) in ${elapsedMs(started)} ms")
+        }
+    }
+
+    /**
+     * Prepare the local catalog ahead of the first phrase, so the first dictation does not
+     * pay for it. Safe to call again: an unchanged catalog is not prepared twice.
+     */
+    suspend fun warmUp() = withContext(computeDispatcher) {
+        val started = System.nanoTime()
+        val size = preparedLocalCatalog().products.size
+        android.util.Log.d(TIMING_TAG, "Prepared $size products in ${elapsedMs(started)} ms")
+    }
+
+    /** The whole local catalog, prepared once per catalog version. Never touches the network. */
+    private suspend fun preparedLocalCatalog(): PreparedCatalog {
+        val localProducts = try {
+            productRepository.getAllLocal()
+        } catch (e: Exception) {
+            android.util.Log.e("ResolveUseCase", "getAllLocal failed: ${e.message}", e)
+            emptyList()
+        }
+        return PreparedCatalogCache.get(localProducts)
     }
 
     private suspend fun segmentAndResolve(
@@ -109,18 +139,12 @@ class ResolveSpokenProductUseCase(
             return listOf(spokenText to ResolveResult.Unknown(spokenText))
         }
 
-        val localProducts = try {
-            productRepository.getAllLocal()
-        } catch (e: Exception) {
-            android.util.Log.e("ResolveUseCase", "getAllLocal failed: ${e.message}", e)
-            emptyList()
-        }
-
-        val segments = if (localProducts.isEmpty()) {
+        val started = System.nanoTime()
+        // Prepared once per catalog: every word window below is scored against all of it.
+        val catalog = preparedLocalCatalog()
+        val segments = if (catalog.products.isEmpty()) {
             listOf(spokenText)
         } else {
-            // Prepared once: every word window below is scored against the whole catalog.
-            val catalog = ProductRanker.prepare(localProducts)
             PhraseSegmenter.segment(
                 text = spokenText,
                 threshold = SEGMENT_THRESHOLD,
@@ -130,6 +154,7 @@ class ResolveSpokenProductUseCase(
             }.ifEmpty { listOf(spokenText) }
         }
 
+        android.util.Log.d(TIMING_TAG, "Segmented into ${segments.size} part(s) in ${elapsedMs(started)} ms")
         SensitiveLog.d("ResolveUseCase", "Segmented utterance into ${segments.size} part(s)") {
             "Segmented '$spokenText' -> $segments"
         }
@@ -185,15 +210,16 @@ class ResolveSpokenProductUseCase(
 
         android.util.Log.d("ResolveUseCase", "FTS returned ${ftsResults.size} products across ${hypotheses.size} hypotheses")
 
-        // Step 3: If FTS returns nothing, try with all products (expensive fallback)
-        val candidateProducts = if (ftsResults.isEmpty()) {
-            android.util.Log.d("ResolveUseCase", "FTS empty, using ALL products fallback")
-            productRepository.getAll()
+        // Step 3: If FTS returns nothing, rank the whole local catalog. It used to be
+        // downloaded again from the server here, while the person waited for the result.
+        val fullCatalog = if (ftsResults.isEmpty()) {
+            android.util.Log.d("ResolveUseCase", "FTS empty, ranking the whole local catalog")
+            preparedLocalCatalog()
         } else {
-            ftsResults
+            null
         }
 
-        android.util.Log.d("ResolveUseCase", "Candidate products: ${candidateProducts.size}")
+        android.util.Log.d("ResolveUseCase", "Candidate products: ${fullCatalog?.products?.size ?: ftsResults.size}")
 
         // Step 3.5: Semantic retrieval (hybrid). If no model/vectors, this is a no-op.
         var embeddingScores: Map<Long, Double> = emptyMap()
@@ -213,16 +239,19 @@ class ResolveSpokenProductUseCase(
             }
         }
 
-        val allCandidates = (candidateProducts + embeddingCandidates).distinctBy { it.id }
-
-        if (allCandidates.isEmpty()) {
-            android.util.Log.d("ResolveUseCase", "No candidates -> Unknown")
-            return ResolveResult.Unknown(spokenText)
-        }
-
         // Step 4: Rank products across all hypotheses (fuzzy + embedding), keeping
         // each product's best score so a bad top guess can't bury a good match.
-        val rankedProducts = ProductRanker.rankAcross(hypotheses, allCandidates, embeddingScores)
+        // The whole catalog already holds every embedding candidate.
+        val rankedProducts = if (fullCatalog != null) {
+            if (fullCatalog.products.isEmpty()) {
+                android.util.Log.d("ResolveUseCase", "No candidates -> Unknown")
+                return ResolveResult.Unknown(spokenText)
+            }
+            ProductRanker.rankAcross(hypotheses, fullCatalog, embeddingScores)
+        } else {
+            val allCandidates = (ftsResults + embeddingCandidates).distinctBy { it.id }
+            ProductRanker.rankAcross(hypotheses, allCandidates, embeddingScores)
+        }
         android.util.Log.d("ResolveUseCase", "Ranked ${rankedProducts.size} products")
 
         rankedProducts.take(5).forEach {

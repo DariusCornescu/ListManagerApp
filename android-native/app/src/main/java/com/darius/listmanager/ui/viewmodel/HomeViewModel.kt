@@ -137,6 +137,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             embeddingBackfill.run()
         }
+
+        // Prepare the catalog for matching now, so the first dictated phrase does not wait for it.
+        viewModelScope.launch {
+            try {
+                resolveSpokenProductUseCase.warmUp()
+            } catch (e: Exception) {
+                Log.w(TAG, "Catalog warm-up failed; the first phrase will prepare it", e)
+            }
+        }
     }
 
     // ==================== Speech Recognition ====================
