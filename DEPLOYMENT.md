@@ -75,8 +75,17 @@ build counts as an update. The APK is not kept on GitHub, because this repositor
 4. **GitHub secrets.** In the repository, open Settings, then Secrets and variables, then
    Actions, and add:
    `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`listmanager`),
-   `ANDROID_KEY_PASSWORD`, `FIREBASE_APP_ID`, and `FIREBASE_SERVICE_ACCOUNT_JSON` (the whole
-   JSON file). The workflow stops and lists any that are missing.
+   `ANDROID_KEY_PASSWORD`, `FIREBASE_APP_ID`, `FIREBASE_API_KEY` (step 5), and
+   `FIREBASE_SERVICE_ACCOUNT_JSON` (the whole JSON file). The workflow stops and lists any that
+   are missing.
+5. **In-app update prompt.** In Firebase, Project settings, download `google-services.json`. The
+   app does not use the file: copy only its API key into GitHub, then delete the file.
+   ```powershell
+   (Get-Content -Raw "$HOME\Downloads\google-services.json" | ConvertFrom-Json).client[0].api_key[0].current_key | gh secret set FIREBASE_API_KEY --repo DariusCornescu/ListManagerApp
+   ```
+   In Google Cloud console, APIs & Services, enable the **Firebase App Testers API** for the
+   project. If the key is restricted to a list of APIs, add that API to the list. Without it the
+   check fails quietly, in the log only, and updates still come through App Tester.
 
 For a local signed build, put the same four `LISTMANAGER_KEYSTORE_PATH`,
 `LISTMANAGER_KEYSTORE_PASSWORD`, `LISTMANAGER_KEY_ALIAS` and `LISTMANAGER_KEY_PASSWORD` values in
@@ -85,8 +94,16 @@ unsigned.
 
 ### Publishing a version
 In GitHub, open Actions, then **Android distribute**, then **Run workflow**, and type what changed.
-Each tester gets an email or a notification in the Firebase App Tester app, and taps to update.
-Updates are not installed by themselves.
+Each tester gets an email or a notification in the Firebase App Tester app.
+
+The app also checks by itself (`util/AppUpdates.kt`), in release builds sent through Firebase only.
+When List Manager opens or comes back to the front, at most once an hour, it asks Firebase for a
+newer release and shows **Update**; Android then asks to **Install**. About has a **Caută
+actualizări** button for anyone who dismissed it. Android always asks before installing an app
+from outside Play, so updates are never fully silent. The first check on each phone asks, once,
+to sign in with the Google account invited to `magazin`, and to let List Manager install apps.
+The first version with this check still installs from App Tester; the prompt appears from the
+next version on.
 
 ### Moving a phone from the cable install, once
 The app installed by cable is signed with this PC's debug key, so Android will not update it
@@ -180,6 +197,94 @@ command above, and check the row counts. A backup that has never been restored i
 ### Cost
 A Render cron job is billed per minute it runs, with a small monthly minimum (about $1). R2 is
 free up to 10 GB stored, and the dump is a few MB. Check both pricing pages.
+
+## CI/CD
+
+```
+pull request ──> CI (only the changed parts) ──> ci-ok ──> merge (you, or the auto-merge label)
+development  ──> CI (everything) ──> all checks pass ──> Render deploys ──> Deploy smoke test
+```
+
+**CI** (`.github/workflows/ci.yml`) runs on every pull request and on every push to
+`development`:
+- `changes` decides which jobs a pull request needs:
+  - `backend-fastapi/**` runs `backend`: pip-audit, then pytest on SQLite and a real PostgreSQL 17;
+  - `android-native/**` runs `android`: unit tests and the preview build;
+  - `flutter_ui/**` runs `flutter`: analyze and test;
+  - `.github/**` runs `actionlint`, which also runs shellcheck.
+
+  A change to `ci.yml` runs all of them, and a push to `development` always runs all of them.
+- `ci-ok` passes when every other job passed or was skipped. It is the only check branch
+  protection needs, so a docs-only pull request can still merge.
+- pip, Gradle and the Flutter SDK are cached. Actions are pinned to commit SHAs. Dependabot
+  (`.github/dependabot.yml`) opens one grouped pull request a week when they have updates.
+
+**Deploy.** `render.yaml` sets `autoDeployTrigger: checksPass`, so Render deploys a
+`development` commit only after every GitHub check on it has passed (skipped counts as passed).
+A commit with a failed check is not deployed. Fix forward with a new commit, or start
+**Manual Deploy** in the Render dashboard.
+
+**Deploy smoke test** (`.github/workflows/deploy-smoke.yml`). Render posts each deploy to
+GitHub as a deployment in the environment `development - listmanager-api`. When it reaches its
+final state, the workflow checks the commit that just went live:
+- it fails if Render reports the deploy as failed. Production then still runs the previous
+  version.
+- it fails if `/health` is not `healthy` within 3 minutes.
+- it fails if `/api/stats` cannot read the database.
+
+The result shows as a check on that commit and in the Actions tab. GitHub emails you about
+failed runs if notifications for Actions are on.
+
+**Android** builds reach the phones only through **Android distribute**, which you start by hand.
+
+### Pull requests: labels and auto-merge
+Two labels decide whether a pull request merges by itself (`.github/workflows/auto-merge.yml`):
+- **`auto-merge`**: merges into `development` as soon as `ci-ok` passes on its latest commit.
+  The merge is a normal merge commit, made by `github-actions[bot]`.
+- **`needs-review`**: waits for you. It always wins, even next to `auto-merge`.
+
+The workflow also skips a pull request that is a draft, comes from a fork, targets another
+branch, or has conflicts. Each run says in its log why it did or did not merge. To stop a
+merge, remove `auto-merge` or add `needs-review`; it never merges a commit CI did not check.
+
+A merge made with `GITHUB_TOKEN` starts no workflows, so CI would not run on the new
+`development` commit and Render would not deploy it. The workflow therefore starts CI on
+`development` itself (`ci.yml` accepts `workflow_dispatch`). When two merges land close together,
+that run may check the later commit; Render then deploys that one, which holds both.
+
+Claude sessions label the pull requests they open:
+- **`auto-merge`**: documentation, a merge that only resolves conflicts, CI or workflow fixes
+  that don't touch production, and Dependabot updates with green tests.
+- **`needs-review`**: anything else, including UI, behavior changes, schema or migrations,
+  auth and security, production data, `render.yaml` and deploys, Android signing or
+  distribution, and new dependencies. When unsure, `needs-review`.
+
+You can change any label at any time.
+
+### Branch protection (one-time, by you)
+Protect `development` once this is merged, and after `ci-ok` has run at least once.
+The settings below do three things:
+- every change needs a pull request, with no approval required, since you work alone;
+- `ci-ok` must be green before a merge;
+- force pushes and branch deletion are blocked.
+
+`enforce_admins: true` applies all of this to you as well. Set it to `false` if you want an
+emergency bypass.
+
+```bash
+gh api -X PUT repos/DariusCornescu/ListManagerApp/branches/development/protection --input - <<'EOF'
+{
+  "required_status_checks": { "strict": false, "checks": [{ "context": "ci-ok" }] },
+  "enforce_admins": true,
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}
+EOF
+```
+
+Check it: `gh api repos/DariusCornescu/ListManagerApp/branches/development/protection`.
 
 ## Local development
 Runs on SQLite by default (`sqlite:///./listmanager.db`) — copy

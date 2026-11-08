@@ -5,6 +5,133 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android distribute: signature check no longer fails silently (fix/android-distribute-signature-check)
+
+**Changed**
+- `android-distribute.yml`: the first real run built and signed the release, then stopped with
+  exit 1 and no message. The step piped `apksigner` into a strict `grep` for
+  `Signer #1 certificate`. The runner's build-tools 37 word it differently, so `grep`
+  failed silently. The step now relies on `apksigner verify`'s exit code, prints its full output
+  (the certificate is public), and names the missing `apksigner` or failed verification in an
+  error.
+
+- The upload step no longer prints firebase-tools' one-hour APK download link, since the run log
+  is public. The first successful run did print it, and that link expired an hour later.
+
+**Checked**
+- The rerun from this branch passed: build-tools 37.0.0 prints `V2 Signer: certificate DN`
+  instead of `Signer #1`, which confirms the cause. It shows v2, `CN=ListManager` and RSA 4096,
+  and versionCode 102. Release 2.0.102 was uploaded and sent to the group `magazin`.
+- `actionlint` 1.7.7 is clean. The link filter was tested on sample output, and with `pipefail`
+  an upload failure still fails the step.
+
+**Next**: after merge, check that the next run's log has no download link.
+
+---
+
+## 2026-11-08 - Android: update prompt inside the app (feat/android-in-app-updates)
+
+**Changed**
+- Release builds carry the Firebase App Distribution SDK, `16.0.0-beta21`, pinned. Other builds
+  get only its API, which does nothing. New `util/AppUpdates.kt` starts Firebase from build
+  settings, so there is no `google-services.json` or plugin. When `MainActivity` resumes, at most
+  once an hour, it calls `updateIfNewReleaseAvailable()`. The SDK shows the dialog, downloads,
+  and opens the installer. About gets **Caută actualizări** in those builds only.
+- `build.gradle.kts`: `LISTMANAGER_FIREBASE_APP_ID`, `_API_KEY` and `_PROJECT_ID` go into
+  `BuildConfig`, all three or none. Without them Firebase never starts.
+- `android-distribute.yml` passes them; new secret `FIREBASE_API_KEY`.
+- `DEPLOYMENT.md`: the API key, the Firebase App Testers API, and what the phone shows.
+
+**Checked**
+- Debug unit tests pass, with new `AppUpdatesTest` and two About tests.
+- Release with a throwaway key and fake Firebase values: signed, versionCode 104, holds the
+  SDK's implementation and `REQUEST_INSTALL_PACKAGES`. Debug holds neither.
+- Setting only one Firebase value stops the build with a message. `actionlint` is clean.
+
+**Not checked**: the real prompt. It needs `FIREBASE_API_KEY`, the API turned on, a version with
+the SDK installed from App Tester, and then a newer one published.
+
+**Next (user)**
+- Add `FIREBASE_API_KEY` and enable the Firebase App Testers API (`DEPLOYMENT.md`).
+- After merge: publish twice, and check the prompt on a phone.
+
+---
+
+## 2026-11-08 - Pull requests merge by label (ci/auto-merge-labels)
+
+**Changed**
+- New labels `auto-merge` and `needs-review`, created on GitHub.
+- New `auto-merge.yml`:
+  - It runs on label changes, new commits, and when CI finishes.
+  - It merges a pull request only when all of these hold:
+    - it has `auto-merge` and not `needs-review`;
+    - it is not a draft, comes from this repository, and targets `development`;
+    - `ci-ok` passed on its head commit;
+    - GitHub reports it mergeable.
+  - The merge uses `--match-head-commit`. It never checks out the pull request's code.
+- After merging, it starts CI on `development`, because a `GITHUB_TOKEN` merge triggers no
+  workflows and Render deploys only checked commits. `ci.yml` now accepts `workflow_dispatch`.
+- `DEPLOYMENT.md`, "Pull requests: labels and auto-merge": the labels, how to stop a merge, and
+  which label Claude sessions use.
+
+**Checked**
+- `actionlint` on all workflows.
+- The merge script, against a stubbed `gh` in a Linux container, in 8 cases. It merges and then
+  starts CI only for a labeled, green, mergeable pull request. It skips one labeled
+  `needs-review`, one without the label, one labeled `no-auto-merge`, a pending CI, a failed CI,
+  a pull request with conflicts, and a draft.
+
+**Not checked**: a real merge on GitHub. The `development-protection` ruleset has
+`require_extra_approval_for_unattributed_changes`, which might block a bot merge. The first
+labeled pull request after this one will show it.
+
+---
+
+## 2026-11-08 - CI/CD: faster CI, deploy only after checks pass, smoke test (ci/pipelines)
+
+**Changed**
+- `ci.yml`:
+  - pull requests run only the jobs for the folders they change; pushes to `development` run
+    everything;
+  - a single `ci-ok` check is meant for branch protection;
+  - pip, Gradle and the Flutter SDK are cached;
+  - actions are pinned to commit SHAs, Flutter to 3.47.9 and pip-audit to 2.10.1;
+  - jobs have timeouts, and a new push cancels the older run on the same pull request;
+  - a new `actionlint` job lints the workflows and runs shellcheck on their scripts.
+- `.github/dependabot.yml`: one grouped pull request a week for GitHub Actions only.
+- `render.yaml`: `autoDeployTrigger: checksPass`. Render deploys only commits whose GitHub
+  checks all passed. Before this, a red `development` commit still deployed.
+- New `deploy-smoke.yml`. It runs on the deployment status Render posts to GitHub and fails if
+  any of these happens:
+  - the deploy failed;
+  - `/health` is not healthy;
+  - `/api/stats` cannot read the database.
+- `DEPLOYMENT.md`: new "CI/CD" section, with the branch protection command.
+
+**Checked**
+- `actionlint` 1.7.12 with shellcheck 0.10.0 passes on every workflow.
+- `render.yaml` validates against Render's JSON schema, and the schema rejects an invalid
+  `autoDeployTrigger` value.
+- The smoke test's steps ran locally against production:
+  - passing cases: a successful deploy, `/health`, `/api/stats`;
+  - failing cases: a failed deploy, a wrong URL, a body without the counts.
+- The pull request's own CI run exercises the path filters and caching.
+
+**Not checked until merge**
+- Render's `checksPass` behaviour.
+- The smoke test on a real deploy: `deployment_status` workflows run only from the deployed
+  commit.
+- Branch protection.
+
+**Next (user)**
+- After merge, check that Render's service settings show Auto-Deploy "After CI Checks Pass".
+- Run the branch protection command in `DEPLOYMENT.md`.
+- `android-distribute.yml` (from PR #44, now on `development`) still uses tag-pinned actions.
+  It passes `actionlint`. Pin its actions to SHAs in a follow-up, and Dependabot keeps them
+  current.
+
+---
+
 ## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
 
 **Changed**
