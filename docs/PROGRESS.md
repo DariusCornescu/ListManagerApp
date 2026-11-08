@@ -5,6 +5,42 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android updates through Firebase App Distribution
+
+**Changed**
+- `android-native/app/build.gradle.kts`: release signing from `LISTMANAGER_KEYSTORE_PATH`,
+  `LISTMANAGER_KEYSTORE_PASSWORD`, `LISTMANAGER_KEY_ALIAS` and `LISTMANAGER_KEY_PASSWORD` (the
+  environment first, then `secrets.properties`). `LISTMANAGER_VERSION_CODE` sets `versionCode`
+  and `versionName` `2.0.<code>`. Without them nothing changes: an unsigned release with
+  versionCode 2. A keystore without a password, or a non-numeric version code, fails the build
+  with a clear message.
+- New workflow `android-distribute.yml`, started by hand only. It points the app at production,
+  runs the release unit tests, builds and verifies the signed APK with versionCode `100 + run
+  number`, and sends it to the Firebase group `magazin` with `firebase-tools` 13.29.1 through
+  `npx`. No third-party action sees the secrets, and the APK is not kept on GitHub because the
+  repository is public.
+- `android-native/.gitignore` ignores `*.jks` and `*.keystore`.
+- `DEPLOYMENT.md`, "Android updates": key, Firebase, secrets, publishing, and the one-time move
+  from the cable install.
+
+**Checked**
+- A release built without settings is unchanged: `app-release-unsigned.apk`, versionCode 2.
+- With a throwaway test key and version code 101: `apksigner` verifies the v2 signature,
+  `aapt` shows `com.darius.listmanager.v2`, versionCode 101 and versionName `2.0.101`, and the
+  dex holds the production URL.
+- The workflow's `ApiConfig.kt` step, run on the template, gives `USE_PRODUCTION = true` and the
+  production URL. Missing password and bad version code both fail with their messages.
+- `actionlint` 1.7.7 is clean for both workflows.
+
+**Not checked**: a real Firebase upload or a phone install from Firebase. Both need the user's
+Firebase project and secrets.
+
+**Next (user)**
+- Create the release key, the Firebase project and group, the service account, and the six
+  GitHub secrets. Then run the workflow once and move each phone off the cable install.
+
+---
+
 ## 2026-11-08 - Production server logs are back, without tokens
 
 **Changed**
