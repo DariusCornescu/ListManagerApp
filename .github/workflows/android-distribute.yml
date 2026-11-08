@@ -43,10 +43,11 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
           FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
         run: |
           missing=""
-          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD FIREBASE_APP_ID FIREBASE_SERVICE_ACCOUNT_JSON; do
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD FIREBASE_APP_ID FIREBASE_API_KEY FIREBASE_SERVICE_ACCOUNT_JSON; do
             [ -n "${!name}" ] || missing="$missing $name"
           done
           if [ -n "$missing" ]; then
@@ -75,6 +76,10 @@ jobs:
           LISTMANAGER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           LISTMANAGER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           LISTMANAGER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          # The in-app update prompt (util/AppUpdates.kt). The project ID is not a secret.
+          LISTMANAGER_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          LISTMANAGER_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          LISTMANAGER_FIREBASE_PROJECT_ID: listmanager-3e811
         run: |
           # Higher than the versionCode 2 installed by cable, and higher on every run.
           export LISTMANAGER_VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))

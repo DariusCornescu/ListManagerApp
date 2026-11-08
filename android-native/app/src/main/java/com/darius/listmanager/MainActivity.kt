@@ -105,6 +105,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // The SDK shows its dialog over a visible activity, so the check starts here.
+        com.darius.listmanager.util.AppUpdates.checkIfDue(this)
+    }
+
     private fun setupWebSocket() {
         lifecycleScope.launch {
             val token = getAuthToken()
