@@ -5,6 +5,36 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Pull requests merge by label (ci/auto-merge-labels)
+
+**Changed**
+- New labels `auto-merge` and `needs-review`, created on GitHub.
+- New `auto-merge.yml`:
+  - It runs on label changes, new commits, and when CI finishes.
+  - It merges a pull request only when all of these hold:
+    - it has `auto-merge` and not `needs-review`;
+    - it is not a draft, comes from this repository, and targets `development`;
+    - `ci-ok` passed on its head commit;
+    - GitHub reports it mergeable.
+  - The merge uses `--match-head-commit`. It never checks out the pull request's code.
+- After merging, it starts CI on `development`, because a `GITHUB_TOKEN` merge triggers no
+  workflows and Render deploys only checked commits. `ci.yml` now accepts `workflow_dispatch`.
+- `DEPLOYMENT.md`, "Pull requests: labels and auto-merge": the labels, how to stop a merge, and
+  which label Claude sessions use.
+
+**Checked**
+- `actionlint` on all workflows.
+- The merge script, against a stubbed `gh` in a Linux container, in 8 cases. It merges and then
+  starts CI only for a labeled, green, mergeable pull request. It skips one labeled
+  `needs-review`, one without the label, one labeled `no-auto-merge`, a pending CI, a failed CI,
+  a pull request with conflicts, and a draft.
+
+**Not checked**: a real merge on GitHub. The `development-protection` ruleset has
+`require_extra_approval_for_unattributed_changes`, which might block a bot merge. The first
+labeled pull request after this one will show it.
+
+---
+
 ## 2026-11-08 - CI/CD: faster CI, deploy only after checks pass, smoke test (ci/pipelines)
 
 **Changed**
