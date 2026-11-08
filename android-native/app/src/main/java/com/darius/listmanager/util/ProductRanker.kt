@@ -30,6 +30,49 @@ class PreparedProduct internal constructor(val product: ProductEntity) {
     internal val aliases: List<PreparedText> = product.aliases?.split(",")
         ?.map { PreparedText(TextNorm.normalize(it)) }
         ?: emptyList()
+
+    internal val words: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        (name.tokens + aliases.flatMap { it.tokens })
+            .map(::canonicalWord)
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+
+    /**
+     * Whether a spoken word is one of this product's words: the same word, another ending of
+     * it ("cameră"/"camere"), an abbreviation ("deterg."/"detergent"), or a near miss of the
+     * recognizer. Numbers and sizes must be the same, compared without their decimal dots
+     * as ranking does: "28x175" is another size than "26x1.75".
+     */
+    fun mentions(word: String): Boolean {
+        val spoken = sizeSeparators(TextNorm.normalize(word).replace(".", ""))
+        if (spoken.isEmpty()) return true
+        if (!spoken.all { it.isLetter() }) return spoken in words
+        val stem = TextNorm.wordStem(spoken)
+        return words.any { own ->
+            own == spoken || TextNorm.wordStem(own) == stem ||
+                (minOf(own.length, spoken.length) >= 4 && (own.startsWith(spoken) || spoken.startsWith(own))) ||
+                (spoken.length >= 4 && SimilarityEngine.swapTolerantSimilarity(spoken, own) >= 0.6)
+        }
+    }
+}
+
+// Dictation writes every size as "AxB"; a name may write it "A/B".
+private val SIZE_SLASH = Regex("(?<=\\d)/(?=\\d)")
+
+private fun sizeSeparators(word: String): String = word.replace(SIZE_SLASH, "x")
+
+/** A token of a normalized text as a word: sizes written "AxB", no punctuation around it. */
+private fun canonicalWord(token: String): String =
+    sizeSeparators(token).trim(',', ';', ':', '(', ')', '/', '-', '\'', '"')
+
+/** The best-scoring product for a phrase. */
+class CatalogMatch(val product: PreparedProduct, val score: Double)
+
+/** How many word windows were scored, and how many of them against the whole catalog. */
+internal class MatchStats {
+    var windows = 0
+    var wholeCatalog = 0
 }
 
 /**
@@ -38,6 +81,47 @@ class PreparedProduct internal constructor(val product: ProductEntity) {
  */
 class PreparedCatalog(products: List<ProductEntity>) {
     val products: List<PreparedProduct> = products.map(::PreparedProduct)
+
+    /**
+     * Products by the keys of their words, the same keys the catalog search (FTS) is asked
+     * with in [QueryVariants.generate]: the word, its stem, and its first three letters.
+     */
+    private val byWordKey: Map<String, IntArray> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val index = HashMap<String, MutableList<Int>>()
+        this.products.forEachIndexed { at, product ->
+            product.words.flatMap(::wordKeys).toSet().forEach { key ->
+                index.getOrPut(key) { mutableListOf() }.add(at)
+            }
+        }
+        index.mapValues { (_, positions) -> positions.toIntArray() }
+    }
+
+    /** Build the word index now rather than on the first phrase. */
+    fun indexWords() {
+        byWordKey
+    }
+
+    /** Positions of the products sharing a word key with [spoken], in catalog order. */
+    internal fun candidates(spoken: PreparedText): IntArray {
+        val found = java.util.BitSet(products.size)
+        for (token in spoken.tokens) {
+            for (key in wordKeys(canonicalWord(token))) {
+                byWordKey[key]?.forEach(found::set)
+            }
+        }
+        return found.stream().toArray()
+    }
+
+    private companion object {
+        fun wordKeys(word: String): List<String> {
+            if (word.isEmpty()) return emptyList()
+            val keys = mutableListOf(word)
+            val stem = TextNorm.wordStem(word)
+            if (stem != word) keys += "$stem*"
+            if (word.length >= 3 && word.all { it.isLetter() }) keys += "${word.take(3)}~"
+            return keys
+        }
+    }
 }
 
 object ProductRanker {
@@ -84,15 +168,49 @@ object ProductRanker {
         spokenText: String,
         catalog: PreparedCatalog,
         weights: ScoringWeights = ScoringWeights()
-    ): Double {
+    ): Double = bestMatch(spokenText, catalog, weights)?.score ?: 0.0
+
+    /**
+     * The product behind [bestScore], or null when nothing scores above 0.
+     *
+     * With [candidatesOnly], only the products sharing a word, a stem or the first three
+     * letters of a word with the phrase are scored, as the catalog search would find them;
+     * a phrase that shares none with any product is scored against the whole catalog.
+     */
+    fun bestMatch(
+        spokenText: String,
+        catalog: PreparedCatalog,
+        weights: ScoringWeights = ScoringWeights(),
+        candidatesOnly: Boolean = false,
+    ): CatalogMatch? = bestMatch(spokenText, catalog, weights, candidatesOnly, stats = null)
+
+    internal fun bestMatch(
+        spokenText: String,
+        catalog: PreparedCatalog,
+        weights: ScoringWeights,
+        candidatesOnly: Boolean,
+        stats: MatchStats?,
+    ): CatalogMatch? {
         val spoken = PreparedText(SpokenQuantity.productText(spokenText))
+        val candidates = if (candidatesOnly) catalog.candidates(spoken) else null
+        val wholeCatalog = candidates == null || candidates.isEmpty()
+        stats?.let {
+            it.windows++
+            if (wholeCatalog) it.wholeCatalog++
+        }
+        val count = if (wholeCatalog) catalog.products.size else candidates!!.size
         var best = 0.0
-        for (prepared in catalog.products) {
+        var bestProduct: PreparedProduct? = null
+        for (n in 0 until count) {
+            val prepared = catalog.products[if (wholeCatalog) n else candidates!![n]]
             // Products that cannot beat the best so far skip the edit distances.
             val score = components(spoken, prepared, 0.0, weights, floor = best)?.total ?: continue
-            if (score > best) best = score
+            if (score > best) {
+                best = score
+                bestProduct = prepared
+            }
         }
-        return best
+        return bestProduct?.let { CatalogMatch(it, best) }
     }
 
     /**

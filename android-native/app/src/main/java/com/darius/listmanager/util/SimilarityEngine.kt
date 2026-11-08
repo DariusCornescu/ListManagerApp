@@ -56,6 +56,26 @@ object SimilarityEngine {
         return 1.0 - (distance.toDouble() / maxLen)
     }
 
+    /**
+     * Like [levenshteinSimilarity], but two neighbouring letters said in the wrong order
+     * ("pufina"/"puifna") count as one edit, not two.
+     */
+    internal fun swapTolerantSimilarity(s1: String, s2: String): Double {
+        if (s1 == s2) return 1.0
+        if (s1.isEmpty() || s2.isEmpty()) return 0.0
+        val d = Array(s1.length + 1) { i -> IntArray(s2.length + 1) { j -> if (i == 0) j else if (j == 0) i else 0 } }
+        for (i in 1..s1.length) {
+            for (j in 1..s2.length) {
+                val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+                d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if (i > 1 && j > 1 && s1[i - 1] == s2[j - 2] && s1[i - 2] == s2[j - 1]) {
+                    d[i][j] = minOf(d[i][j], d[i - 2][j - 2] + 1)
+                }
+            }
+        }
+        return 1.0 - d[s1.length][s2.length].toDouble() / maxOf(s1.length, s2.length)
+    }
+
     fun jaccardSimilarity(s1: String, s2: String, nGramSize: Int = 2): Double {
         if (s1 == s2) return 1.0
         if (s1.isEmpty() || s2.isEmpty()) return 0.0

@@ -15,7 +15,8 @@ object PreparedCatalogCache {
 
     fun get(products: List<ProductEntity>): PreparedCatalog {
         entry?.let { if (it.source == products) return it.catalog }
-        val catalog = ProductRanker.prepare(products)
+        // Dictation segments against this catalog through its word index.
+        val catalog = ProductRanker.prepare(products).also { it.indexWords() }
         entry = Entry(products, catalog)
         return catalog
     }

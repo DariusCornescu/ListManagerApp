@@ -194,3 +194,27 @@ this is what is known from the code, and not a measurement:
 **Provisional recommendation: stay on the Android recognizer.** Live partials and N-best feed
 today's matching, and a shop's connection is not reliable. To settle it, record about 100
 consented phrases in a real shop, then run all three on the same audio.
+
+### Segmenting several products against a real catalog
+
+The benchmarks above grade `ProductRanker.rank` on one product at a time. Cutting an
+utterance into products (`ResolveSpokenProductUseCase.segment`) scores every word window
+only against the products that share a word, a stem or the first three letters with it,
+and against the whole catalog when none does. `SegmentationPrefilterTest` checks on an
+invented catalog that this cuts 400 seeded utterances exactly as scoring the whole catalog
+does.
+
+The real catalog is not in this public repository. To measure against it, export the
+products (`id`, `name`, `distributorId`, `aliases`) to a JSON array outside the repo and
+point `LISTMANAGER_CATALOG_JSON` at it; `LocalCatalogSegmentationBenchmarkTest` is skipped
+otherwise:
+
+```powershell
+$env:LISTMANAGER_CATALOG_JSON = "C:\somewhere\outside\catalog.json"
+.\gradlew testPreviewUnitTest --tests "com.darius.listmanager.benchmark.LocalCatalogSegmentationBenchmarkTest" -i
+```
+
+It prints `VOICE_SEGMENT_PREFILTER` with how many utterances were cut the same both ways and
+the time each took. Differences are printed with real product names, so keep that output
+local. With the 3,196-product catalog from the S25 in November 2026: 400/400 the same,
+164.6 s for the whole catalog against 10.7 s for the candidates on a desktop JVM.
