@@ -5,6 +5,23 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Admin phase 2B: crash reports deleted after 180 days (feat/crash-retention)
+
+**Changed**
+- Crash reports older than `CRASH_REPORT_RETENTION_DAYS` (180) are deleted at startup and at most
+  once a day when a new report arrives. `0` turns it off from the Render environment, no deploy.
+- New index on `crash_reports.created_at` (migration `f787337c7d90`, additive).
+- The Erori page says reports are kept 180 days. `/api/crashes` answers as before.
+
+**Warning**
+- The first deploy permanently deletes production crash reports older than 180 days. The user
+  decided this retention on 2026-11-06.
+
+**Next**
+- 2C ANRs and native crashes from `ApplicationExitInfo`; 2D voice quality, with its own plan.
+
+---
+
 ## 2026-11-08 - Production server logs are back, without tokens
 
 **Changed**
