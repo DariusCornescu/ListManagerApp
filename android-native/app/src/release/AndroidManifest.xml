@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Release builds only: they are the ones that carry the full Firebase App Distribution SDK. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <!-- The SDK's install screen is an AppCompat activity declared without a theme, so it
+             inherits Theme.ListManager, which is not AppCompat, and crashes as the update starts
+             installing ("You need to use a Theme.AppCompat theme"). Seen on the S25 with 2.0.106. -->
+        <activity
+            android:name="com.google.firebase.appdistribution.impl.InstallActivity"
+            android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
+    </application>
+
+</manifest>

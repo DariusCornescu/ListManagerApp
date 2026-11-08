@@ -24,6 +24,7 @@ object AppUpdates {
 
     @Volatile private var ready = false
     @Volatile private var checking = false
+    @Volatile private var checkedThisProcess = false
 
     /** True when this build can check for updates: Firebase settings were given at build time. */
     val isAvailable: Boolean get() = ready
@@ -47,12 +48,21 @@ object AppUpdates {
         }
     }
 
-    /** At most once an hour, so returning to the app after a dismissed prompt doesn't nag. */
+    /**
+     * Every time the app starts, then at most once an hour when it comes back to the front, so a
+     * dismissed prompt doesn't nag. Before, the hour also held back a fresh start: a version
+     * published minutes after the last check was not offered until the hour passed.
+     */
     fun checkIfDue(activity: Activity) {
         if (!ready) return
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
-        if (!isCheckDue(prefs.getLong(KEY_LAST_CHECK, 0L), now)) return
+        val last = prefs.getLong(KEY_LAST_CHECK, 0L)
+        if (!shouldCheck(checkedThisProcess, last, now)) {
+            Log.d(TAG, "Update check skipped: the last one was ${(now - last) / 60_000} min ago")
+            return
+        }
+        checkedThisProcess = true
         prefs.edit().putLong(KEY_LAST_CHECK, now).apply()
         check()
     }
@@ -69,8 +79,12 @@ object AppUpdates {
         // The SDK's sign-in page and dialog resume the activity; don't start a second check then.
         if (checking) return
         checking = true
+        Log.i(TAG, "Checking for a newer release")
         try {
             FirebaseAppDistribution.getInstance().updateIfNewReleaseAvailable()
+                // Logged so a phone's log shows what happened, including "no newer release".
+                .addOnProgressListener { Log.i(TAG, "Update status: ${it.updateStatus}") }
+                .addOnSuccessListener { Log.i(TAG, "Update check finished") }
                 .addOnFailureListener { e ->
                     val status = (e as? FirebaseAppDistributionException)?.errorCode
                     Log.i(TAG, "Update check ended without an update: $status ${e.message}")
@@ -81,6 +95,9 @@ object AppUpdates {
             Log.w(TAG, "Update check could not start: ${e.message}")
         }
     }
+
+    internal fun shouldCheck(checkedThisProcess: Boolean, lastCheckMillis: Long, nowMillis: Long): Boolean =
+        !checkedThisProcess || isCheckDue(lastCheckMillis, nowMillis)
 
     internal fun isCheckDue(lastCheckMillis: Long, nowMillis: Long): Boolean =
         // A clock set back would otherwise block checks until it caught up.

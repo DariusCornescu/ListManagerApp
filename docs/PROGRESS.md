@@ -86,6 +86,40 @@ Based on `origin/development` at `e33bed8`.
 
 ---
 
+## 2026-11-08 - Android: the update check runs at every app start, and logs its result
+
+**Found on the phone (S25, logcat)**
+- 2.0.105 was opened at about 22:54 and checked, but no newer release existed. 2.0.106 was
+  published at 22:57.
+- At 22:58 the app was opened again, and the one-hour limit skipped the check.
+- A check that finds nothing logged nothing, so this was invisible. The user installed 2.0.106
+  from the App Tester notification instead.
+
+**Changed** (`util/AppUpdates.kt`)
+- Every app start checks. The hour now applies only to coming back to the front, so a dismissed
+  prompt still doesn't nag.
+- Each check logs its start, every SDK status (for example `NEW_RELEASE_NOT_AVAILABLE`), and
+  its end.
+
+**Checked**: `AppUpdatesTest`, with a new test for the start rule. Debug: 6 tests. Release with
+Firebase settings: 6 tests, 1 skipped.
+
+**Second bug: the install screen crashed** (phone retest, 2.0.106 to 2.0.107)
+- After the tester signed in, the prompt appeared. The APK downloaded, then the SDK's
+  `InstallActivity` crashed twice with "You need to use a Theme.AppCompat theme". The SDK
+  declares it without a theme, so it inherited `Theme.ListManager`.
+- New `src/release/AndroidManifest.xml` gives it `Theme.AppCompat.DayNight.NoActionBar`. Release
+  builds are the only ones with the SDK and AppCompat.
+- New `src/testRelease/.../AppUpdatesInstallThemeTest` checks that theme. It runs in Android
+  distribute's `testReleaseUnitTest`, so a regression stops a publish.
+- Checked:
+  - the release APK's manifest has the theme, and debug has no `InstallActivity`;
+  - the test passes with the fix and fails without it.
+- Not checked: an install on the phone. That needs this merged and published, then one more
+  version to update to.
+
+---
+
 ## 2026-11-08 - Android distribute: AppUpdatesTest skips its no-Firebase case in release
 
 **Changed**
