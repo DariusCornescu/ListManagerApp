@@ -22,6 +22,7 @@ EXPECTED_HTTP_ROUTES = {
     ("POST", "/api/admin/users/{user_id}/revoke-tokens"),
     ("POST", "/api/admin/users/{user_id}/deactivate"),
     ("POST", "/api/admin/users/{user_id}/reactivate"),
+    ("POST", "/api/admin/users/{user_id}/role"),
     ("GET", "/api/catalog/distributors"),
     ("GET", "/api/catalog/distributors/{distributor_id}"),
     ("POST", "/api/catalog/distributors"),
