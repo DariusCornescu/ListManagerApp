@@ -262,16 +262,6 @@
 
 
 
-    <issue
-        id="ContextCastToActivity"
-        message="LocalContext should not be cast to Activity, use LocalActivity instead"
-        errorLine1="        val activity = LocalContext.current as? Activity"
-        errorLine2="                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/darius/listmanager/ui/screens/AboutScreen.kt"
-            line="25"
-            column="24"/>
-    </issue>
 
     <issue
         id="InsecureBaseConfiguration"
