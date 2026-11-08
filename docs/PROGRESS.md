@@ -5,6 +5,29 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Production server logs are back, without tokens
+
+**Changed**
+- The migrations that run at startup no longer disable every existing logger. `alembic/env.py`
+  skips `alembic.ini`'s logging when the app sets `configure_logger = False`, and from the command
+  line it keeps existing loggers.
+- `app/logging_setup.py` shows the app's INFO lines and redacts `token=` values on the root,
+  `uvicorn` and `uvicorn.access` handlers. The live socket sends its JWT in the URL, and uvicorn
+  logs paths with their query string, so turning logs back on without this would have written
+  tokens to Render. Set `LOG_LEVEL` to change the level.
+
+**Checked**
+- `tests/test_logging.py` starts the app the way uvicorn does, and both tests failed before the fix.
+- A local uvicorn run printed startup, seeding, access lines and the failed socket auth, with
+  `token=REDACTED` in the HTTP and WebSocket lines and no token value anywhere.
+- Backend: 436 passed, 12 skipped.
+
+**Next**
+- After deploy, check Render's log stream for the startup lines and a request.
+- Backups are still open. See the 2026-11 review.
+
+---
+
 ## 2026-11-08 - Admin phase 2A: sign-in and sign-out events (feat/admin-auth-events)
 
 **Changed**
