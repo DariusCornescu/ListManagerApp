@@ -1,6 +1,6 @@
 from decimal import Decimal
 from pydantic import BaseModel, EmailStr, ConfigDict, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 # Match PostgreSQL INTEGER and Android's signed 32-bit quantity/version fields.
@@ -250,6 +250,10 @@ class AdminUserDetailDTO(BaseModel):
     last_activity_at: Optional[datetime] = None
     last_login_at: Optional[datetime] = None
     active_logins: int
+
+
+class RoleChangeRequest(BaseModel):
+    role: Literal["ADMIN", "USER"]
 
 
 class AuthEventDTO(BaseModel):

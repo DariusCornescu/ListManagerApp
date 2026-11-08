@@ -5,6 +5,23 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Admins can change a user's role (feat/admin-role-change)
+
+**Changed**
+- New admin-only route `POST /api/admin/users/{id}/role` with `{"role": "ADMIN" | "USER"}`.
+  The role is read from the database on every request, so it applies at once. An admin cannot
+  change their own role, which also keeps one admin. Recorded as `admin_role_change` in
+  `auth_events`, with the acting admin. No migration.
+- `/admin`: the user side panel has "Fă admin" / "Fă utilizator" with a confirmation.
+- Why: the user wants to try adding and renaming products from the phone, which the Android app
+  only shows to ADMIN, and production had no way to change a role.
+
+**After deploy**
+- Promote the phone's account from `/admin`, then restart the app on the phone: it loads the
+  role from the server at start. Catalog edits made from the phone change the production catalog.
+
+---
+
 ## 2026-11-08 - Daily production backups to Cloudflare R2
 
 **Changed**
