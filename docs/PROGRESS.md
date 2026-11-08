@@ -27,6 +27,22 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android distribute: AppUpdatesTest skips its no-Firebase case in release
+
+**Changed**
+- The first distribute run after #51 failed in `testReleaseUnitTest`. The test
+  `withoutFirebaseSettingsNothingStartsOrIsRecorded` assumed no Firebase settings, but that run
+  builds with them, so Firebase started. It is now skipped when `BuildConfig.FIREBASE_APP_ID` is
+  set. App code is unchanged.
+
+**Checked**
+- Debug, no settings: 5 tests, 0 skipped.
+- Release with Firebase settings, as in the workflow: 5 tests, 1 skipped, 0 failed.
+
+**Next**: publish version A again.
+
+---
+
 ## 2026-11-08 - Android dictation: faster segmentation and three cutting fixes (perf/segment-prefilter)
 
 Builds on `perf/faster-dictation` (PR #45).
