@@ -30,6 +30,13 @@ class AppUpdatesTest {
         assertTrue(AppUpdates.isCheckDue(now - hour, now))
     }
 
+    @Test fun everyAppStartChecksEvenWithinTheHour() {
+        // A version published minutes after the last check is offered at the next start.
+        assertTrue(AppUpdates.shouldCheck(checkedThisProcess = false, lastCheckMillis = now - 60_000, nowMillis = now))
+        assertFalse(AppUpdates.shouldCheck(checkedThisProcess = true, lastCheckMillis = now - 60_000, nowMillis = now))
+        assertTrue(AppUpdates.shouldCheck(checkedThisProcess = true, lastCheckMillis = now - hour, nowMillis = now))
+    }
+
     @Test fun aClockSetBackDoesNotBlockChecks() {
         assertTrue(AppUpdates.isCheckDue(lastCheckMillis = now + 5 * hour, nowMillis = now))
     }
