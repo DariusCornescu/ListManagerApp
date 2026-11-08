@@ -124,10 +124,15 @@ class RankerExperimentsTest {
         val autoAddPrecision: Double,
         val autoAddRate: Double,
         val falseAutoAdds: Int,
+        /** Catalog products whose best score fell below the Suggestions band (resolved Unknown). */
+        val knownToUnknown: Int,
+        /** Phrases not in the catalog that still reached the Suggestions band or above. */
+        val falseSuggestions: Int,
     ) {
         override fun toString() =
             "top1=${"%.4f".format(top1)} autoAddPrecision=${"%.4f".format(autoAddPrecision)} " +
-                "autoAddRate=${"%.4f".format(autoAddRate)} falseAutoAdds=$falseAutoAdds"
+                "autoAddRate=${"%.4f".format(autoAddRate)} falseAutoAdds=$falseAutoAdds " +
+                "knownToUnknown=$knownToUnknown falseSuggestions=$falseSuggestions"
     }
 
     private fun evaluate(cases: List<Case>, depth: Int, weights: ScoringWeights): Result {
@@ -135,6 +140,8 @@ class RankerExperimentsTest {
         var known = 0
         var autoAdds = 0
         var correctAutoAdds = 0
+        var knownToUnknown = 0
+        var falseSuggestions = 0
         cases.forEach { case ->
             val best = ProductRanker
                 .rankAcross(case.hypotheses.take(depth), catalog, weights = weights)
@@ -142,6 +149,9 @@ class RankerExperimentsTest {
             if (case.expectedId != null) {
                 known++
                 if (best?.product?.id == case.expectedId) hits++
+                if (best == null || best.score < SUGGESTIONS_THRESHOLD) knownToUnknown++
+            } else if (best != null && best.score >= SUGGESTIONS_THRESHOLD) {
+                falseSuggestions++
             }
             if (best != null && best.score >= AUTO_ADD_THRESHOLD) {
                 autoAdds++
@@ -153,6 +163,8 @@ class RankerExperimentsTest {
             autoAddPrecision = if (autoAdds == 0) 1.0 else correctAutoAdds.toDouble() / autoAdds,
             autoAddRate = autoAdds.toDouble() / cases.size,
             falseAutoAdds = autoAdds - correctAutoAdds,
+            knownToUnknown = knownToUnknown,
+            falseSuggestions = falseSuggestions,
         )
     }
 
@@ -180,8 +192,11 @@ class RankerExperimentsTest {
      */
     @Test fun productionSettings_holdTheSyntheticFloor() {
         val result = evaluate(corpus(SEED), depth = MAX_DEPTH, ScoringWeights())
-        assertTrue("Top-1 fell: $result", result.top1 >= 0.94)
+        assertTrue("Top-1 fell: $result", result.top1 >= 0.955)
         assertEquals("A wrong product was auto-added: $result", 0, result.falseAutoAdds)
+        // Fuzzy token credit (2026-11-08) took this from 368 to 322 of 1,000.
+        assertTrue("More catalog products resolve to Unknown: $result", result.knownToUnknown <= 322)
+        assertEquals("A phrase not in the catalog reached Suggestions: $result", 0, result.falseSuggestions)
     }
 
     @Test fun corpusIsReproducible() {
@@ -192,5 +207,6 @@ class RankerExperimentsTest {
         const val SEED = 240513
         const val MAX_DEPTH = 5
         const val AUTO_ADD_THRESHOLD = 0.82 // ResolveSpokenProductUseCase
+        const val SUGGESTIONS_THRESHOLD = 0.60 // ResolveSpokenProductUseCase
     }
 }

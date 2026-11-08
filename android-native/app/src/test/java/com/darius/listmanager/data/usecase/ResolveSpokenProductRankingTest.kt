@@ -15,7 +15,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
-import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -114,7 +113,6 @@ class ResolveSpokenProductRankingTest {
         assertEquals("Pâine albă", topRanked("pâini"))
     }
 
-    @Ignore("Known recall gap (QA run 2026-11-08): near misses and Romanian plurals rank the right product first but score 0.50-0.54, below the 0.60 Suggestions band, so they resolve to Unknown. Tuning the ranker or thresholds is a product decision; see docs/PROGRESS.md.")
     @Test
     fun misspellingGivesSuggestionsInTheMiddleBandSortedDescending() {
         val result = resolve("cartafi")
@@ -126,7 +124,6 @@ class ResolveSpokenProductRankingTest {
         assertEquals("sorted by score, descending", ranked.sortedByDescending { it.score }, ranked)
     }
 
-    @Ignore("Known recall gap (QA run 2026-11-08): near misses and Romanian plurals rank the right product first but score 0.50-0.54, below the 0.60 Suggestions band, so they resolve to Unknown. Tuning the ranker or thresholds is a product decision; see docs/PROGRESS.md.")
     @Test
     fun similarSoundingWordIsNeverUnknown() {
         when (val result = resolve("meri")) {
@@ -249,7 +246,6 @@ class ResolveSpokenProductRankingTest {
         assertEquals("Mere", (resolved.last().second as ResolveResult.AutoAdd).product.name)
     }
 
-    @Ignore("Known recall gap (QA run 2026-11-08): near misses and Romanian plurals rank the right product first but score 0.50-0.54, below the 0.60 Suggestions band, so they resolve to Unknown. Tuning the ranker or thresholds is a product decision; see docs/PROGRESS.md.")
     @Test
     fun pluralPainiResolvesToBread() = runBlocking {
         val (segment, result) = resolver.resolveMultiple("3 pâini și cinci mere").first()

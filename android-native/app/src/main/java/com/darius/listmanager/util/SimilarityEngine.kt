@@ -120,12 +120,51 @@ object SimilarityEngine {
     fun tokenSimilarity(s1: String, s2: String): Double =
         tokenSetSimilarity(TextNorm.tokenize(s1).toSet(), TextNorm.tokenize(s2).toSet())
 
-    /** [tokenSimilarity] for token sets computed ahead with `TextNorm.tokenize(text).toSet()`. */
+    /** Edit similarity a token pair needs before it earns partial credit ("meri" ~ "mere"). */
+    private const val FUZZY_TOKEN_MIN_SIMILARITY = 0.75
+    /** Shorter tokens ("vin", "unt", "apa") must match exactly: one edit changes the word. */
+    private const val FUZZY_TOKEN_MIN_LENGTH = 4
+
+    /**
+     * [tokenSimilarity] for token sets computed ahead with `TextNorm.tokenize(text).toSet()`.
+     *
+     * Token-set Jaccard where a near-identical token pair (one recognizer slip, a Romanian
+     * plural ending) counts as a partial match worth its edit similarity instead of nothing.
+     * Exact tokens still count 1.0, so exact and exact-subset scores are unchanged. Each token
+     * is credited at most once, best pairs first. A token inside the other ("icoca" / "coca")
+     * earns no fuzzy credit: the ranker's contains bonus already rewards it, and counting it
+     * twice auto-added a wrong product in the synthetic benchmark.
+     */
     internal fun tokenSetSimilarity(tokens1: Set<String>, tokens2: Set<String>): Double {
         if (tokens1.isEmpty() && tokens2.isEmpty()) return 1.0
         if (tokens1.isEmpty() || tokens2.isEmpty()) return 0.0
 
-        return setOverlap(tokens1, tokens2)
+        val rest1 = tokens1.filter { it.length >= FUZZY_TOKEN_MIN_LENGTH && it !in tokens2 }
+        val rest2 = tokens2.filter { it.length >= FUZZY_TOKEN_MIN_LENGTH && it !in tokens1 }
+        if (rest1.isEmpty() || rest2.isEmpty()) return setOverlap(tokens1, tokens2)
+
+        val fuzzyPairs = rest1.flatMap { a ->
+            rest2.mapNotNull { b ->
+                if (a.contains(b) || b.contains(a)) return@mapNotNull null
+                val similarity = levenshteinSimilarity(a, b)
+                if (similarity >= FUZZY_TOKEN_MIN_SIMILARITY) Triple(a, b, similarity) else null
+            }
+        }
+        if (fuzzyPairs.isEmpty()) return setOverlap(tokens1, tokens2)
+
+        val used1 = mutableSetOf<String>()
+        val used2 = mutableSetOf<String>()
+        var fuzzyCredit = 0.0
+        for ((a, b, similarity) in fuzzyPairs.sortedByDescending { it.third }) {
+            if (a in used1 || b in used2) continue
+            used1 += a
+            used2 += b
+            fuzzyCredit += similarity
+        }
+
+        val exact = tokens1.count { it in tokens2 }
+        val matched = exact + fuzzyCredit
+        return matched / (tokens1.size + tokens2.size - matched)
     }
 
     fun numberSeqSimilarity(s1: String, s2: String): Double =
