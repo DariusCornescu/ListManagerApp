@@ -82,6 +82,9 @@ def startup_event():
     from .auth_events import purge_at_startup
     purge_at_startup()
 
+    from .crash_retention import purge_at_startup as purge_old_crash_reports
+    purge_old_crash_reports()
+
     logger.info("Startup complete!")
 
 
