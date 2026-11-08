@@ -97,13 +97,24 @@ In GitHub, open Actions, then **Android distribute**, then **Run workflow**, and
 Each tester gets an email or a notification in the Firebase App Tester app.
 
 The app also checks by itself (`util/AppUpdates.kt`), in release builds sent through Firebase only.
-When List Manager opens or comes back to the front, at most once an hour, it asks Firebase for a
-newer release and shows **Update**; Android then asks to **Install**. About has a **Caută
-actualizări** button for anyone who dismissed it. Android always asks before installing an app
-from outside Play, so updates are never fully silent. The first check on each phone asks, once,
-to sign in with the Google account invited to `magazin`, and to let List Manager install apps.
-The first version with this check still installs from App Tester; the prompt appears from the
-next version on.
+Every time List Manager starts, and at most once an hour when it comes back to the front, it asks
+Firebase for a newer release and shows **New version available**; Android then asks to
+**Install**. About has a **Caută actualizări** button for anyone who dismissed it. Android always
+asks before installing an app from outside Play, so updates are never fully silent.
+
+Once per phone:
+1. The first check shows **Enable testing features**. Tap **ENABLE**, choose the Google account
+   invited to `magazin` in Chrome, and wait to be sent back to the app. Pressing Back cancels it.
+2. The first install asks to **Allow from this source** for List Manager.
+3. A phone on a version before 2.0.108 installs once from App Tester: on those versions the
+   install screen crashed (fixed by `src/release/AndroidManifest.xml`).
+
+Each check logs under the tag `AppUpdates`: its start, each status change (for example
+`NEW_RELEASE_NOT_AVAILABLE`, `DOWNLOADING`, `DOWNLOADED`), and how it ended. That is where to
+look when a phone does not offer an update:
+```bash
+adb logcat -s AppUpdates FirebaseAppDistribution
+```
 
 ### Moving a phone from the cable install, once
 The app installed by cable is signed with this PC's debug key, so Android will not update it
