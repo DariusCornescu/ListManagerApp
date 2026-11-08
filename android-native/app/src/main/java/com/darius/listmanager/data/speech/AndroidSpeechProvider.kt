@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -15,6 +16,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+private const val TIMING_TAG = "DictationTiming"
+
 class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
 
     private val _speechState = MutableStateFlow<SpeechState>(SpeechState.Idle)
@@ -23,6 +26,8 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
     private var speechRecognizer: SpeechRecognizer? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sessionGate = RecognitionSessionGate()
+    @Volatile
+    private var endOfSpeechAt: Long? = null
 
     private val recognizerIntent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
@@ -113,7 +118,10 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                 override fun onBeginningOfSpeech() {}
                 override fun onRmsChanged(rmsdB: Float) {}
                 override fun onBufferReceived(buffer: ByteArray?) {}
-                override fun onEndOfSpeech() {}
+                override fun onEndOfSpeech() {
+                    endOfSpeechAt = SystemClock.elapsedRealtime()
+                    Log.d(TIMING_TAG, "End of speech")
+                }
 
                 override fun onError(error: Int) {
                     val event = when (error) {
@@ -148,6 +156,10 @@ class AndroidSpeechProvider(private val context: Context) : SpeechRepository {
                     val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                     val text = matches?.firstOrNull() ?: ""
                     val hypothesisCount = matches?.size ?: 0
+                    // How long the recognizer took to hand over the text once speech ended.
+                    val sinceEnd = endOfSpeechAt?.let { SystemClock.elapsedRealtime() - it }
+                    Log.d(TIMING_TAG, "Recognizer result ${sinceEnd?.let { "$it ms after end of speech" } ?: "without an end of speech"}")
+                    endOfSpeechAt = null
                     SensitiveLog.d("Speech", "Final result received ($hypothesisCount hypotheses)") {
                         "Final result: '$text' ($hypothesisCount hypotheses)"
                     }
