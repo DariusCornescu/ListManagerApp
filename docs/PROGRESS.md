@@ -25,8 +25,7 @@ Builds on `perf/faster-dictation` (PR #45).
 
 **Measured** with the S25's 3,196-product catalog, copied into a local scratch folder, never
 committed, on a desktop JVM:
-- The phone utterance: segmentation from about 650 ms to about 50 ms. On the phone it was
-  1,766 ms before; the phone was disconnected before the new build could be timed there.
+- The phone utterance: segmentation from about 650 ms to about 50 ms.
 - It is now cut as `[burete tablă, detergent vase, cameră bicicletă 26x175, șurub 3.5x35,
   trambul x galben]`.
 - 400 seeded synthetic utterances: candidate scoring cuts all 400 exactly as whole-catalog
@@ -38,9 +37,24 @@ committed, on a desktop JVM:
   identical before and after (ranking itself did not change). Unit tests: 349 run, 0 failures,
   1 skipped (the local-catalog benchmark, which needs `LISTMANAGER_CATALOG_JSON`).
 
+**Measured on the Galaxy S25**, preview build, the same phrase said once (one sample, first
+phrase after opening the app):
+
+| | Before (PR #45) | After |
+| --- | --- | --- |
+| Recognizer result after end of speech | 49 ms | 43 ms |
+| Segmentation | 1,766 ms | 324 ms (45 windows, none against the whole catalog) |
+| Segmentation and resolving all parts | 1,939 ms | 614 ms |
+| Catalog preparation, once when Home opens | 866 ms | 1,131 ms (now also builds the word index) |
+
+- Cut on the phone as on the JVM: `[burete tablă, detergent vase, cameră bicicletă 26x175,
+  șurub 3.5x35, trambul x galben]`. The recognizer wrote the sizes as "26/175" and "3,5/35".
+- Resolving the parts took about 290 ms. Of that, 145 ms went to "trambul x galben", which
+  the catalog search did not find, so the whole catalog was ranked for it.
+
 **Next**
-- Time the new build on the phone with the same phrase (`adb logcat -s DictationTiming`).
-- Resolving the parts (173 ms on the phone) is now the larger share of the wait.
+- Resolving is now about half of the wait. The largest share is a part the catalog search
+  misses, which ranks the whole catalog; the word index could serve that path too.
 
 **Open questions**
 - A window that runs into the next product's size can still win as a whole: with an invented
