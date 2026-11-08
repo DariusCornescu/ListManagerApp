@@ -49,6 +49,39 @@ class ProductRankerPreparedTest {
     }
 
     @Test
+    fun bestMatchIsTheTopRankedProduct() {
+        val catalog = ProductRanker.prepare(products)
+        phrases.forEach { phrase ->
+            val top = ProductRanker.rank(phrase, products).firstOrNull()
+            val best = ProductRanker.bestMatch(phrase, catalog)
+            assertEquals(phrase, top?.product?.id, best?.product?.product?.id)
+            assertEquals(phrase, top?.score ?: 0.0, best?.score ?: 0.0, 0.0)
+        }
+    }
+
+    @Test
+    fun aProductMentionsItsWordsOtherEndingsAbbreviationsAndSizes() {
+        val catalog = ProductRanker.prepare(
+            products + ProductEntity(9, "Deterg. rufe 2L", 1, null),
+        )
+        val camera = catalog.products.single { it.product.id == 7L }
+        val detergent = catalog.products.single { it.product.id == 9L }
+
+        listOf("cameră", "camerei", "Bicicleta", "26x175", "26x1.75").forEach {
+            assertEquals(it, true, camera.mentions(it))
+        }
+        listOf("șurub", "detergent", "28x175", "pe").forEach {
+            assertEquals(it, false, camera.mentions(it))
+        }
+        assertEquals(true, detergent.mentions("detergent"))
+        assertEquals(false, detergent.mentions("vase"))
+        // Letters said in the wrong order are still the same word.
+        assertEquals(true, detergent.mentions("rfue"))
+        assertEquals(0.75, SimilarityEngine.swapTolerantSimilarity("ucie", "cuie"), 1e-9)
+        assertEquals(0.5, SimilarityEngine.levenshteinSimilarity("ucie", "cuie"), 1e-9)
+    }
+
+    @Test
     fun rankingSeveralHypothesesAgainstAPreparedCatalogMatchesTheProducts() {
         val catalog = ProductRanker.prepare(products)
         val hypotheses = listOf("lapte zuzu", "lapte zuza", "", "camera 26 * 175")
