@@ -10,14 +10,22 @@ Newest entries on top.
 **Changed**
 - `android-distribute.yml`: the first real run built and signed the release, then stopped with
   exit 1 and no message. The step piped `apksigner` into a strict `grep` for
-  `Signer #1 certificate`. Most likely the runner's build-tools word it differently, so `grep`
+  `Signer #1 certificate`. The runner's build-tools 37 word it differently, so `grep`
   failed silently. The step now relies on `apksigner verify`'s exit code, prints its full output
   (the certificate is public), and names the missing `apksigner` or failed verification in an
   error.
 
-**Checked**: `actionlint` 1.7.7 is clean. Local `apksigner` 35.0.0 verifies the test-signed APK.
+- The upload step no longer prints firebase-tools' one-hour APK download link, since the run log
+  is public. The first successful run did print it, and that link expired an hour later.
 
-**Next**: rerun the workflow and read its log. The first run uploaded nothing.
+**Checked**
+- The rerun from this branch passed: build-tools 37.0.0 prints `V2 Signer: certificate DN`
+  instead of `Signer #1`, which confirms the cause. It shows v2, `CN=ListManager` and RSA 4096,
+  and versionCode 102. Release 2.0.102 was uploaded and sent to the group `magazin`.
+- `actionlint` 1.7.7 is clean. The link filter was tested on sample output, and with `pipefail`
+  an upload failure still fails the step.
+
+**Next**: after merge, check that the next run's log has no download link.
 
 ---
 
