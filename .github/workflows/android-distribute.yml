@@ -82,7 +82,12 @@ jobs:
           apk=app/build/outputs/apk/release/app-release.apk
           [ -f "$apk" ] || { echo "::error::No signed APK at $apk"; exit 1; }
           apksigner="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -1)"
-          "$apksigner" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          [ -n "$apksigner" ] || { echo "::error::No apksigner under $ANDROID_HOME/build-tools"; exit 1; }
+          echo "Using $apksigner"
+          # apksigner's exit code is the check. Its output wording changes between build-tools
+          # versions, so it is only printed. The certificate is public: anyone with the APK can read it.
+          "$apksigner" verify --verbose --print-certs "$apk" \
+            || { echo "::error::The APK signature does not verify"; exit 1; }
           echo "Built versionCode $LISTMANAGER_VERSION_CODE"
 
       - name: Send to Firebase App Distribution

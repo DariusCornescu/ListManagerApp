@@ -5,6 +5,22 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android distribute: signature check no longer fails silently (fix/android-distribute-signature-check)
+
+**Changed**
+- `android-distribute.yml`: the first real run built and signed the release, then stopped with
+  exit 1 and no message. The step piped `apksigner` into a strict `grep` for
+  `Signer #1 certificate`. Most likely the runner's build-tools word it differently, so `grep`
+  failed silently. The step now relies on `apksigner verify`'s exit code, prints its full output
+  (the certificate is public), and names the missing `apksigner` or failed verification in an
+  error.
+
+**Checked**: `actionlint` 1.7.7 is clean. Local `apksigner` 35.0.0 verifies the test-signed APK.
+
+**Next**: rerun the workflow and read its log. The first run uploaded nothing.
+
+---
+
 ## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
 
 **Changed**
