@@ -33,6 +33,51 @@ the SDK installed from App Tester, and then a newer one published.
 
 ---
 
+## 2026-11-08 - CI/CD: faster CI, deploy only after checks pass, smoke test (ci/pipelines)
+
+**Changed**
+- `ci.yml`:
+  - pull requests run only the jobs for the folders they change; pushes to `development` run
+    everything;
+  - a single `ci-ok` check is meant for branch protection;
+  - pip, Gradle and the Flutter SDK are cached;
+  - actions are pinned to commit SHAs, Flutter to 3.47.9 and pip-audit to 2.10.1;
+  - jobs have timeouts, and a new push cancels the older run on the same pull request;
+  - a new `actionlint` job lints the workflows and runs shellcheck on their scripts.
+- `.github/dependabot.yml`: one grouped pull request a week for GitHub Actions only.
+- `render.yaml`: `autoDeployTrigger: checksPass`. Render deploys only commits whose GitHub
+  checks all passed. Before this, a red `development` commit still deployed.
+- New `deploy-smoke.yml`. It runs on the deployment status Render posts to GitHub and fails if
+  any of these happens:
+  - the deploy failed;
+  - `/health` is not healthy;
+  - `/api/stats` cannot read the database.
+- `DEPLOYMENT.md`: new "CI/CD" section, with the branch protection command.
+
+**Checked**
+- `actionlint` 1.7.12 with shellcheck 0.10.0 passes on every workflow.
+- `render.yaml` validates against Render's JSON schema, and the schema rejects an invalid
+  `autoDeployTrigger` value.
+- The smoke test's steps ran locally against production:
+  - passing cases: a successful deploy, `/health`, `/api/stats`;
+  - failing cases: a failed deploy, a wrong URL, a body without the counts.
+- The pull request's own CI run exercises the path filters and caching.
+
+**Not checked until merge**
+- Render's `checksPass` behaviour.
+- The smoke test on a real deploy: `deployment_status` workflows run only from the deployed
+  commit.
+- Branch protection.
+
+**Next (user)**
+- After merge, check that Render's service settings show Auto-Deploy "After CI Checks Pass".
+- Run the branch protection command in `DEPLOYMENT.md`.
+- `android-distribute.yml` (from PR #44, now on `development`) still uses tag-pinned actions.
+  It passes `actionlint`. Pin its actions to SHAs in a follow-up, and Dependabot keeps them
+  current.
+
+---
+
 ## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
 
 **Changed**
