@@ -41,6 +41,15 @@ android {
     val versionCodeOverride = setting("LISTMANAGER_VERSION_CODE")?.let {
         it.toIntOrNull() ?: error("LISTMANAGER_VERSION_CODE must be a whole number")
     }
+    // Firebase project for the in-app update prompt (DEPLOYMENT.md, "Android updates"). All three
+    // or none: without them Firebase never starts and the app does not check for updates.
+    val firebaseKeys = listOf(
+        "LISTMANAGER_FIREBASE_APP_ID", "LISTMANAGER_FIREBASE_API_KEY", "LISTMANAGER_FIREBASE_PROJECT_ID",
+    )
+    val firebase = firebaseKeys.associateWith { setting(it) }
+    if (firebase.values.any { it != null } && firebase.values.any { it == null }) {
+        error("Set all of ${firebaseKeys.joinToString()} or none of them")
+    }
 
     namespace = "com.darius.listmanager"
     compileSdk = 36
@@ -68,6 +77,9 @@ android {
 
         // Expose base URL to app code without committing IPs
         buildConfigField("String", "BASE_URL", "\"$baseUrl\"")
+        buildConfigField("String", "FIREBASE_APP_ID", "\"${firebase["LISTMANAGER_FIREBASE_APP_ID"].orEmpty()}\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"${firebase["LISTMANAGER_FIREBASE_API_KEY"].orEmpty()}\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${firebase["LISTMANAGER_FIREBASE_PROJECT_ID"].orEmpty()}\"")
 
         // App label; the "preview" build type overrides it so side-by-side
         // installs are distinguishable on the launcher.
@@ -151,6 +163,11 @@ dependencies {
     implementation("io.gitlab.shubham0204:sentence-embeddings:v6")
     // v6 still declares 1.17.0; this release supplies 16 KB-aligned JNI libraries.
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.24.3")
+
+    // In-app update prompt from Firebase App Distribution. Only release builds, which go to the
+    // phones through Firebase, get the full SDK; elsewhere the API does nothing. Not for Play.
+    implementation("com.google.firebase:firebase-appdistribution-api:16.0.0-beta21")
+    releaseImplementation("com.google.firebase:firebase-appdistribution:16.0.0-beta21")
 
     // Coroutines (if not already added)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

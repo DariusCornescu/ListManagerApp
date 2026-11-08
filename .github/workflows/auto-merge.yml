@@ -1,0 +1,80 @@
+# Merges a pull request labelled "auto-merge" once CI passes, unless it is also labelled
+# "needs-review". Labels and who sets them: DEPLOYMENT.md, "Pull requests: labels and auto-merge".
+#
+# The merge uses GITHUB_TOKEN, and pushes made with it start no workflows. Render deploys a commit
+# only after its checks pass, so after merging this starts CI on development by hand
+# (workflow_dispatch is the one event GITHUB_TOKEN may trigger).
+#
+# It never checks out or runs the pull request's code: it only reads it with gh.
+name: Auto-merge
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize, ready_for_review, reopened]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions: {}
+
+# One run at a time per pull request. A shared group would let a newer event replace a pending
+# run for another pull request, and that one would then wait for its next event.
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    # Pull requests from this repository only. A fork's CI run carries no pull request here.
+    if: >-
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.event == 'pull_request' &&
+       github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR_NUMBER: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+    steps:
+      - name: Merge if labelled and green
+        run: |
+          set -euo pipefail
+          if [ -z "$PR_NUMBER" ]; then echo "No pull request for this run."; exit 0; fi
+          skip() { echo "Not merging #$PR_NUMBER: $1"; exit 0; }
+
+          pr="$(gh pr view "$PR_NUMBER" --json state,isDraft,baseRefName,headRefOid,isCrossRepository,labels)"
+          field() { jq -r "$1" <<<"$pr"; }
+          labels="$(field '[.labels[].name] | join(",")')"
+          [ "$(field .state)" = OPEN ] || skip "it is not open"
+          [ "$(field .isDraft)" = false ] || skip "it is a draft"
+          [ "$(field .baseRefName)" = development ] || skip "it does not target development"
+          [ "$(field .isCrossRepository)" = false ] || skip "it comes from a fork"
+          [[ ",$labels," == *",auto-merge,"* ]] || skip "no auto-merge label"
+          [[ ",$labels," != *",needs-review,"* ]] || skip "it is labelled needs-review"
+
+          sha="$(field .headRefOid)"
+          ci="$(gh api "repos/$GH_REPO/commits/$sha/check-runs?check_name=ci-ok" \
+                  --jq '.check_runs | sort_by(.id) | last | .conclusion // "pending"')"
+          [ "$ci" = success ] || skip "ci-ok on ${sha::7} is ${ci:-missing}; waiting for CI"
+
+          # GitHub works out mergeability in the background; it can be UNKNOWN for a few seconds.
+          for _ in 1 2 3 4 5 6; do
+            mergeable="$(gh pr view "$PR_NUMBER" --json mergeable --jq .mergeable)"
+            [ "$mergeable" != UNKNOWN ] && break
+            sleep 5
+          done
+          [ "$mergeable" = MERGEABLE ] || skip "GitHub reports it as $mergeable"
+
+          # --match-head-commit: never merge a commit that CI did not check.
+          gh pr merge "$PR_NUMBER" --merge --match-head-commit "$sha"
+          echo "Merged #$PR_NUMBER at ${sha::7}."
+          gh workflow run ci.yml --ref development
+          echo "Started CI on development, so Render can deploy the merge."
