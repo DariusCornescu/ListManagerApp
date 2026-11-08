@@ -174,14 +174,17 @@ class FinishingScreensUiTest {
         val first = AppSettings.getInstance(context)
         assertEquals(ThemeMode.SYSTEM, first.themeMode.value)
         assertTrue(first.hapticsEnabled.value)
+        assertFalse("Home dictation starts as one phrase per tap", first.continuousDictation.value)
 
         first.setThemeMode(ThemeMode.DARK)
         first.setHapticsEnabled(false)
+        first.setContinuousDictation(true)
         AppSettings.resetForTest()
 
         val reopened = AppSettings.getInstance(context)
         assertEquals(ThemeMode.DARK, reopened.themeMode.value)
         assertFalse(reopened.hapticsEnabled.value)
+        assertTrue(reopened.continuousDictation.value)
         AppSettings.resetForTest()
     }
 

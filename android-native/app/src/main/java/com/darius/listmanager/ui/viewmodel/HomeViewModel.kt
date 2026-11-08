@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.darius.listmanager.data.embedding.EmbeddingBackfill
 import com.darius.listmanager.data.embedding.EmbeddingModel
 import com.darius.listmanager.data.local.AppDatabase
+import com.darius.listmanager.data.settings.AppSettings
 import com.darius.listmanager.data.repository.*
 import com.darius.listmanager.data.speech.AndroidSpeechProvider
 import com.darius.listmanager.data.speech.SpeechState
@@ -61,6 +62,8 @@ data class HomeUiState(
     val sessionItemCount: Int = 0,
     val lastAdded: LastAdded? = null,
     val canUndoLastAdded: Boolean = false,
+    /** Off: listening stops after one phrase. On: it goes on until Stop. */
+    val continuousDictation: Boolean = false,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,8 +87,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val addProductUseCase = AddProductUseCase(sessionRepository)
     private val undoAddUseCase = UndoAddUseCase(sessionRepository)
     private val workspaceManager = WorkspaceManager.getInstance(application)
+    private val settings = AppSettings.getInstance(application)
 
-    private val _uiState = MutableStateFlow(HomeUiState())
+    private val _uiState = MutableStateFlow(HomeUiState(continuousDictation = settings.continuousDictation.value))
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     private var nextAddToken = 0L
@@ -111,8 +115,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Process final speech result
                 if (state is SpeechState.Final) {
+                    if (!_uiState.value.continuousDictation) {
+                        // One phrase per tap: stop before the provider's restart runs, as
+                        // Inventory does. Continuous mode lets the loop go on by itself.
+                        speechRepository.stopListening()
+                    }
                     processSpokenText(state.text, state.alternatives)
                 }
+            }
+        }
+
+        viewModelScope.launch {
+            settings.continuousDictation.collect { continuous ->
+                _uiState.value = _uiState.value.copy(continuousDictation = continuous)
             }
         }
 
@@ -159,6 +174,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopListening() { speechRepository.stopListening() }
+
+    /** Turned off while listening, it stops after the phrase being said. */
+    fun setContinuousDictation(enabled: Boolean) = settings.setContinuousDictation(enabled)
 
     private fun processSpokenText(spokenText: String, alternatives: List<String> = emptyList()) {
         viewModelScope.launch {

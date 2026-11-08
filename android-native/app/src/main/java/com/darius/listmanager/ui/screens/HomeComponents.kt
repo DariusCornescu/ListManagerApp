@@ -46,6 +46,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -443,6 +444,32 @@ private fun UndoCountdown(key: Long, modifier: Modifier) {
 }
 
 /** The bar within thumb reach: what needs a decision, recording, and the list. */
+/** One phrase per tap, or listening until Stop. Sits above the dock, within thumb reach. */
+@Composable
+internal fun DictationModeRow(
+    continuous: Boolean,
+    onChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("Dictare continuă", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                if (continuous) "Ascultă până apeși Oprește" else "Se oprește după o frază",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Switch(checked = continuous, onCheckedChange = onChange)
+    }
+}
+
 @Composable
 internal fun HomeDock(
     action: RecordAction,

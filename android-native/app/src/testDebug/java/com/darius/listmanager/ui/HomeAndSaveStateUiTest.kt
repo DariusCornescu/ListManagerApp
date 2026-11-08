@@ -9,6 +9,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -54,6 +57,7 @@ class HomeAndSaveStateUiTest {
     private var sessionOpens = 0
     private var resolveOpens = 0
     private var undos = 0
+    private val modeChanges = mutableListOf<Boolean>()
 
     /** Endless animations never let the test clock settle, so they're off except where tested. */
     @Before fun turnAnimationsOff() = setAnimatorScale(0f)
@@ -74,6 +78,7 @@ class HomeAndSaveStateUiTest {
                     onUndoLastAdded = { undos++ },
                     onOpenSession = { sessionOpens++ },
                     onOpenResolve = { resolveOpens++ },
+                    onContinuousChange = { modeChanges += it },
                 )
             }
         }
@@ -100,6 +105,31 @@ class HomeAndSaveStateUiTest {
         rule.onNodeWithText("Apasă și spune produsele").assertExists()
         assertEquals(1, starts)
         shoot("home-idle")
+    }
+
+    @Test fun dictationMode_startsAsOnePhrase_andTurnsContinuous() {
+        rule.setContent { Home(HomeUiState()) }
+
+        rule.onNodeWithText("Dictare continuă").assertExists()
+        rule.onNodeWithText("Se oprește după o frază").assertExists()
+        rule.onNode(isToggleable()).assertIsOff().performClick()
+        assertEquals(listOf(true), modeChanges)
+    }
+
+    @Test fun dictationMode_continuous_listensUntilStop() {
+        rule.setContent { Home(HomeUiState(continuousDictation = true)) }
+
+        rule.onNodeWithText("Ascultă până apeși Oprește").assertExists()
+        rule.onNode(isToggleable()).assertIsOn().performClick()
+        assertEquals(listOf(false), modeChanges)
+        shoot("home-idle-continuous")
+    }
+
+    @Test fun dictationMode_darkTheme() {
+        rule.setContent { Home(HomeUiState(), dark = true) }
+
+        rule.onNodeWithText("Se oprește după o frază").assertExists()
+        shoot("home-idle-dark")
     }
 
     @Test fun listening_turnsTheSameButtonIntoStop() {
