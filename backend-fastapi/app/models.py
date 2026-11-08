@@ -230,7 +230,8 @@ class CrashReport(Base):
     username = Column(String(50), nullable=True)
     stacktrace = Column(Text, nullable=False)
     signature = Column(String(64), nullable=True, index=True)
-    created_at = Column(DateTime, default=func.now())
+    # Indexed for the retention purge and the per-day admin charts.
+    created_at = Column(DateTime, default=func.now(), index=True)
 
 
 class Inventory(Base):

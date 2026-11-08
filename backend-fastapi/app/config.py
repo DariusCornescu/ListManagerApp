@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     # Sign-in and sign-out events are personal data; older rows are deleted.
     AUTH_EVENT_RETENTION_DAYS: int = 90
+    # Crash reports carry usernames and arrive without sign-in; older ones are deleted.
+    # 0 turns the purge off.
+    CRASH_REPORT_RETENTION_DAYS: int = 180
 
     RATE_LIMIT_ENABLED: bool = True
 
