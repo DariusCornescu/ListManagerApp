@@ -62,6 +62,70 @@ Avoid the free plans for real use:
   is deleted** (per Render's articles in November 2026). The data is lost and the
   service then crashes at startup.
 
+## Backups
+
+Render keeps 3 days of point-in-time recovery on a Hobby workspace (7 on Pro), and none of it
+survives the database being deleted, which already happened once. So `render.yaml` adds a cron
+job, `listmanager-db-backup`, that dumps the database every day at 02:00 UTC and stores the
+dump in Cloudflare R2. The job is `ops/db-backup/` (`Dockerfile` and `backup.sh`).
+
+The job reads the server's version and dumps with the matching client. It dumps to a local file
+first and checks it with `pg_restore --list`, including that
+`users`, `products` and `global_sessions` have data. Only then does it upload, and it confirms
+the stored size. A failed step uploads nothing and fails the run. The log never shows the
+connection string or keys.
+
+### One-time setup
+1. **Cloudflare:** enable R2 and create a private bucket, for example `listmanager-backups`.
+2. **R2 API token:** create one with **Object Read & Write** on that bucket only. Note the
+   Account ID, Access Key ID and Secret Access Key. They are shown once.
+3. **Retention:** on the bucket, add a lifecycle rule that deletes objects after 90 days.
+   Optional: a bucket lock rule, so a leaked key cannot delete recent backups.
+4. **Render:** after the Blueprint syncs, open `listmanager-db-backup` → Environment and set
+   `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`. Until then
+   each run fails with `missing settings: ...`, and nothing else happens.
+5. **First run:** click **Trigger Run**. The log should end with
+   `backup ok: listmanager/YYYY/MM/DD/listmanager-<time>-pgNN.dump (<size> bytes, PostgreSQL NN)`,
+   and the file
+   should be in the bucket. In Render's account settings, turn on notifications for failed jobs.
+
+Anyone with the R2 key can read the whole database, users and password hashes included. Keep
+the bucket private and the token limited to it.
+
+### Restore
+Never restore over production. Restore into a new, empty database, check it, then point the app
+at it, or copy back only what is missing.
+
+The dump is in PostgreSQL's custom format. The job dumps with the client that matches the
+server, and the file name ends in the version, for example `-pg16.dump`. Restore with the same
+`pg_restore` version into a server of that version: a newer client's output can fail on an older
+server. The backup image has clients 16 to 18 in `/usr/libexec/postgresqlNN`:
+
+```bash
+docker build -t listmanager-db-backup ops/db-backup
+docker run --rm -it --entrypoint sh \
+  -e AWS_ACCESS_KEY_ID=<key id> -e AWS_SECRET_ACCESS_KEY=<secret> -e AWS_DEFAULT_REGION=auto \
+  -e TARGET_URL='postgresql://<user>:<password>@<host>:5432/<new empty database>' \
+  listmanager-db-backup -c '
+    aws s3 cp s3://<bucket>/listmanager/YYYY/MM/DD/<file>-pgNN.dump /tmp/restore.dump \
+      --endpoint-url https://<account id>.r2.cloudflarestorage.com &&
+    /usr/libexec/postgresqlNN/pg_restore --no-owner --no-privileges --exit-on-error \
+      -d "$TARGET_URL" /tmp/restore.dump'
+```
+
+Then compare row counts for `users`, `products`, `distributors` and `global_sessions` with what
+you expect. The restored `alembic_version` holds the schema revision. The app's startup
+migrations take it from there.
+
+### Monthly restore test
+Once a month, restore the latest backup into a local Postgres of the same version as the file
+name (`docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=<pw> postgres:NN-alpine`) with the
+command above, and check the row counts. A backup that has never been restored is not proven.
+
+### Cost
+A Render cron job is billed per minute it runs, with a small monthly minimum (about $1). R2 is
+free up to 10 GB stored, and the dump is a few MB. Check both pricing pages.
+
 ## Local development
 Runs on SQLite by default (`sqlite:///./listmanager.db`) — copy
 `backend-fastapi/.env.example` to `.env`, set `SECRET_KEY` and `ADMIN_PASSWORD`,
