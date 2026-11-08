@@ -5,6 +5,53 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android dictation: faster segmentation and three cutting fixes (perf/segment-prefilter)
+
+Based on `perf/faster-dictation` (PR #45), which was not merged yet.
+
+**Changed**
+- Segmentation scores each word window only against the products that share a word, a stem or
+  the first three letters with it (about 135 of 3,196), the same keys the catalog search uses.
+  A window that shares none, as when the recognizer drops a first letter, is still scored
+  against the whole catalog. The word index is built once per catalog, with the prepared catalog.
+- "pe" right before a joined size is dropped: "cameră bicicletă pe 26 pe 175" becomes
+  "cameră bicicletă 26x175".
+- A word at the edge of a match moves when the product matched does not contain it and the rest
+  of the window is still that same product: in front, back to the unmatched words before it
+  ("burete tablă" stays together instead of "tablă" riding along with "detergent vase"); at the
+  end, to the product it starts ("șurub" keeps its "3,5 pe 35" instead of riding along with the
+  bicycle tube). Codes and two-letter bits never move.
+- `DictationTiming` also counts windows and how many were scored against the whole catalog.
+
+**Measured** with the S25's 3,196-product catalog, copied into a local scratch folder, never
+committed, on a desktop JVM:
+- The phone utterance: segmentation from about 650 ms to about 50 ms. On the phone it was
+  1,766 ms before; the phone was disconnected before the new build could be timed there.
+- It is now cut as `[burete tablă, detergent vase, cameră bicicletă 26x175, șurub 3.5x35,
+  trambul x galben]`.
+- 400 seeded synthetic utterances: candidate scoring cuts all 400 exactly as whole-catalog
+  scoring does, in 10.7 s instead of 164.6 s.
+- The edge rules against the code before them, on those utterances: 391 cut the same, 3 better,
+  1 worse ("puifna hartie igienica": another brand wins, so the misheard brand moves back),
+  5 neither.
+- `ProductRankerBenchmarkTest`, `WeightSweepTest`, `RankerExperimentsTest`: every `VOICE_*` line
+  identical before and after (ranking itself did not change). Unit tests: 349 run, 0 failures,
+  1 skipped (the local-catalog benchmark, which needs `LISTMANAGER_CATALOG_JSON`).
+
+**Next**
+- Time the new build on the phone with the same phrase (`adb logcat -s DictationTiming`).
+- Resolving the parts (173 ms on the phone) is now the larger share of the wait.
+
+**Open questions**
+- A window that runs into the next product's size can still win as a whole: with an invented
+  catalog "săpun vase roată zenit 26x175" stayed one part. This was so before; the edge rules
+  only move single words. Splitting such a window needs a choice between two products, not a
+  trim, for example scoring the whole utterance's cuts at once instead of greedily.
+- Products whose one-word alias outscores their full name ("Șuruburi 4x40mm" with alias "surub")
+  pull the window toward that alias. The seed product, not the shop's catalog, does this today.
+
+---
+
 ## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
 
 **Changed**
