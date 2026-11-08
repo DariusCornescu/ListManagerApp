@@ -5,6 +5,28 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android Home: one phrase or continuous dictation (feat/home-dictation-mode)
+
+**Changed**
+- Home has a "Dictare continuă" switch above the dock. Off, the default, the microphone stops
+  by itself once a phrase is recognized: one tap, one phrase with several products. On, it keeps
+  listening after each phrase until Stop, as Home always did before.
+- The choice is kept on the phone in `AppSettings` (`home_continuous_dictation`) across launches.
+  Turning it off while listening stops after the phrase being said.
+- Same approach as Inventory's switch: on the final result Home stops before the recognizer's
+  restart runs. The speech provider and its loop policy did not change.
+
+**Checked**
+- `testDebugUnitTest` (includes the Compose screen tests): 452 run, 0 failures. New checks: the
+  switch starts off with its explanation, flipping it reports the change, and the setting
+  survives a restart.
+
+**Not checked yet**
+- The behaviour on a phone. The preview app on the S25 had been uninstalled and reinstalled
+  between two checks, outside this work, so it needs signing in again first.
+
+---
+
 ## 2026-11-08 - CI/CD: faster CI, deploy only after checks pass, smoke test (ci/pipelines)
 
 **Changed**
