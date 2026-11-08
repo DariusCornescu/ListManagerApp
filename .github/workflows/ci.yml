@@ -27,6 +27,7 @@ jobs:
       backend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.backend == 'true' }}
       android: ${{ github.event_name != 'pull_request' || steps.filter.outputs.android == 'true' }}
       flutter: ${{ github.event_name != 'pull_request' || steps.filter.outputs.flutter == 'true' }}
+      workflows: ${{ github.event_name != 'pull_request' || steps.filter.outputs.workflows == 'true' }}
     steps:
       - id: filter
         if: github.event_name == 'pull_request'
@@ -42,6 +43,8 @@ jobs:
             flutter:
               - 'flutter_ui/**'
               - '.github/workflows/ci.yml'
+            workflows:
+              - '.github/**'
 
   backend:
     needs: changes
@@ -117,9 +120,30 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
+  actionlint:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      # From actionlint_1.7.12_checksums.txt on the release page.
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Install actionlint
+        run: |
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -fsSL -o "$RUNNER_TEMP/$archive"             "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/$archive"
+          echo "$ACTIONLINT_SHA256  $RUNNER_TEMP/$archive" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" actionlint
+      # shellcheck is preinstalled on ubuntu-latest, so run: scripts are checked too.
+      - name: Lint every workflow
+        run: '"$RUNNER_TEMP/actionlint" -color'
+
   ci-ok:
     if: always()
-    needs: [changes, backend, android, flutter]
+    needs: [changes, backend, android, flutter, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:

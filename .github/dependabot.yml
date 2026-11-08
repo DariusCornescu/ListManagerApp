@@ -1,0 +1,14 @@
+# Keeps the SHA-pinned GitHub Actions up to date. Python, Gradle and Flutter dependencies are
+# not listed here: they are upgraded by hand, one concern per pull request.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: ci
