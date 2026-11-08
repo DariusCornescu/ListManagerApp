@@ -2,6 +2,8 @@ package com.darius.listmanager.util
 
 import com.darius.listmanager.data.local.entity.ProductEntity
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 /**
@@ -44,6 +46,31 @@ class ProductRankerPreparedTest {
             val top = ProductRanker.rank(phrase, products).firstOrNull()?.score ?: 0.0
             assertEquals(phrase, top, ProductRanker.bestScore(phrase, catalog), 0.0)
         }
+    }
+
+    @Test
+    fun rankingSeveralHypothesesAgainstAPreparedCatalogMatchesTheProducts() {
+        val catalog = ProductRanker.prepare(products)
+        val hypotheses = listOf("lapte zuzu", "lapte zuza", "", "camera 26 * 175")
+        val expected = ProductRanker.rankAcross(hypotheses, products)
+        val actual = ProductRanker.rankAcross(hypotheses, catalog)
+        assertEquals(expected.map { it.product.id to it.score }, actual.map { it.product.id to it.score })
+    }
+
+    @Test
+    fun theCacheReusesAnUnchangedCatalogAndRebuildsAChangedOne() {
+        PreparedCatalogCache.clear()
+        val first = PreparedCatalogCache.get(products)
+        assertSame(first, PreparedCatalogCache.get(products.toList()))
+
+        val renamed = products.map { if (it.id == 1L) it.copy(name = "Lapte Napolact 1L") else it }
+        val second = PreparedCatalogCache.get(renamed)
+        assertNotSame(first, second)
+        assertEquals(
+            ProductRanker.rank("lapte napolact", renamed).map { it.product.id to it.score },
+            ProductRanker.rank("lapte napolact", second).map { it.product.id to it.score },
+        )
+        PreparedCatalogCache.clear()
     }
 
     @Test

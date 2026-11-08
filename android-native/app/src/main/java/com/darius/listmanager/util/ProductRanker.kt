@@ -106,8 +106,15 @@ object ProductRanker {
         products: List<ProductEntity>,
         embeddingScores: Map<Long, Double> = emptyMap(),
         weights: ScoringWeights = ScoringWeights()
+    ): List<RankedProduct> = rankAcross(hypotheses, prepare(products), embeddingScores, weights)
+
+    /** [rankAcross] against a catalog prepared ahead, such as the whole local catalog. */
+    fun rankAcross(
+        hypotheses: List<String>,
+        catalog: PreparedCatalog,
+        embeddingScores: Map<Long, Double> = emptyMap(),
+        weights: ScoringWeights = ScoringWeights()
     ): List<RankedProduct> {
-        val catalog = prepare(products)
         val bestByProduct = LinkedHashMap<Long, RankedProduct>()
         for (hypothesis in hypotheses) {
             if (hypothesis.isBlank()) continue

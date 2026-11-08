@@ -21,10 +21,17 @@ class EmbeddingModel private constructor(private val appContext: Context) {
     @Volatile
     private var ready = false
 
+    // Set once loading fails, for instance because the model is not bundled. Without it every
+    // dictated phrase tried to load the model again before it could be matched.
+    @Volatile
+    private var unavailable = false
+
     suspend fun ensureReady(): Boolean {
         if (ready) return true
+        if (unavailable) return false
         initMutex.withLock {
             if (ready) return true
+            if (unavailable) return false
             try {
                 val modelFile = File(appContext.filesDir, MODEL_ASSET)
                 if (!modelFile.exists()) {
@@ -46,6 +53,7 @@ class EmbeddingModel private constructor(private val appContext: Context) {
             } catch (e: Throwable) {
                 Log.e(TAG, "Embedding model init failed; falling back to fuzzy-only", e)
                 ready = false
+                unavailable = true
             }
         }
         return ready

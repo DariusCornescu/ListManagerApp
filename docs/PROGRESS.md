@@ -5,6 +5,51 @@ Newest entries on top.
 
 ---
 
+## 2026-11-08 - Android dictation: no catalog preparation or download per phrase (perf/faster-dictation)
+
+**Changed**
+- The prepared catalog is kept for the process and rebuilt only when the products change. Home
+  prepares it before the first phrase. Before, every phrase prepared all 3,196 products again.
+- When the catalog search finds nothing, matching ranks the local catalog. Before, it downloaded the
+  whole catalog from the server and wrote it to the cache while the person waited.
+- A missing embedding model is remembered instead of being loaded again on every phrase.
+- `DictationTiming` logs (no spoken text): catalog preparation, end of speech to recognizer result,
+  segmentation and resolution times.
+
+**Measured on a Galaxy S25, preview build, against production**
+- Catalog preparation: 866 ms, now once when Home opens instead of on every phrase.
+- Recognizer: the final text arrived 49 ms after end of speech. The recognizer is not the wait.
+- One 16-word utterance with five parts: segmentation 1,766 ms, then resolving all parts 173 ms,
+  1,939 ms in total.
+- Unit tests: 449 passing. `VOICE_BENCHMARK` unchanged at 1.0.
+
+**Found, not fixed**
+- Segmentation still scores the whole catalog for every word window, which is now almost all of the
+  wait. Scoring only catalog-search candidates per window would cut it, but can change matches and
+  needs the voice benchmark first.
+- In that utterance "burete tablă" was split, "pe 26 pe 175" kept a stray "pe", and "3,5 pe 35" was
+  cut from "șurub". These are matching quality issues, not timing ones.
+- The three phrases were said with pauses but arrived as one utterance.
+
+---
+
+## 2026-11-08 - Admins can change a user's role (feat/admin-role-change)
+
+**Changed**
+- New admin-only route `POST /api/admin/users/{id}/role` with `{"role": "ADMIN" | "USER"}`.
+  The role is read from the database on every request, so it applies at once. An admin cannot
+  change their own role, which also keeps one admin. Recorded as `admin_role_change` in
+  `auth_events`, with the acting admin. No migration.
+- `/admin`: the user side panel has "Fă admin" / "Fă utilizator" with a confirmation.
+- Why: the user wants to try adding and renaming products from the phone, which the Android app
+  only shows to ADMIN, and production had no way to change a role.
+
+**After deploy**
+- Promote the phone's account from `/admin`, then restart the app on the phone: it loads the
+  role from the server at start. Catalog edits made from the phone change the production catalog.
+
+---
+
 ## 2026-11-08 - Admin phase 2B: crash reports deleted after 180 days (feat/crash-retention)
 
 **Changed**
