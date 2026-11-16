@@ -5,6 +5,34 @@ Newest entries on top.
 
 ---
 
+## 2026-11-16 - Docs: root README with current UI images (docs/root-readme)
+
+Based on `origin/development` at `609c502`.
+
+**Changed**
+- New root `README.md`: intro, use cases, UI, stack table, how it works (mermaid), repository
+  layout, getting started and tests, CI/CD and deployment (links `DEPLOYMENT.md`), further
+  reading. Each use case and version was checked against the code and build files
+  (`libs.versions.toml`, `app/build.gradle.kts`, `requirements.txt`, `pubspec.yaml`,
+  `render.yaml`).
+- `docs/images/`: 12 PNGs from the Robolectric UI tests (412×915 dp, xxhdpi; captioned in the
+  README as test renders, not phone photos). Rendered with
+  `.\gradlew.bat testDebugUnitTest --tests "com.darius.listmanager.ui.*" --rerun`: build
+  successful, 56 snapshots written.
+- The February 2026 top-level docs are untouched and linked as pre-redesign background. The
+  October 2025 `pictures/` are not used.
+
+**Next**
+- Re-render `docs/images/` after visible UI changes (same command, then copy the files).
+
+**Open questions**
+- `CLAUDE.md` "Stack facts" lag the code: sessions are personal or team-owned
+  (`GlobalSession.owner_user_id` / `team_id`, `routers/teams.py`), not a single global session
+  with no team concept; the backend has an operation log (`SessionOp`, `app/sync_ops.py`); JWT
+  uses PyJWT, not `python-jose`. The README follows the code. Update `CLAUDE.md`?
+
+---
+
 ## 2026-11-08 - CI: five mobile test gates behind ci-ok (claude/comprehensive-mobile-testing-cff864)
 
 Based on `origin/development` at `e33bed8`.
