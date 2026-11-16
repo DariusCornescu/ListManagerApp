@@ -5,6 +5,76 @@ Newest entries on top.
 
 ---
 
+## 2026-11-16 - CI/CD adapted from the KlusAI webos pipeline (ci/adapt-webos-pipeline)
+
+Based on `origin/development` at `79af404`. ListManager's CI already used the core webos design:
+- path-filtered pull requests;
+- one required `ci-ok` aggregator;
+- per-job least privilege;
+- re-dispatch after a merge;
+- deploys that wait for checks;
+- a smoke test after each deploy.
+
+This change adds the pieces that were missing. It drops what only webos needs: self-hosted
+runners, the merge train, Docker images, DigitalOcean and Scaleway, and Teams and Slack.
+
+**Changed**
+- **Gates.**
+  - `check_test_report.py` fails a test suite that ran nothing, failed, or skipped a test not in
+    `.github/test-skips.txt`. Each entry there carries its reason. It runs after the backend,
+    Android unit, instrumented, contract and Flutter tests, and writes the counts to the run
+    summary.
+  - New `hygiene` job: a committed-secret guard on every event, and an AI-attribution check on
+    pull requests.
+  - New `ci-scripts` job: the 22 tests of `.github/scripts`.
+  - Both new jobs are required through `ci-ok`.
+- **Alerts.** `development-red` opens one issue when CI fails on `development` and closes it on
+  the next green run. It does not block.
+- **Releases.** `release.yml` ("Release: tag and notes"):
+  - tags a green `development` commit `vYYYY.MM.DD`;
+  - creates a GitHub Release, with notes grouped by pull request title prefix;
+  - sends Android through `android-distribute.yml`, which gains `workflow_call`.
+- **Version codes.** versionCode is now minutes since 2026-01-01 UTC. The old 100 + run-number
+  scheme reached 109; the new one starts near 460,000 and rises for both triggers. A tagged build
+  takes its versionName from the tag (`LISTMANAGER_VERSION_NAME` in `build.gradle.kts`).
+- **Rollback.** `deploy-smoke.yml` rolls back to the previous live Render deploy when the smoke
+  test fails on a successful deploy.
+  - It escalates instead when the release changed `alembic/versions` or an incident is already
+    open.
+  - One `production-incident` issue reports what happened.
+  - The run is never cancelled mid-rollback.
+  - A rollback through the API keeps auto-deploy on. A dashboard rollback turns it off.
+- **Names and templates.** Workflow names follow `<Category>: <what>` (`.github/workflows/README.md`).
+  `CI` keeps its name. Pull request and issue templates were added.
+- **Docs.** DEPLOYMENT.md "CI/CD" was rewritten, with new "Rollback" and "Releases" sections. The
+  README's CI/CD paragraph was updated.
+
+**Verification** (local)
+- Script tests: 22 passed.
+- Every workflow and template parses as YAML. actionlint runs in CI.
+- `check_test_report.py` on real results:
+  - Android Debug and Release: 848 tests, 840 passed, 8 allowed skips, 0 unexpected.
+  - Flutter: 64 tests, 59 passed, 5 allowed skips.
+  - The contract suite without a backend fails, as intended.
+  - On the way it caught a Windows console encoding crash, now fixed: stdout is UTF-8.
+- Secret guard: clean on all 572 tracked files.
+- Release notes against real history: grouped correctly from #23 to #59.
+- APK versions checked with aapt2:
+  - tagged: `460028` / `2026.11.16`;
+  - untagged: `460028` / `2.0.460028`;
+  - default: `2` / `2.0`.
+
+**Not verified until it first happens**
+- A real release run: the tag push, `gh release create`, and the reusable call with
+  `secrets: inherit`.
+- A real rollback against the Render API. Only the selection and the migration rule are tested.
+
+**Needs you (one time)**
+- Add the `RENDER_API_KEY` secret and the `RENDER_SERVICE_ID` variable (DEPLOYMENT.md,
+  "Rollback"). Until then a failed smoke test opens an issue but does not roll back.
+
+---
+
 ## 2026-11-16 - Docs: root README with current UI images (docs/root-readme)
 
 Based on `origin/development` at `609c502`.

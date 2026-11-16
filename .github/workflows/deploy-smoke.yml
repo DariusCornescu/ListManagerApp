@@ -2,16 +2,23 @@
 # deploy as a GitHub deployment in the "development - listmanager-api" environment and marks it
 # in_progress, then success or failure. This workflow runs on the final state, so it checks the
 # commit that just went live, not the one before it.
-name: Deploy smoke test
+#
+# If the checks fail on a deploy Render reported as successful, `respond` rolls production back to
+# the previous deploy through the Render API, unless the release changed the database schema:
+# then the older code may not match the migrated database, so it asks a person instead. Either
+# way it opens (or updates) one "production-incident" issue. Adapted from klusai-webos ci-cd.yml
+# (smoke test, rollback, migration-aware escalation). Setup: DEPLOYMENT.md, "Rollback".
+name: "Post-deploy: smoke test and rollback"
 
 on:
   deployment_status:
 
 permissions: {}
 
+# Never cancel: a newer deploy must not interrupt a rollback that is already under way.
 concurrency:
   group: deploy-smoke
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   smoke:
@@ -55,3 +62,94 @@ jobs:
           jq -e '(.products_count | type) == "number" and (.sessions_count | type) == "number"' <<<"$body" >/dev/null \
             || { echo "::error::/api/stats did not return the expected counts"; exit 1; }
           echo "Keys returned: $(jq -c 'keys' <<<"$body")"
+
+  respond:
+    needs: smoke
+    if: always() && needs.smoke.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read # git diff between the two deploys, for the migration check
+      issues: write # the production-incident issue
+    env:
+      BASE_URL: https://listmanager-api.onrender.com
+      DEPLOY_STATE: ${{ github.event.deployment_status.state }}
+      DEPLOY_SHA: ${{ github.event.deployment.sha }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      LABEL: production-incident
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Is an incident already open?
+        id: incident
+        run: |
+          gh label create "$LABEL" --color D93F0B --description "Production failed its post-deploy checks" 2>/dev/null || true
+          number="$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      # Render reported the deploy itself as failed: production still runs the previous version,
+      # so there is nothing to roll back.
+      - name: Roll back to the previous deploy
+        id: rollback
+        if: env.DEPLOY_STATE == 'success'
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+          INCIDENT_OPEN: ${{ steps.incident.outputs.number != '' }}
+        run: |
+          flags=()
+          [ "$INCIDENT_OPEN" = true ] && flags=(--incident-open)
+          python .github/scripts/render_rollback.py --failed-sha "$DEPLOY_SHA" "${flags[@]}"
+
+      - name: Wait for the rolled-back version to answer healthy
+        id: recovered
+        if: steps.rollback.outputs.action == 'rolled_back'
+        run: |
+          for attempt in $(seq 1 24); do
+            body="$(curl -fsS --max-time 30 "$BASE_URL/health" || true)"
+            if jq -e '.status == "healthy"' <<<"$body" >/dev/null 2>&1; then
+              echo "healthy=true" >> "$GITHUB_OUTPUT"
+              echo "Attempt $attempt: healthy"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "healthy=false" >> "$GITHUB_OUTPUT"
+          echo "::error::$BASE_URL/health is still not healthy 6 minutes after the rollback"
+          exit 1
+
+      - name: Open or update the production-incident issue
+        if: always()
+        env:
+          ISSUE: ${{ steps.incident.outputs.number }}
+          ACTION: ${{ steps.rollback.outputs.action }}
+          TARGET_SHA: ${{ steps.rollback.outputs.target_sha }}
+          REASON: ${{ steps.rollback.outputs.reason }}
+          HEALTHY: ${{ steps.recovered.outputs.healthy }}
+        run: |
+          set -euo pipefail
+          if [ "$DEPLOY_STATE" != success ]; then
+            what="Render reported the deploy of ${DEPLOY_SHA::7} as \`$DEPLOY_STATE\`. Production still runs the previous version. Check the Render logs, then fix forward."
+          elif [ "$ACTION" = rolled_back ] && [ "$HEALTHY" = true ]; then
+            what="${DEPLOY_SHA::7} failed its post-deploy checks, so production was rolled back to ${TARGET_SHA::7} and is healthy again. Fix forward: the next green commit on development deploys as usual."
+          elif [ "$ACTION" = rolled_back ]; then
+            what="${DEPLOY_SHA::7} failed its post-deploy checks. Production was rolled back to ${TARGET_SHA::7}, but it is **still not healthy**. A person needs to look now."
+          else
+            what="${DEPLOY_SHA::7} failed its post-deploy checks and was **not rolled back**: ${REASON:-the rollback step did not run}. A person needs to decide. If the release migrated the database, fix forward rather than rolling back the code."
+          fi
+          body="$what
+
+          Run: $RUN_URL"
+          if [ -n "$ISSUE" ]; then
+            gh issue comment "$ISSUE" --body "$body"
+            echo "Updated #$ISSUE."
+          else
+            gh issue create --label "$LABEL" --title "Production failed its post-deploy checks" --body "$body"
+          fi

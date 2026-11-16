@@ -1,0 +1,39 @@
+name: Bug
+description: Something in the app or the backend does not work as it should.
+labels: [bug]
+body:
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      options:
+        - Android app
+        - Flutter app
+        - Backend / API
+        - CI / deploy
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: In the app, menu → Despre. For the backend, the commit if you know it.
+      placeholder: 2.0.460028
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Steps, in order. For voice, the exact words said.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what happened instead
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots or logs
+      description: Never paste passwords, tokens or customer data. The repository is public.

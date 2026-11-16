@@ -1,12 +1,29 @@
 # Build a signed release APK against production and send it to the shop phones through Firebase
-# App Distribution. Runs only when started by hand. Setup: DEPLOYMENT.md, "Android updates".
-name: Android distribute
+# App Distribution. Started by hand, or by "Release: tag and notes" (release.yml) for a tagged
+# release. Setup: DEPLOYMENT.md, "Android updates".
+name: "Release: Android distribute"
 
 on:
   workflow_dispatch:
     inputs:
       release_notes:
         description: "What changed, shown to testers"
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      release_notes:
+        type: string
+        required: false
+        default: ""
+      version_name:
+        description: "Shown in the app, e.g. 2026.11.16. Empty keeps 2.0.<versionCode>."
+        type: string
+        required: false
+        default: ""
+      ref:
+        description: "The commit or tag to build. Empty builds the triggering ref."
+        type: string
         required: false
         default: ""
 
@@ -28,6 +45,8 @@ jobs:
       TESTER_GROUP: magazin
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
@@ -80,9 +99,14 @@ jobs:
           LISTMANAGER_FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
           LISTMANAGER_FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           LISTMANAGER_FIREBASE_PROJECT_ID: listmanager-3e811
+          LISTMANAGER_VERSION_NAME: ${{ inputs.version_name }}
         run: |
-          # Higher than the versionCode 2 installed by cable, and higher on every run.
-          export LISTMANAGER_VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))
+          # Minutes since 2026-01-01 UTC: higher than every earlier build (the old 100 + run-number
+          # scheme reached 109 on 2026-11-08), and higher on every run whichever workflow
+          # starts it. A release and a hand-started build share no run counter, so a counter
+          # could go backwards and phones would refuse the update. Fits Android's limit
+          # (2,100,000,000) for about 4,000 years.
+          export LISTMANAGER_VERSION_CODE=$(( ($(date -u +%s) - 1767225600) / 60 ))
           ./gradlew testReleaseUnitTest assembleRelease
           apk=app/build/outputs/apk/release/app-release.apk
           [ -f "$apk" ] || { echo "::error::No signed APK at $apk"; exit 1; }

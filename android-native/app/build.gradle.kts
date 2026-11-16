@@ -41,6 +41,8 @@ android {
     val versionCodeOverride = setting("LISTMANAGER_VERSION_CODE")?.let {
         it.toIntOrNull() ?: error("LISTMANAGER_VERSION_CODE must be a whole number")
     }
+    // A tagged release names its build after the tag (2026.11.16); otherwise 2.0.<versionCode>.
+    val versionNameOverride = setting("LISTMANAGER_VERSION_NAME")
     // Firebase project for the in-app update prompt (DEPLOYMENT.md, "Android updates"). All three
     // or none: without them Firebase never starts and the app does not check for updates.
     val firebaseKeys = listOf(
@@ -71,7 +73,7 @@ android {
         minSdk = 34
         targetSdk = 35
         versionCode = versionCodeOverride ?: 2
-        versionName = versionCodeOverride?.let { "2.0.$it" } ?: "2.0"
+        versionName = versionNameOverride ?: versionCodeOverride?.let { "2.0.$it" } ?: "2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

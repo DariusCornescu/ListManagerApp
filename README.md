@@ -182,11 +182,19 @@ The UI tests also write the screenshots above to `android-native/app/build/ui-sn
 
 ## CI/CD and deployment
 
-GitHub Actions workflows live in `.github/workflows/`: CI for the backend and the Android app
-on pull requests and on `development`, a smoke test after each deploy, Android builds sent to
-testers through Firebase App Distribution, and auto-merge for pull requests labelled
-`auto-merge`. Render deploys the backend from `development` once the checks on a commit pass,
-using the Blueprint in `backend-fastapi/render.yaml`.
+GitHub Actions workflows live in `.github/workflows/`. The pipeline is adapted from the KlusAI
+webos pipeline, and its map is in [`.github/workflows/README.md`](.github/workflows/README.md).
+- **CI.** On pull requests and on `development`, CI runs the backend, Android, Flutter and
+  contract tests.
+  - A suite that runs no tests, or that skips a test without a recorded reason, fails.
+  - Every run also checks for committed secrets and AI attribution.
+- **Auto-merge.** Pull requests labelled `auto-merge` merge on their own once `ci-ok` passes.
+- **Deploy.** Render deploys the backend from `development` once the checks on a commit pass,
+  using the Blueprint in `backend-fastapi/render.yaml`. A smoke test then checks production and
+  rolls it back if it fails, unless the release migrated the database.
+- **Releases.** **Release: tag and notes** tags a green commit (`vYYYY.MM.DD`), writes the
+  release notes, and sends the Android build to the phones through Firebase App Distribution.
+- **Alerts.** Failures on `development` and in production each open a GitHub issue.
 
 Setup, environment variables, Android release signing and backup/restore steps are in
 [DEPLOYMENT.md](DEPLOYMENT.md).
