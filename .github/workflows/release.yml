@@ -1,0 +1,119 @@
+# Cuts a release: a CalVer tag (v2026.11.16, or v2026.11.16.2 on the same day), a GitHub Release
+# with notes grouped by pull request type, and the Android build sent to the phones.
+#
+# Start it from Actions ("Run workflow") to release the head of development, or push a v* tag
+# yourself to release that commit. Either way the commit must be on development and its ci-ok
+# must be green. The backend is not part of this: Render deploys every green development commit
+# on its own. A release marks a point in that history and ships Android.
+#
+# Adapted from klusai-webos nightly-release.yml and ci-cd.yml's release chain, without the
+# release-candidate evidence, Docker images and DigitalOcean deploy, which ListManager has no
+# use for. Setup and use: DEPLOYMENT.md, "Releases".
+name: "Release: tag and notes"
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+# Releases never cancel each other: a half-made release (tag without notes or APK) is worse.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the tag and the GitHub Release
+      checks: read # read ci-ok on the released commit
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      version: ${{ steps.tag.outputs.version }}
+      sha: ${{ steps.commit.outputs.sha }}
+      notes: ${{ steps.notes.outputs.android }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'push' && github.ref || 'development' }}
+
+      - name: The commit to release
+        id: commit
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          git fetch --quiet origin development
+          if ! git merge-base --is-ancestor "$sha" origin/development; then
+            echo "::error::${sha::7} is not on development. Release only commits that reached development."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Releasing ${sha::7}"
+
+      - name: ci-ok is green on that commit
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          ci="$(gh api "repos/$GH_REPO/commits/$SHA/check-runs?check_name=ci-ok" \
+                  --jq '.check_runs | sort_by(.id) | last | .conclusion // "missing"')"
+          if [ "$ci" != success ]; then
+            echo "::error::ci-ok on ${SHA::7} is '$ci'. Release a commit whose CI passed."
+            exit 1
+          fi
+
+      - name: Tag
+        id: tag
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="$GITHUB_REF_NAME"
+          else
+            tag="$(python3 .github/scripts/release_notes.py next-tag)"
+            git tag "$tag" "$SHA"
+            # A tag pushed with GITHUB_TOKEN starts no workflows, so this run does not repeat.
+            git push origin "refs/tags/$tag"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "Tag: $tag"
+
+      - name: Notes and GitHub Release
+        id: notes
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v*' "$TAG^" 2>/dev/null || true)"
+          from=()
+          [ -n "$previous" ] && from=(--from "$previous")
+          python3 .github/scripts/release_notes.py notes --to "$TAG" "${from[@]}" --repo "$GH_REPO" > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+          # Testers see a short form in Firebase: the pull request titles without the headings.
+          {
+            echo "android<<NOTES_EOF"
+            echo "$TAG"
+            grep '^- ' "$RUNNER_TEMP/notes.md" | head -20 || true
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/android-distribute.yml
+    with:
+      ref: ${{ needs.release.outputs.tag }}
+      version_name: ${{ needs.release.outputs.version }}
+      release_notes: ${{ needs.release.outputs.notes }}
+    secrets: inherit
