@@ -1,0 +1,10 @@
+# Tests a CI suite may skip. Anything else that skips fails the job (check_test_report.py).
+# Format: <suite> <pattern>  # reason
+# <pattern> is an fnmatch pattern over "<class or file>.<test name>".
+
+# Needs LISTMANAGER_CATALOG_JSON, a real catalog export that is not in the repository.
+android-unit *.LocalCatalogSegmentationBenchmarkTest.*  # needs a real catalog export (LISTMANAGER_CATALOG_JSON)
+# Runs against a live backend in the e2e-contract job, where it may not skip.
+android-unit *.BackendContractE2ETest.*  # runs with a live backend in e2e-contract
+# The Flutter contract tests need BACKEND_URL; the flutter job has no backend running.
+flutter backend_contract_test.dart.*  # needs a running backend (BACKEND_URL)
