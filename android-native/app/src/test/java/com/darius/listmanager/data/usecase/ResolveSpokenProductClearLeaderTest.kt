@@ -7,6 +7,7 @@ import com.darius.listmanager.data.local.entity.ProductEntity
 import com.darius.listmanager.data.repository.PendingOperationRepository
 import com.darius.listmanager.data.repository.ProductRepository
 import com.darius.listmanager.network.ListManagerApi
+import com.darius.listmanager.util.ProductRanker
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,9 +21,15 @@ import org.robolectric.annotation.SQLiteMode
 import java.lang.reflect.Proxy
 
 /**
- * A short name said with one wrong letter scores about 0.5, under the plain suggestion level,
- * while the right product still leads every other by far. That is asked about, not filed as
- * unknown. A weak score without such a lead, or with nothing to lead, still stays unknown.
+ * A short name said with one wrong letter can score between 0.50 and 0.60, under the plain
+ * suggestion level, while the right product still leads every other by far. That is asked
+ * about, not filed as unknown. A weak score without such a lead, or with nothing to lead,
+ * still stays unknown.
+ *
+ * Since near-miss tokens earn partial credit in the ranker, "cartafi" and "meri" score about
+ * 0.73 and are plain suggestions (ResolveSpokenProductRankingTest). The cases here use slips
+ * that still land in the weak band, and [assertWeak] checks that they do, so this rule stays
+ * exercised if scoring moves again.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], manifest = Config.NONE)
@@ -66,6 +73,11 @@ class ResolveSpokenProductClearLeaderTest {
         )
     }
 
+    private fun assertWeak(spoken: String) = runBlocking {
+        val top = ProductRanker.rank(spoken, database.productDao().getAll()).first()
+        assertTrue("'$spoken' must score in the weak band: ${top.score}", top.score >= 0.50 && top.score < 0.60)
+    }
+
     private fun assertSuggestsFirst(expected: String, result: ResolveResult) {
         assertTrue("expected Suggestions, got $result", result is ResolveResult.Suggestions)
         val top = (result as ResolveResult.Suggestions).products.first()
@@ -77,28 +89,29 @@ class ResolveSpokenProductClearLeaderTest {
     fun aOneLetterSlipInAShortName_isAskedAbout() = runBlocking {
         val resolve = useCase(groceries)
 
-        assertSuggestsFirst("Cartofi", resolve.execute("cartafi"))
-        assertSuggestsFirst("Mere", resolve.execute("meri"))
+        assertSuggestsFirst("Mere", resolve.execute("mire"))
     }
 
     @Test
     fun aWeakScoreWithoutALead_staysUnknown() = runBlocking {
-        // "meri" is one letter from both, so neither stands clear of the other.
+        // "mure" is one letter from both, so neither stands clear of the other.
         val resolve = useCase(
             listOf(
                 ProductEntity(1, "Mere", 1, "mere"),
-                ProductEntity(2, "Mera", 1, "mera"),
+                ProductEntity(2, "Mire", 1, "mire"),
             )
         )
 
-        assertTrue(resolve.execute("meri") is ResolveResult.Unknown)
+        assertWeak("mure")
+        assertTrue(resolve.execute("mure") is ResolveResult.Unknown)
     }
 
     @Test
     fun aLoneWeakCandidate_hasNothingToLead_andStaysUnknown() = runBlocking {
-        val resolve = useCase(listOf(ProductEntity(1, "Cartofi", 1, "cartofi,cartof")))
+        val resolve = useCase(listOf(ProductEntity(1, "Mere", 1, "mere,mar")))
 
-        assertTrue(resolve.execute("cartafi") is ResolveResult.Unknown)
+        assertWeak("mire")
+        assertTrue(resolve.execute("mire") is ResolveResult.Unknown)
     }
 
     @Test
