@@ -83,10 +83,15 @@ jobs:
       - run: pip install -r requirements.txt "pip-audit==${PIP_AUDIT_VERSION}"
       - run: pip-audit -r requirements.txt
       - name: Tests, including the real PostgreSQL concurrency gate
-        run: pytest -q
+        run: pytest -q --junitxml="$RUNNER_TEMP/backend-junit.xml"
         env:
           DATABASE_URL: "sqlite:///:memory:"
           POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/listmanager_test
+      # A skipped PostgreSQL gate would still exit 0; this fails it instead.
+      - name: Every backend test ran
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: python .github/scripts/check_test_report.py --suite backend --junit "$RUNNER_TEMP/backend-junit.xml"
 
   android:
     needs: changes
@@ -111,6 +116,13 @@ jobs:
       - run: cp app/src/main/java/com/darius/listmanager/network/ApiConfig.kt.example app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
       - name: Unit, Robolectric and Compose UI tests, lint, and the preview APK
         run: ./gradlew testDebugUnitTest testReleaseUnitTest lintPreview compilePreviewAndroidTestKotlin assemblePreview
+      - name: Every unit test ran, or is an allowed skip
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: |
+          python .github/scripts/check_test_report.py --suite android-unit \
+            --junit "android-native/app/build/test-results/testDebugUnitTest/*.xml" \
+            --junit "android-native/app/build/test-results/testReleaseUnitTest/*.xml"
       - name: Native libraries have 16 KB ELF alignment
         run: python tools/check_native_page_alignment.py app/build/outputs/apk/preview/app-preview.apk
       - name: Native libraries are 16 KB aligned inside the APK
@@ -180,6 +192,12 @@ jobs:
           disable-animations: true
           working-directory: android-native
           script: ./gradlew connectedPreviewAndroidTest
+      - name: Every instrumented test ran
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: |
+          python3 .github/scripts/check_test_report.py --suite android-instrumented \
+            --junit "android-native/app/build/outputs/androidTest-results/connected/**/*.xml"
       - name: Keep the instrumented test report
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -246,6 +264,12 @@ jobs:
         run: |
           cp app/src/main/java/com/darius/listmanager/network/ApiConfig.kt.example app/src/main/java/com/darius/listmanager/network/ApiConfig.kt
           ./gradlew testDebugUnitTest --tests "com.darius.listmanager.network.BackendContractE2ETest"
+      # Here the contract tests have a backend, so none of them may skip.
+      - name: Every contract test ran
+        if: ${{ !cancelled() }}
+        run: |
+          python .github/scripts/check_test_report.py --suite e2e-contract \
+            --junit "android-native/app/build/test-results/testDebugUnitTest/TEST-*BackendContractE2ETest.xml"
       - name: Backend log
         if: failure()
         run: cat "$RUNNER_TEMP/uvicorn.log"
@@ -267,7 +291,11 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter test
+      - run: flutter test --file-reporter "json:$RUNNER_TEMP/flutter-tests.json"
+      - name: Every Flutter test ran, or is an allowed skip
+        if: ${{ !cancelled() }}
+        working-directory: .
+        run: python3 .github/scripts/check_test_report.py --suite flutter --flutter-json "$RUNNER_TEMP/flutter-tests.json"
 
   actionlint:
     needs: changes
@@ -290,9 +318,50 @@ jobs:
       - name: Lint every workflow
         run: '"$RUNNER_TEMP/actionlint" -color'
 
+  # The helper scripts in .github/scripts are code too: their tests run when they change.
+  ci-scripts:
+    needs: changes
+    if: needs.changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - run: python -m unittest discover -s .github/scripts/tests -v
+
+  # Runs on every event, whatever changed: a secret or an AI credit can land in any file.
+  hygiene:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: No signing keys, credentials or tokens are committed
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            python .github/scripts/check_committed_secrets.py --range "$BASE_SHA...$HEAD_SHA"
+          else
+            python .github/scripts/check_committed_secrets.py
+          fi
+      - name: No AI attribution in commits or the description
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python .github/scripts/check_ai_attribution.py --range "$BASE_SHA..$HEAD_SHA" --event-path "$GITHUB_EVENT_PATH"
+
   ci-ok:
     if: always()
-    needs: [changes, backend, android, android-instrumented, e2e-contract, flutter, actionlint]
+    needs: [changes, backend, android, android-instrumented, e2e-contract, flutter, actionlint, ci-scripts, hygiene]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -307,3 +376,45 @@ jobs:
               *) echo "::error::A CI job ended with '$result'"; exit 1 ;;
             esac
           done
+
+  # When development goes red, one open issue says so; the next green run closes it.
+  # Not part of ci-ok, so it never blocks anything.
+  development-red:
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/development'
+    needs: [ci-ok]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      CI_RESULT: ${{ needs.ci-ok.result }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Open, update or close the development-red issue
+        run: |
+          set -euo pipefail
+          label=development-red
+          gh label create "$label" --color B60205 --description "CI is failing on development" 2>/dev/null || true
+          issue="$(gh issue list --label "$label" --state open --json number --jq '.[0].number // empty')"
+          if [ "$CI_RESULT" = success ]; then
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "Green again at ${GITHUB_SHA::7}: $RUN_URL"
+              gh issue close "$issue"
+              echo "Closed #$issue."
+            fi
+            exit 0
+          fi
+          body="CI ended with \`$CI_RESULT\` on \`development\` at ${GITHUB_SHA::7}.
+
+          Run: $RUN_URL
+
+          Render does not deploy a commit with a failed check, so production keeps the last green
+          commit. Fix forward with a pull request; this issue closes on the next green run."
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --body "$body"
+            echo "Updated #$issue."
+          else
+            gh issue create --label "$label" --title "development is red" --body "$body"
+          fi

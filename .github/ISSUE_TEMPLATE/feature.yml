@@ -1,0 +1,20 @@
+name: Feature
+description: Something the shop needs that ListManager does not do yet.
+labels: [feature]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What is hard or slow today, and for whom (shopper, team admin, catalog owner).
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: How you would check it works, ideally on a phone in the shop.

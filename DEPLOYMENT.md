@@ -45,11 +45,20 @@ The WebSocket URL (`wss://…/ws`) is derived automatically from this.
 
 ## Android updates (Firebase App Distribution)
 
-Phones get new versions without a cable. The **Android distribute** workflow
-(`.github/workflows/android-distribute.yml`) runs only when started by hand. It points the app at
-production, runs the release unit tests, builds a release APK signed with the release key, and
-sends it to the `magazin` tester group. Each run gets `versionCode = 100 + run number`, so every
-build counts as an update. The APK is not kept on GitHub, because this repository is public.
+Phones get new versions without a cable. The **Release: Android distribute** workflow
+(`.github/workflows/android-distribute.yml`) runs when you start it by hand, or as the last step
+of a tagged release (see [Releases](#releases)). It points the app at production, runs the release
+unit tests, builds a release APK signed with the release key, and sends it to the `magazin`
+tester group.
+
+**versionCode** is the number of minutes since 2026-01-01 UTC. That is about 460,000 in November
+2026, so every build counts as an update, whichever way it was started. The old scheme, 100 + run
+number, stopped at 109.
+
+**versionName** is the release tag for a tagged release (`2026.11.16`), and `2.0.<versionCode>`
+otherwise.
+
+The APK is not kept on GitHub, because this repository is public.
 
 ### One-time setup
 1. **Release key.** Create it once, outside the repository, and keep the file and both
@@ -93,8 +102,13 @@ For a local signed build, put the same four `LISTMANAGER_KEYSTORE_PATH`,
 unsigned.
 
 ### Publishing a version
-In GitHub, open Actions, then **Android distribute**, then **Run workflow**, and type what changed.
-Each tester gets an email or a notification in the Firebase App Tester app.
+Usually as part of a release: open Actions, then **Release: tag and notes**, then **Run workflow**.
+See [Releases](#releases).
+
+For a quick build without a tag, open **Release: Android distribute** instead, then **Run
+workflow**, and type what changed.
+
+Either way, each tester gets an email or a notification in the Firebase App Tester app.
 
 The app also checks by itself (`util/AppUpdates.kt`), in release builds sent through Firebase only.
 Every time List Manager starts, and at most once an hour when it comes back to the front, it asks
@@ -213,40 +227,108 @@ free up to 10 GB stored, and the dump is a few MB. Check both pricing pages.
 
 ```
 pull request ──> CI (only the changed parts) ──> ci-ok ──> merge (you, or the auto-merge label)
-development  ──> CI (everything) ──> all checks pass ──> Render deploys ──> Deploy smoke test
+development  ──> CI (everything) ──> all checks pass ──> Render deploys ──> smoke test ──> rollback?
+tag v*       ──> Release: tag and notes ──> GitHub Release ──> Android to the phones
 ```
+
+The design follows the KlusAI webos pipeline, cut down to this project. The workflows, their
+naming and the extra gates are described in [`.github/workflows/README.md`](.github/workflows/README.md).
 
 **CI** (`.github/workflows/ci.yml`) runs on every pull request and on every push to
 `development`:
 - `changes` decides which jobs a pull request needs:
-  - `backend-fastapi/**` runs `backend`: pip-audit, then pytest on SQLite and a real PostgreSQL 17;
-  - `android-native/**` runs `android`: unit tests and the preview build;
-  - `flutter_ui/**` runs `flutter`: analyze and test;
-  - `.github/**` runs `actionlint`, which also runs shellcheck.
+  - `backend-fastapi/**` runs `backend`: pip-audit, then pytest on SQLite and a real
+    PostgreSQL 17.
+  - `android-native/**` runs:
+    - `android`: unit, Robolectric and Compose tests, lint, the preview APK and its 16 KB checks;
+    - `android-instrumented`: the instrumented tests on an API 34 emulator.
+  - `backend-fastapi/**` or `android-native/**` runs `e2e-contract`: the Android client against
+    a live backend.
+  - `flutter_ui/**` runs `flutter`: analyze and test.
+  - `.github/**` runs `actionlint` (which also runs shellcheck) and `ci-scripts` (the tests of
+    `.github/scripts`).
 
   A change to `ci.yml` runs all of them, and a push to `development` always runs all of them.
+- `hygiene` runs every time:
+  - it rejects committed keystores, credentials files and token-shaped strings;
+  - on a pull request, it also rejects AI attribution in the commits or the description.
+- **A green job is not enough.** After each test run, `check_test_report.py` reads the results.
+  - It fails the job if no test ran, if a test failed, or if a test skipped without an entry in
+    [`.github/test-skips.txt`](.github/test-skips.txt).
+  - Each entry there says why the skip is acceptable.
+  - The counts appear in the run summary.
 - `ci-ok` passes when every other job passed or was skipped. It is the only check branch
   protection needs, so a docs-only pull request can still merge.
-- pip, Gradle and the Flutter SDK are cached. Actions are pinned to commit SHAs. Dependabot
-  (`.github/dependabot.yml`) opens one grouped pull request a week when they have updates.
+- `development-red`:
+  - **When CI fails on `development`:** it opens one issue labelled `development-red`.
+  - **When CI is green again:** it closes that issue.
+  - It never blocks a merge.
+- **Caching and updates.** pip, Gradle and the Flutter SDK are cached. Actions are pinned to
+  commit SHAs. Dependabot (`.github/dependabot.yml`) opens one grouped pull request a week when
+  they have updates.
 
 **Deploy.** `render.yaml` sets `autoDeployTrigger: checksPass`, so Render deploys a
 `development` commit only after every GitHub check on it has passed (skipped counts as passed).
 A commit with a failed check is not deployed. Fix forward with a new commit, or start
 **Manual Deploy** in the Render dashboard.
 
-**Deploy smoke test** (`.github/workflows/deploy-smoke.yml`). Render posts each deploy to
-GitHub as a deployment in the environment `development - listmanager-api`. When it reaches its
-final state, the workflow checks the commit that just went live:
+**Post-deploy: smoke test and rollback** (`.github/workflows/deploy-smoke.yml`). Render posts
+each deploy to GitHub as a deployment in the environment `development - listmanager-api`. When
+it reaches its final state, the workflow checks the commit that just went live:
 - it fails if Render reports the deploy as failed. Production then still runs the previous
   version.
 - it fails if `/health` is not `healthy` within 3 minutes.
 - it fails if `/api/stats` cannot read the database.
 
-The result shows as a check on that commit and in the Actions tab. GitHub emails you about
-failed runs if notifications for Actions are on.
+### Rollback
+When those checks fail on a deploy that Render reported as successful, the workflow handles it
+itself:
+- **Normally:** it rolls production back to the previous deploy, using the Render API, and waits
+  for `/health` again.
+- **When the release changed the database schema:** any file under
+  `backend-fastapi/alembic/versions/` counts. It does **not** roll back. The database has already
+  been migrated, and the older code may not work with it. Fix forward instead.
+- **When a `production-incident` issue is already open:** it does not roll back again either. A
+  second rollback in a row needs a person.
 
-**Android** builds reach the phones only through **Android distribute**, which you start by hand.
+Either way it opens, or comments on, one issue labelled `production-incident`. The issue says
+what it did. A rollback through the API keeps automatic deploys on, unlike a rollback in the
+dashboard, so the next green commit on `development` deploys as usual. Close the issue once that
+has happened.
+
+**One-time setup.** Without these two values the workflow does not roll back. It warns and still
+opens the issue.
+1. In the Render dashboard, open Account settings, then API Keys, and create a key. Then:
+   ```bash
+   gh secret set RENDER_API_KEY --repo DariusCornescu/ListManagerApp
+   ```
+   It prompts for the value. Never put the key in a command line, a log or an issue.
+2. The service ID is the `srv-…` part of the `listmanager-api` dashboard URL. It is not secret:
+   ```bash
+   gh variable set RENDER_SERVICE_ID --repo DariusCornescu/ListManagerApp --body srv-xxxxxxxx
+   ```
+
+### Releases
+The backend deploys on its own, after every green commit. A release marks a point in that history,
+writes it down, and ships the Android app.
+
+There are two ways to start one:
+- **From the head of `development`.** Open Actions, then **Release: tag and notes**, then **Run
+  workflow**.
+- **For a specific commit.** Push a tag for it:
+  ```bash
+  git tag v2026.11.16 <sha>
+  git push origin v2026.11.16
+  ```
+
+The workflow then:
+1. Checks that the commit is on `development` and that its `ci-ok` is green.
+2. Tags it `vYYYY.MM.DD`, or `vYYYY.MM.DD.2` (`.3` and so on) if that day already has one.
+3. Creates a GitHub Release. Its notes list the pull requests merged since the previous tag,
+   grouped by the prefix of their title (`feat:`, `fix:`, `sec:`, …). Clear, conventional titles
+   therefore matter.
+4. Sends the Android build to the phones, named after the tag, with the pull request titles as
+   the tester notes.
 
 ### Pull requests: labels and auto-merge
 Two labels decide whether a pull request merges by itself (`.github/workflows/auto-merge.yml`):
