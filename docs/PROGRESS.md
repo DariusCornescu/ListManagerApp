@@ -33,29 +33,85 @@ Based on `origin/development` at `609c502`.
 
 ---
 
-## 2026-11-08 - Android in-app update verified on the phone; docs and log tidy-up
+## 2026-11-09 - Mobile QA verification pass and ranker recall fix
 
-**Verified on the S25**: 2.0.108, which includes #55, updated itself to 2.0.109.
-- A fresh start checked at once.
-- **New version available** appeared, and the APK downloaded in about 4 seconds.
-- The install screen asked to allow installs from this source and installed 2.0.109 at 23:40,
-  with no crash.
+All six gates from a pasted QA spec were run on `origin/development` (`0d813f6`) plus this
+branch. The work was first done on a worktree cut from the stale local `development` (11-06,
+207 commits behind). It was then rebuilt on `origin`, keeping only what still applied. The
+first audit's findings were stale, because `origin` already has the session redesign
+(grouping, swipe, "Se generează…"), WebSocket reconnect, and the `*UiTest` suites the spec
+names.
 
 **Changed**
-- `AppUpdates.kt` logs each SDK status once. Before, `DOWNLOADING` was logged about four times a
-  second.
-- `DEPLOYMENT.md` now says the app checks at every start (the hour applies only to returning to
-  the front). It lists the one-time steps per phone:
-  - **Enable testing features** sign-in, where pressing Back cancels it;
-  - **Allow from this source**;
-  - one App Tester install for phones on a version before 2.0.108.
+- `test`: `ResolveSpokenProductRankingTest` runs the resolver cases from the instrumented
+  `Milestone3IntegrationTest` on the JVM (Robolectric, Room FTS, offline). The cases cover
+  diacritics, aliases, confidence bands, blank and out-of-domain input, and screw and tyre
+  dimensions with sibling variants. They also cover quantified multi-product phrases.
+- `test`: `ProductRankerLatencyTest` measures p95 over 1,000 products: 19 ms against
+  Milestone3's 500 ms budget. `GeneratePdfsUseCaseTest` covers the empty session.
+- **`fix`:** a distributor name containing `/` sent the order PDF into a missing folder.
+  Writing threw, so PDF generation failed for the whole session. File names are now
+  sanitised. `PdfFileNameTest` failed before the fix.
+- **`fix` (ranker recall):**
+  - **Cause:** `tokenSetSimilarity` was exact-token Jaccard. `cartafi`, `meri` and `pâini`
+    ranked the right product first but scored 0.50–0.54, below the 0.60 Suggestions band.
+  - **Change:** a token pair of at least 4 letters with edit similarity of 0.75 or more now
+    earns partial credit, so exact scores are unchanged. Substring pairs earn none: a version
+    that counted them auto-added Coca Cola for a garbled "ciocan".
+  - **Synthetic benchmark** (production settings):
 
-  It also shows how to read the `AppUpdates` log.
-- The preview app ("ListManager NOU") was uninstalled from the phone at the user's request, so
-  only the Firebase build is left.
+    | Metric | Before | After |
+    |---|---|---|
+    | Top-1 | 0.944 | 0.955 |
+    | Known products resolved to Unknown (of 1,000) | 368 | 322 |
+    | False auto-adds | 0 | 0 |
+    | Out-of-catalog phrases reaching Suggestions (of 100) | 0 | 0 |
 
-**Checked**: `AppUpdatesTest` on debug (6 tests) and release with Firebase settings (6 tests, 1
-skipped). `AppUpdatesInstallThemeTest` passes.
+  - **Floors:** `RankerExperimentsTest` now holds all four values as floors.
+  - **Caveat:** the noise is synthetic, so this is not proof against real dictation.
+- **`fix` (lint):** `AboutScreen` cast `LocalContext` to `Activity`. That is a lint error
+  (`ContextCastToActivity`) that failed `lintPreview`, which CI does not run. It now uses
+  `LocalActivity`.
+
+**Verification** (this branch)
+- Tools: 14 passed.
+- Backend: 460 passed, 0 skipped. This includes the real PostgreSQL 17.11 gate in Docker.
+- Android unit tests, with 0 failed in every variant:
+  - Debug: 505 of 506 passed.
+  - Release: 384 of 385 passed.
+  - Preview: 384 of 385 passed.
+  - The one skip in each is `LocalCatalogSegmentationBenchmarkTest`. It needs
+    `LISTMANAGER_CATALOG_JSON` (a real catalog export).
+- Android build: `lintPreview` shows 0 errors and 83 warnings. `compilePreviewAndroidTestKotlin`
+  and `assemblePreview` pass.
+- 16 KB: all 10 arm64-v8a and x86_64 libraries are aligned to 0x4000 or more, and
+  `zipalign -c -P 16 -v 4` passes.
+- Flutter: `analyze` is clean. `flutter test` gives 64 passed and 0 skipped, because the
+  contract tests ran against a live backend.
+
+**Not verified**
+- Instrumented tests (`OnnxRuntimeSmokeTest`, `Milestone3IntegrationTest`, …) need a device or
+  emulator. None was attached, so they were compiled only.
+- PDF rendering: Robolectric's `PdfDocument` throws "document is closed!". The content of each
+  per-distributor PDF and its "Page X of N" footer are not exercised off-device.
+
+**Spec names with no code behind them** (reported, not created)
+- Classes: `ListeningCoordinator`, `SessionOutbox`, `ReconnectBackoff` (reconnect is
+  `ReconnectingSocket`), `AuthFormRules` (the rule is `isAuthSubmitEnabled`; its test exists),
+  `PdfReport`.
+- Tests: `VoiceBenchmarkTest` is `ProductRankerBenchmarkTest` here. `WorkspaceSwitchTest` is
+  `WorkspaceManagerTest`.
+- Fields: the crash idempotency field is `event_id`, not `client_event_id`.
+
+**Machine notes**
+- pytest cannot write to `%TEMP%\pytest-of-c0rnesky` here; pass `--basetemp`.
+- The main checkout's `backend-fastapi\.venv` is stale (pytest 7.4.3 against the pinned 9.2.0).
+
+**Next**
+- Add `lintPreview` to CI; open PR #56 does this.
+- Check the fuzzy token credit on real dictations once EX-19 collects them: 322 of 1,000
+  synthetic known cases still resolve to Unknown.
+- Device run for the instrumented tests and PDF rendering.
 
 ---
 

@@ -1,6 +1,6 @@
 package com.darius.listmanager.ui.screens
 
-import android.app.Activity
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -9,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,7 +21,7 @@ fun AboutScreen(onBack: () -> Unit) {
     Scaffold(
         topBar = { AppTopBar(title = "Despre", onBack = onBack) },
     ) { padding ->
-        val activity = LocalContext.current as? Activity
+        val activity = LocalActivity.current
         AboutContent(
             BuildConfig.VERSION_NAME,
             Modifier.padding(padding),

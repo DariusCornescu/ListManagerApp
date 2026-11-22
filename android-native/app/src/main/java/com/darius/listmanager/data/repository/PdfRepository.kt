@@ -52,6 +52,12 @@ class PdfRepository(private val context: Context) {
                 pages++
             }
         }
+
+        /** Anything but letters, digits, '.', '-' and '_' (path separators included) becomes '_'. */
+        private val UNSAFE_FILE_NAME_CHARS = Regex("[^\\p{L}\\p{N}._-]")
+
+        internal fun orderPdfFileName(distributorName: String, timestampMillis: Long): String =
+            "Order_${distributorName.replace(UNSAFE_FILE_NAME_CHARS, "_")}_$timestampMillis.pdf"
     }
 
     suspend fun upsertDistributorPdf(
@@ -221,7 +227,7 @@ class PdfRepository(private val context: Context) {
             currentPage++
         }
 
-        val fileName = "Order_${distributorName.replace(" ", "_")}_${System.currentTimeMillis()}.pdf"
+        val fileName = orderPdfFileName(distributorName, System.currentTimeMillis())
         val file = File(getPdfDirectory(), fileName)
 
         FileOutputStream(file).use { outputStream ->
